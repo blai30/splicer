@@ -1,12 +1,25 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap");
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  font-family: "Inter", sans-serif;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
 * {
   scrollbar-width: thin;
-  scrollbar-color: theme(colors.mist.300) transparent;
+  scrollbar-color: theme(colors.slate.400) transparent;
 }
 
 .dark * {
-  scrollbar-color: theme(colors.mist.600) transparent;
+  scrollbar-color: theme(colors.slate.700) transparent;
 }

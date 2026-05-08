@@ -33,11 +33,11 @@ export function EditToolbar() {
 
   const btnBase =
     'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
-  const btnPrimary = `${btnBase} bg-mist-200 dark:bg-mist-700 text-mist-800 dark:text-mist-100 hover:bg-mist-300 dark:hover:bg-mist-600`
+  const btnPrimary = `${btnBase} bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-700`
   const btnDanger = `${btnBase} bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/60`
 
   return (
-    <div class="flex items-center gap-2 px-4 py-2 bg-mist-100 dark:bg-mist-800 border-b border-mist-200 dark:border-mist-700 shrink-0">
+    <div class="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-900 rounded-lg shrink-0">
       <button class={btnPrimary} disabled={disabled} onClick={cutAtPlayhead} title="Split at playhead">
         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" />

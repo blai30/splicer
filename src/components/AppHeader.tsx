@@ -8,19 +8,19 @@ export function AppHeader() {
   }
 
   return (
-    <header class="flex items-center justify-between px-4 h-12 bg-mist-100 dark:bg-mist-800 border-b border-mist-200 dark:border-mist-700 shrink-0">
+    <header class="flex items-center justify-between px-4 h-12 bg-slate-100 dark:bg-slate-900 rounded-lg shrink-0">
       <div class="flex items-center gap-2">
-        <svg class="w-6 h-6 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="w-6 h-6 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
         </svg>
-        <span class="font-semibold text-base tracking-tight text-mist-900 dark:text-mist-50">
+        <span class="font-semibold text-base tracking-tight text-slate-900 dark:text-slate-50">
           Splicer
         </span>
       </div>
 
       <button
         onClick={toggleTheme}
-        class="flex items-center justify-center w-8 h-8 rounded-md text-mist-500 dark:text-mist-400 hover:bg-mist-200 dark:hover:bg-mist-700 transition-colors"
+        class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         title="Toggle theme"
       >
         <svg class="w-4 h-4 hidden dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

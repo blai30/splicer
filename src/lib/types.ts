@@ -3,6 +3,8 @@ export interface Clip {
   file: File
   name: string
   duration: number
+  width: number
+  height: number
   objectUrl: string
   thumbnail: string
 }
@@ -23,4 +25,18 @@ export interface Segment {
   crop?: CropParams
 }
 
+export interface ExportRecord {
+  id: string
+  filename: string
+  url: string
+  size: number
+  duration: number
+  fps: Framerate
+  width: number
+  height: number
+  format: ExportFormat
+}
+
 export type ExportFormat = 'mp4' | 'webm' | 'mkv'
+export type Quality = 'lossless' | 'high' | 'medium' | 'low'
+export type Framerate = 'original' | '60' | '30' | '24'
