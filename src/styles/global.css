@@ -1,1 +1,12 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme(colors.mist.300) transparent;
+}
+
+.dark * {
+  scrollbar-color: theme(colors.mist.600) transparent;
+}

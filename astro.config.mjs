@@ -1,11 +1,19 @@
 // @ts-check
-import { defineConfig } from 'astro/config';
+import preact from '@astrojs/preact'
+import { defineConfig } from 'astro/config'
 
-import tailwindcss from '@tailwindcss/vite';
+import tailwindcss from '@tailwindcss/vite'
 
-// https://astro.build/config
+const coopCoep = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+}
+
 export default defineConfig({
+  integrations: [preact({ compat: false })],
   vite: {
-    plugins: [tailwindcss()]
-  }
-});
+    plugins: [tailwindcss()],
+    server: { headers: coopCoep },
+    preview: { headers: coopCoep },
+  },
+})
