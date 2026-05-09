@@ -13,7 +13,7 @@ export function AppHeader() {
           <span class="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
             Splicer
           </span>
-          <span class="text-sm text-slate-500 dark:text-slate-400">
+          <span class="hidden text-sm text-slate-500 sm:block dark:text-slate-400">
             Fast timeline cuts, entirely client-sided in the browser
           </span>
         </div>

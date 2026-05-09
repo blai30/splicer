@@ -244,55 +244,63 @@ export function VideoPreview() {
       </div>
 
       {/* Controls */}
-      <div class="relative flex items-center border-t border-slate-200/80 px-4 py-2 dark:border-slate-700/80">
-        <VolumeControl />
-        <div class="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
-          <button
-            onClick={stepBack}
-            disabled={!hasContent}
-            class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-            title="Step back one frame (←)"
-          >
-            <StepBack class="h-5 w-5" />
-          </button>
-          <button
-            onClick={togglePlay}
-            disabled={!hasContent}
-            class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-          >
-            {playing.value ? <Pause class="h-5 w-5" /> : <Play class="ml-0.5 h-5 w-5" />}
-          </button>
-          <button
-            onClick={stepForward}
-            disabled={!hasContent}
-            class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-            title="Step forward one frame (→)"
-          >
-            <StepForward class="h-5 w-5" />
-          </button>
+      <div class="flex flex-col border-t border-slate-200/80 dark:border-slate-700/80">
+        <div class="grid grid-cols-[1fr_auto_1fr] items-center px-4 py-2">
+          <VolumeControl />
+          <div class="flex items-center gap-1">
+            <button
+              onClick={stepBack}
+              disabled={!hasContent}
+              class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              title="Step back one frame (←)"
+            >
+              <StepBack class="h-5 w-5" />
+            </button>
+            <button
+              onClick={togglePlay}
+              disabled={!hasContent}
+              class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              {playing.value ? <Pause class="h-5 w-5" /> : <Play class="ml-0.5 h-5 w-5" />}
+            </button>
+            <button
+              onClick={stepForward}
+              disabled={!hasContent}
+              class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              title="Step forward one frame (→)"
+            >
+              <StepForward class="h-5 w-5" />
+            </button>
+          </div>
+          <div class="flex items-center justify-end gap-2 sm:gap-4">
+            <select
+              id="playback-speed"
+              value={playbackSpeed.value}
+              onChange={(e) => {
+                playbackSpeed.value = Number((e.currentTarget as HTMLSelectElement).value)
+              }}
+              class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              title="Playback speed"
+            >
+              {SPEED_OPTIONS.map((speed) => (
+                <option key={speed} value={speed}>
+                  {speed}×
+                </option>
+              ))}
+            </select>
+            <span class="hidden text-sm text-slate-500 tabular-nums sm:inline dark:text-slate-400">
+              {formatTimecode(currentPlaybackTime.value)} /{' '}
+              {formatTimecode(
+                timeline.value.reduce((acc, seg) => acc + (seg.endTime - seg.startTime), 0)
+              )}
+            </span>
+          </div>
         </div>
-        <div class="ml-auto flex items-center gap-4">
-          <select
-            id="playback-speed"
-            value={playbackSpeed.value}
-            onChange={(e) => {
-              playbackSpeed.value = Number((e.currentTarget as HTMLSelectElement).value)
-            }}
-            class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-            title="Playback speed"
-          >
-            {SPEED_OPTIONS.map((speed) => (
-              <option key={speed} value={speed}>
-                {speed}×
-              </option>
-            ))}
-          </select>
-          <span class="text-sm text-slate-500 tabular-nums dark:text-slate-400">
-            {formatTimecode(currentPlaybackTime.value)} /{' '}
-            {formatTimecode(
-              timeline.value.reduce((acc, seg) => acc + (seg.endTime - seg.startTime), 0)
-            )}
-          </span>
+        <div class="pb-2 text-center text-sm text-slate-500 tabular-nums sm:hidden dark:text-slate-400">
+          {formatTimecode(currentPlaybackTime.value)} /{' '}
+          {formatTimecode(
+            timeline.value.reduce((acc, seg) => acc + (seg.endTime - seg.startTime), 0)
+          )}
         </div>
       </div>
 

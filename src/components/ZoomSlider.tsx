@@ -3,11 +3,12 @@ interface ZoomSliderProps {
   min: number
   max: number
   onChange: (value: number) => void
+  class?: string
 }
 
 const TICKS = [0, 0.25, 0.5, 0.75, 1]
 
-export function ZoomSlider({ value, min, max, onChange }: ZoomSliderProps) {
+export function ZoomSlider({ value, min, max, onChange, class: className }: ZoomSliderProps) {
   const pct = (value - min) / (max - min)
 
   function seekFromPointer(ev: PointerEvent, el: HTMLElement) {
@@ -33,7 +34,7 @@ export function ZoomSlider({ value, min, max, onChange }: ZoomSliderProps) {
   }
 
   return (
-    <div class="relative h-5 w-28 select-none" onPointerDown={onPointerDown}>
+    <div class={`relative h-5 select-none ${className ?? 'w-28'}`} onPointerDown={onPointerDown}>
       <div class="absolute top-1/2 right-0 left-0 h-px -translate-y-1/2 rounded-full bg-slate-200 dark:bg-slate-700" />
       <div
         class="absolute top-1/2 left-0 h-px -translate-y-1/2 rounded-full bg-violet-600 dark:bg-violet-400"

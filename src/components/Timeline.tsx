@@ -168,7 +168,7 @@ export function Timeline() {
   return (
     <div
       class={clsx(
-        'relative flex h-48 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur transition-colors dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30',
+        'relative flex h-64 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur transition-colors md:h-48 dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30',
         draggingOver.value && 'ring-2 ring-violet-400'
       )}
       onDragOver={onDragOver}
@@ -177,83 +177,96 @@ export function Timeline() {
       onWheel={onWheel}
     >
       {/* Header */}
-      <div class="flex shrink-0 items-start gap-2.5 px-4 pt-3 pb-2">
-        <span class="pt-1 text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+      <div class="flex shrink-0 flex-col gap-y-1.5 px-4 pt-3 pb-2 md:flex-row md:items-start md:gap-x-2.5">
+        <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase md:pt-1 dark:text-slate-400">
           Timeline
         </span>
-        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-          <button class={toolBtn} disabled={disabled} onClick={setInPoint} title="Set in-point (I)">
-            <ArrowLeftToLine class="h-3.5 w-3.5" />
-            In
-          </button>
+        <div class="flex items-start gap-2.5 md:flex-1">
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <button
+              class={toolBtn}
+              disabled={disabled}
+              onClick={setInPoint}
+              title="Set in-point (I)"
+            >
+              <ArrowLeftToLine class="h-3.5 w-3.5" />
+              In
+            </button>
 
-          <button
-            class={toolBtn}
-            disabled={disabled}
-            onClick={setOutPoint}
-            title="Set out-point (O)"
-          >
-            <ArrowRightToLine class="h-3.5 w-3.5" />
-            Out
-          </button>
+            <button
+              class={toolBtn}
+              disabled={disabled}
+              onClick={setOutPoint}
+              title="Set out-point (O)"
+            >
+              <ArrowRightToLine class="h-3.5 w-3.5" />
+              Out
+            </button>
 
-          <button
-            class={toolBtn}
-            disabled={disabled}
-            onClick={cutAtPlayhead}
-            title="Split at playhead (C)"
-          >
-            <Scissors class="h-3.5 w-3.5" />
-            Cut
-          </button>
+            <button
+              class={toolBtn}
+              disabled={disabled}
+              onClick={cutAtPlayhead}
+              title="Split at playhead (C)"
+            >
+              <Scissors class="h-3.5 w-3.5" />
+              Cut
+            </button>
 
-          <button class={toolBtn} disabled={disabled} onClick={toggleMute} title="Toggle mute">
-            {seg?.muted ? <VolumeX class="h-3.5 w-3.5" /> : <Volume2 class="h-3.5 w-3.5" />}
-            {seg?.muted ? 'Unmute' : 'Mute'}
-          </button>
+            <button class={toolBtn} disabled={disabled} onClick={toggleMute} title="Toggle mute">
+              {seg?.muted ? <VolumeX class="h-3.5 w-3.5" /> : <Volume2 class="h-3.5 w-3.5" />}
+              {seg?.muted ? 'Unmute' : 'Mute'}
+            </button>
 
-          <button
-            class="flex items-center gap-1.5 rounded-md bg-red-100 px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
-            disabled={disabled}
-            onClick={deleteSegment}
-            title="Delete segment"
-          >
-            <Trash2 class="h-3.5 w-3.5" />
-            Delete
-          </button>
-        </div>
-        <div class="ml-auto flex shrink-0 items-center gap-3">
-          <button
-            onClick={() => zoomTo(pxPerSec.value - 10)}
-            class="text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
-            title="Zoom out"
-          >
-            <ZoomOut class="h-3.5 w-3.5" />
-          </button>
-          <ZoomSlider value={pxPerSec.value} min={ZOOM_MIN} max={ZOOM_MAX} onChange={zoomTo} />
-          <button
-            onClick={() => zoomTo(pxPerSec.value + 10)}
-            class="text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
-            title="Zoom in"
-          >
-            <ZoomIn class="h-3.5 w-3.5" />
-          </button>
-          <div class="relative">
-            <input
-              type="number"
+            <button
+              class="flex items-center gap-1.5 rounded-md bg-red-100 px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
+              disabled={disabled}
+              onClick={deleteSegment}
+              title="Delete segment"
+            >
+              <Trash2 class="h-3.5 w-3.5" />
+              Delete
+            </button>
+          </div>
+          <div class="flex shrink-0 items-center gap-2 md:gap-3">
+            <button
+              onClick={() => zoomTo(pxPerSec.value - 10)}
+              class="text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+              title="Zoom out"
+            >
+              <ZoomOut class="h-3.5 w-3.5" />
+            </button>
+            <ZoomSlider
+              class="w-16 md:w-28"
+              value={pxPerSec.value}
               min={ZOOM_MIN}
               max={ZOOM_MAX}
-              value={Math.round(pxPerSec.value)}
-              onBlur={(e) => zoomTo(Number((e.currentTarget as HTMLInputElement).value))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') zoomTo(Number((e.currentTarget as HTMLInputElement).value))
-              }}
-              class="w-14 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 pr-5 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              title="Zoom level (px/sec)"
+              onChange={zoomTo}
             />
-            <span class="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-500">
-              %
-            </span>
+            <button
+              onClick={() => zoomTo(pxPerSec.value + 10)}
+              class="text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+              title="Zoom in"
+            >
+              <ZoomIn class="h-3.5 w-3.5" />
+            </button>
+            <div class="relative hidden sm:block">
+              <input
+                type="number"
+                min={ZOOM_MIN}
+                max={ZOOM_MAX}
+                value={Math.round(pxPerSec.value)}
+                onBlur={(e) => zoomTo(Number((e.currentTarget as HTMLInputElement).value))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') zoomTo(Number((e.currentTarget as HTMLInputElement).value))
+                }}
+                class="w-14 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 pr-5 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                title="Zoom level (px/sec)"
+              />
+              <span class="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-500">
+                %
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -267,7 +280,7 @@ export function Timeline() {
       >
         {isEmpty ? (
           <div
-            class="flex h-full cursor-pointer items-center justify-center gap-2 px-4 pb-5"
+            class="flex h-full cursor-pointer items-center justify-center gap-2 px-4 md:pb-5"
             onClick={() => fileInputRef.current?.click()}
           >
             <div
