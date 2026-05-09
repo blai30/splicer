@@ -1,6 +1,7 @@
 import clsx from 'clsx/lite'
 import { useRef } from 'preact/hooks'
 
+import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
 import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
 import { GAP_PX, clipColor, dragState, getSegmentStartX, pxPerSec } from '@/lib/timelineState'
@@ -122,15 +123,16 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
       style={{ width: `${width}px` }}
       onPointerDown={onBodyPointerDown}
     >
-      {clip?.thumbnail && (
-        <img
-          src={clip.thumbnail}
-          alt={clip.name}
-          class="absolute inset-0 h-full w-full object-cover opacity-30"
-          draggable={false}
+      {clip && (
+        <WaveformView
+          peaks={clip.waveformPeaks}
+          clipDuration={clip.duration}
+          segmentStart={seg.startTime}
+          segmentEnd={seg.endTime}
+          class="absolute inset-0 h-full w-full opacity-80"
         />
       )}
-      <span class="relative z-10 truncate px-2 text-sm font-medium text-white">
+      <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
         {clip?.name ?? 'Clip'}
         {seg.muted && <span class="ml-1 opacity-70">🔇</span>}
       </span>

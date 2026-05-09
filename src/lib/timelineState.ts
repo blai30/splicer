@@ -16,7 +16,7 @@ export const pxPerSec = signal(80)
 export const dragState = signal<DragState | null>(null)
 
 export function clipColor(clipId: string): string {
-  const colors = ['bg-violet-500', 'bg-teal-500', 'bg-cyan-500', 'bg-green-500', 'bg-sky-500']
+  const colors = ['bg-violet-700', 'bg-teal-700', 'bg-cyan-700', 'bg-emerald-700', 'bg-sky-700']
   let hash = 0
   for (let i = 0; i < clipId.length; i++) hash = (hash * 31 + clipId.charCodeAt(i)) | 0
   return colors[Math.abs(hash) % colors.length]

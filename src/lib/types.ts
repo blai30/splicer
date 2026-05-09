@@ -6,7 +6,7 @@ export interface Clip {
   width: number
   height: number
   objectUrl: string
-  thumbnail: string
+  waveformPeaks: number[]
 }
 
 export interface CropParams {

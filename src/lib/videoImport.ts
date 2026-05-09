@@ -25,27 +25,52 @@ export function getVideoMetadata(
   })
 }
 
-export function captureThumbnail(url: string): Promise<string> {
-  return new Promise((resolve) => {
-    const v = document.createElement('video')
-    v.preload = 'metadata'
-    v.src = url
-    v.currentTime = 0.5
-    v.onseeked = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 160
-      canvas.height = 90
-      canvas.getContext('2d')!.drawImage(v, 0, 0, 160, 90)
-      resolve(canvas.toDataURL('image/jpeg', 0.6))
+export async function extractWaveformPeaks(file: File, peakCount = 2000): Promise<number[]> {
+  if (typeof window === 'undefined') return []
+
+  const AudioCtx =
+    window.AudioContext ||
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioCtx) return []
+
+  const ctx = new AudioCtx()
+  try {
+    const buffer = await file.arrayBuffer()
+    const decoded = await ctx.decodeAudioData(buffer)
+    const channels = decoded.numberOfChannels
+    const totalSamples = decoded.length
+    if (!channels || !totalSamples) return []
+
+    const target = Math.max(64, Math.floor(peakCount))
+    const samplesPerPeak = Math.max(1, Math.floor(totalSamples / target))
+    const peaks: number[] = []
+
+    for (let i = 0; i < totalSamples; i += samplesPerPeak) {
+      const end = Math.min(totalSamples, i + samplesPerPeak)
+      let peak = 0
+      for (let c = 0; c < channels; c++) {
+        const data = decoded.getChannelData(c)
+        for (let s = i; s < end; s++) {
+          const amp = Math.abs(data[s])
+          if (amp > peak) peak = amp
+        }
+      }
+      peaks.push(peak)
     }
-  })
+
+    return peaks
+  } catch {
+    return []
+  } finally {
+    void ctx.close()
+  }
 }
 
 export async function importAndAppend(file: File): Promise<void> {
   if (!isVideoFile(file)) return
   const objectUrl = URL.createObjectURL(file)
   const { duration, width, height } = await getVideoMetadata(objectUrl)
-  const thumbnail = await captureThumbnail(objectUrl)
+  const waveformPeaks = await extractWaveformPeaks(file)
   const clip: Clip = {
     id: crypto.randomUUID(),
     file,
@@ -54,7 +79,7 @@ export async function importAndAppend(file: File): Promise<void> {
     width,
     height,
     objectUrl,
-    thumbnail,
+    waveformPeaks,
   }
   clips.value = [...clips.value, clip]
   const seg: Segment = {
