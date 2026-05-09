@@ -29,6 +29,12 @@ importers:
       astro:
         specifier: ^6.3.1
         version: 6.3.1(@types/node@25.6.2)(jiti@2.7.0)(lightningcss@1.32.0)(rollup@4.60.3)(yaml@2.8.4)
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      lucide-preact:
+        specifier: ^1.14.0
+        version: 1.14.0(preact@10.29.1)
       preact:
         specifier: ^10.29.1
         version: 10.29.1
@@ -42,9 +48,6 @@ importers:
       '@types/node':
         specifier: ^25.6.2
         version: 25.6.2
-      lucide-preact:
-        specifier: ^1.14.0
-        version: 1.14.0(preact@10.29.1)
       oxfmt:
         specifier: ^0.48.0
         version: 0.48.0

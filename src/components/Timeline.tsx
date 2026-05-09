@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals'
+import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
@@ -151,9 +152,11 @@ function SegmentBlock({ seg }: { seg: Segment }) {
 
   return (
     <div
-      class={`relative flex h-14 shrink-0 cursor-pointer items-center overflow-hidden rounded select-none ${
-        isSelected ? 'ring-2 ring-violet-400' : 'ring-1 ring-black/20'
-      } ${clipColor(seg.clipId)}`}
+      class={clsx(
+        'relative flex h-14 shrink-0 cursor-pointer items-center overflow-hidden rounded select-none',
+        isSelected ? 'ring-2 ring-violet-400' : 'ring-1 ring-black/20',
+        clipColor(seg.clipId)
+      )}
       style={{ width: `${width}px` }}
       onClick={onSelect}
     >
@@ -299,9 +302,10 @@ export function Timeline() {
 
   return (
     <div
-      class={`relative flex h-48 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur transition-colors dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30 ${
-        draggingOver.value ? 'ring-2 ring-violet-400' : ''
-      }`}
+      class={clsx(
+        'relative flex h-48 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur transition-colors dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30',
+        draggingOver.value && 'ring-2 ring-violet-400'
+      )}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -317,12 +321,7 @@ export function Timeline() {
           Timeline
         </span>
         <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-          <button
-            class={toolBtn}
-            disabled={disabled}
-            onClick={setInPoint}
-            title="Set in-point (I)"
-          >
+          <button class={toolBtn} disabled={disabled} onClick={setInPoint} title="Set in-point (I)">
             <ArrowLeftToLine class="h-3.5 w-3.5" />
             In
           </button>
@@ -347,12 +346,7 @@ export function Timeline() {
             Cut
           </button>
 
-          <button
-            class={toolBtn}
-            disabled={disabled}
-            onClick={toggleMute}
-            title="Toggle mute"
-          >
+          <button class={toolBtn} disabled={disabled} onClick={toggleMute} title="Toggle mute">
             {seg?.muted ? <VolumeX class="h-3.5 w-3.5" /> : <Volume2 class="h-3.5 w-3.5" />}
             {seg?.muted ? 'Unmute' : 'Mute'}
           </button>
@@ -384,11 +378,12 @@ export function Timeline() {
             onClick={() => fileInputRef.current?.click()}
           >
             <div
-              class={`flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-xl border-[3px] border-dashed px-5 py-4 text-center transition-colors ${
+              class={clsx(
+                'flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-xl border-[3px] border-dashed px-5 py-4 text-center transition-colors',
                 draggingOver.value
                   ? 'border-violet-500 bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300'
                   : 'border-slate-300 bg-slate-50 text-slate-500 dark:border-slate-600 dark:bg-slate-800/30 dark:text-slate-400'
-              }`}
+              )}
             >
               {draggingOver.value ? (
                 <p class="text-sm font-semibold">Drop to import</p>

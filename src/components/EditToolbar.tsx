@@ -18,22 +18,12 @@ export function EditToolbar() {
 
   return (
     <div class="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/95 px-4 py-2 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30">
-      <button
-        class={toolBtn}
-        disabled={disabled}
-        onClick={setInPoint}
-        title="Set in-point (I)"
-      >
+      <button class={toolBtn} disabled={disabled} onClick={setInPoint} title="Set in-point (I)">
         <ArrowLeftToLine class="h-3.5 w-3.5" />
         In
       </button>
 
-      <button
-        class={toolBtn}
-        disabled={disabled}
-        onClick={setOutPoint}
-        title="Set out-point (O)"
-      >
+      <button class={toolBtn} disabled={disabled} onClick={setOutPoint} title="Set out-point (O)">
         <ArrowRightToLine class="h-3.5 w-3.5" />
         Out
       </button>
@@ -48,12 +38,7 @@ export function EditToolbar() {
         Cut
       </button>
 
-      <button
-        class={toolBtn}
-        disabled={disabled}
-        onClick={toggleMute}
-        title="Toggle mute"
-      >
+      <button class={toolBtn} disabled={disabled} onClick={toggleMute} title="Toggle mute">
         {seg?.muted ? <VolumeX class="h-3.5 w-3.5" /> : <Volume2 class="h-3.5 w-3.5" />}
         {seg?.muted ? 'Unmute' : 'Mute'}
       </button>

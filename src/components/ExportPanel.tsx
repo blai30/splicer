@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals'
+import clsx from 'clsx/lite'
 import { CirclePlay, X } from 'lucide-preact'
 
 import { exportVideo, cancelExport, getFFmpeg } from '@/lib/ffmpeg'
@@ -104,11 +105,11 @@ export function ExportPanel() {
           {formats.map((f) => (
             <button
               key={f}
-              class={
+              class={clsx(
                 exportFormat.value === f
                   ? 'rounded-md bg-violet-500 px-2.5 py-1 text-xs font-medium text-white transition-colors'
                   : 'rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-              }
+              )}
               onClick={() => {
                 exportFormat.value = f
               }}
@@ -123,11 +124,11 @@ export function ExportPanel() {
           {qualities.map((q) => (
             <button
               key={q.value}
-              class={
+              class={clsx(
                 quality.value === q.value
                   ? 'rounded-md bg-violet-500 px-2.5 py-1 text-xs font-medium text-white transition-colors'
                   : 'rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-              }
+              )}
               onClick={() => {
                 quality.value = q.value
               }}
@@ -142,11 +143,11 @@ export function ExportPanel() {
           {framerates.map((f) => (
             <button
               key={f.value}
-              class={
+              class={clsx(
                 framerate.value === f.value
                   ? 'rounded-md bg-violet-500 px-2.5 py-1 text-xs font-medium text-white transition-colors'
                   : 'rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-              }
+              )}
               onClick={() => {
                 framerate.value = f.value
               }}
@@ -157,7 +158,7 @@ export function ExportPanel() {
         </div>
       </div>
 
-      <div class="flex flex-col gap-2 border-t border-slate-200/80 pt-2 dark:border-slate-700/80 sm:flex-row sm:items-center">
+      <div class="flex flex-col gap-2 border-t border-slate-200/80 pt-2 sm:flex-row sm:items-center dark:border-slate-700/80">
         <div class="min-w-0 flex-1">
           {exporting.value && !ffmpegReady.value && (
             <span class="text-xs text-slate-500 dark:text-slate-400">Initializing FFmpeg…</span>
@@ -165,7 +166,10 @@ export function ExportPanel() {
           {exporting.value && ffmpegReady.value && (
             <div class="flex items-center gap-2">
               <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                <div class="h-full bg-violet-500 transition-all" style={{ width: `${progressPct}%` }} />
+                <div
+                  class="h-full bg-violet-500 transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
               </div>
               <span class="w-8 shrink-0 text-right text-xs text-slate-500 dark:text-slate-400">
                 {progressPct}%

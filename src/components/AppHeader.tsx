@@ -19,7 +19,9 @@ export function AppHeader() {
           <span class="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
             Splicer
           </span>
-          <span class="text-xs text-slate-500 dark:text-slate-400">Fast timeline cuts, no upload</span>
+          <span class="text-xs text-slate-500 dark:text-slate-400">
+            Fast timeline cuts, no upload
+          </span>
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+import clsx from 'clsx/lite'
 import { Trash2 } from 'lucide-preact'
 
 import { exportHistory } from '@/lib/store'
@@ -65,7 +66,7 @@ export function ExportHistory() {
           </thead>
           <tbody>
             {exportHistory.value.map((rec, i) => (
-              <tr key={rec.id} class={i % 2 === 0 ? '' : 'bg-slate-50/80 dark:bg-slate-800/50'}>
+              <tr key={rec.id} class={clsx(i % 2 !== 0 && 'bg-slate-50/80 dark:bg-slate-800/50')}>
                 <td class={td}>
                   <a
                     href={rec.url}
