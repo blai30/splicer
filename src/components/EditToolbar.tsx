@@ -14,7 +14,7 @@ export function EditToolbar() {
   const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)
   const disabled = !seg
   const toolBtn =
-    'flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
+    'flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
 
   return (
     <div class="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/95 px-4 py-2 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30">
@@ -46,7 +46,7 @@ export function EditToolbar() {
       <div class="flex-1" />
 
       <button
-        class="flex items-center gap-1.5 rounded-md bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
+        class="flex items-center gap-1.5 rounded-md bg-red-100 px-3 py-1.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
         disabled={disabled}
         onClick={deleteSegment}
         title="Delete segment"

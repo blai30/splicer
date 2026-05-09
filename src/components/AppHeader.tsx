@@ -10,10 +10,10 @@ export function AppHeader() {
           <Film class="h-5 w-5 text-violet-600 dark:text-violet-300" />
         </div>
         <div class="flex flex-col">
-          <span class="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+          <span class="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
             Splicer
           </span>
-          <span class="text-xs text-slate-500 dark:text-slate-400">
+          <span class="text-sm text-slate-500 dark:text-slate-400">
             Fast timeline cuts, entirely client-sided in the browser
           </span>
         </div>

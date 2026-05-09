@@ -221,7 +221,7 @@ export function VideoPreview() {
       <div class="relative aspect-video w-full bg-black">
         {!hasContent && (
           <div class="absolute inset-0 flex items-center justify-center">
-            <p class="text-sm text-slate-500 select-none">Drop video files onto the timeline</p>
+            <p class="text-base text-slate-500 select-none">Drop video files onto the timeline</p>
           </div>
         )}
         <video
@@ -242,7 +242,7 @@ export function VideoPreview() {
       {/* Controls */}
       <div class="relative flex items-center border-t border-slate-200/80 px-4 py-2 dark:border-slate-700/80">
         <div class="flex items-center gap-2">
-          <label for="playback-speed" class="text-xs text-slate-500 dark:text-slate-400">
+          <label for="playback-speed" class="text-sm text-slate-500 dark:text-slate-400">
             Speed
           </label>
           <select
@@ -251,7 +251,7 @@ export function VideoPreview() {
             onChange={(e) => {
               playbackSpeed.value = Number((e.currentTarget as HTMLSelectElement).value)
             }}
-            class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+            class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
             title="Playback speed"
           >
             {SPEED_OPTIONS.map((speed) => (
@@ -286,7 +286,7 @@ export function VideoPreview() {
             <StepForward class="h-5 w-5" />
           </button>
         </div>
-        <span class="ml-auto text-xs text-slate-500 tabular-nums dark:text-slate-400">
+        <span class="ml-auto text-sm text-slate-500 tabular-nums dark:text-slate-400">
           {formatTimecode(currentPlaybackTime.value)} /{' '}
           {formatTimecode(currentSegmentDuration.value)}
         </span>

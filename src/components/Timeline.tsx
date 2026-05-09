@@ -168,11 +168,11 @@ function SegmentBlock({ seg }: { seg: Segment }) {
           draggable={false}
         />
       )}
-      <span class="relative z-10 truncate px-2 text-xs font-medium text-white">
+      <span class="relative z-10 truncate px-2 text-sm font-medium text-white">
         {clip?.name ?? 'Clip'}
         {seg.muted && <span class="ml-1 opacity-70">🔇</span>}
       </span>
-      <span class="relative z-10 ml-auto shrink-0 pr-2 text-xs text-white/70">
+      <span class="relative z-10 ml-auto shrink-0 pr-2 text-sm text-white/70">
         {formatTime(dur)}
       </span>
       <div
@@ -298,7 +298,7 @@ export function Timeline() {
   const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)
   const disabled = !seg
   const toolBtn =
-    'flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
+    'flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
 
   return (
     <div
@@ -317,7 +317,7 @@ export function Timeline() {
     >
       {/* Header */}
       <div class="flex shrink-0 items-start gap-2.5 px-4 pt-3 pb-2">
-        <span class="pt-1 text-xs font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+        <span class="pt-1 text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Timeline
         </span>
         <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
@@ -352,7 +352,7 @@ export function Timeline() {
           </button>
 
           <button
-            class="flex items-center gap-1.5 rounded-md bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
+            class="flex items-center gap-1.5 rounded-md bg-red-100 px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
             disabled={disabled}
             onClick={deleteSegment}
             title="Delete segment"
@@ -361,7 +361,7 @@ export function Timeline() {
             Delete
           </button>
         </div>
-        <span class="ml-auto text-xs text-slate-400 dark:text-slate-500">
+        <span class="ml-auto text-sm text-slate-400 dark:text-slate-500">
           {formatTime(totalDuration)}
         </span>
       </div>
@@ -386,11 +386,11 @@ export function Timeline() {
               )}
             >
               {draggingOver.value ? (
-                <p class="text-sm font-semibold">Drop to import</p>
+                <p class="text-base font-semibold">Drop to import</p>
               ) : (
                 <>
                   <Upload class="h-4 w-4" />
-                  <p class="text-sm">Click or drop video files to import</p>
+                  <p class="text-base">Click or drop video files to import</p>
                 </>
               )}
             </div>
@@ -418,7 +418,7 @@ export function Timeline() {
       {/* Drop overlay when timeline has content */}
       {draggingOver.value && !isEmpty && (
         <div class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl border-2 border-dashed border-violet-400 bg-violet-50/60 dark:bg-violet-950/40">
-          <p class="text-sm font-medium text-violet-500">Drop to append</p>
+          <p class="text-base font-medium text-violet-500">Drop to append</p>
         </div>
       )}
       <input
