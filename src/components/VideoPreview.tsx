@@ -25,6 +25,7 @@ const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 export function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const playerRef = useRef<HTMLDivElement>(null)
   const previewMaxWidth = useSignal<number | null>(null)
   const playbackSpeed = useSignal(1)
   const resumeAfterSwitch = useRef(false)
@@ -202,14 +203,28 @@ export function VideoPreview() {
     const el = e.currentTarget as HTMLElement
     el.setPointerCapture(e.pointerId)
     const startX = e.clientX
-    const startW = previewMaxWidth.value ?? containerRef.current?.offsetWidth ?? 800
+    const startY = e.clientY
+    const startW = playerRef.current?.offsetWidth ?? previewMaxWidth.value ?? 400
+
     function onMove(mv: PointerEvent) {
-      previewMaxWidth.value = Math.max(320, startW + (mv.clientX - startX))
+      const deltaX = mv.clientX - startX
+      const deltaY = mv.clientY - startY
+      const delta = deltaX + deltaY
+      const newWidth = Math.max(320, startW + delta)
+      if (playerRef.current) {
+        playerRef.current.style.width = `${newWidth}px`
+      }
     }
+
     function onUp() {
+      const finalWidth = playerRef.current?.offsetWidth
+      if (finalWidth) {
+        previewMaxWidth.value = finalWidth
+      }
       el.removeEventListener('pointermove', onMove)
       el.removeEventListener('pointerup', onUp)
     }
+
     el.addEventListener('pointermove', onMove)
     el.addEventListener('pointerup', onUp)
   }
@@ -219,28 +234,54 @@ export function VideoPreview() {
   return (
     <div
       ref={containerRef}
-      class="relative flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30"
-      style={previewMaxWidth.value ? { maxWidth: `${previewMaxWidth.value}px` } : undefined}
+      class="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30"
     >
-      <div class="relative aspect-video w-full bg-black">
-        {!hasContent && (
-          <div class="absolute inset-0 flex items-center justify-center">
-            <p class="text-base text-slate-500 select-none">Drop video files onto the timeline</p>
+      {/* Video Player */}
+      <div class="relative flex h-64 flex-1 items-center justify-center overflow-hidden bg-black md:h-48">
+        <div
+          ref={playerRef}
+          class="relative aspect-video bg-black"
+          style={
+            previewMaxWidth.value ? { width: `${previewMaxWidth.value}px` } : { width: '100%' }
+          }
+        >
+          {!hasContent && (
+            <div class="absolute inset-0 flex items-center justify-center">
+              <p class="text-base text-slate-500 select-none">Drop video files onto the timeline</p>
+            </div>
+          )}
+          <video
+            ref={videoRef}
+            class="absolute inset-0 h-full w-full object-contain"
+            onTimeUpdate={onTimeUpdate}
+            onPlay={() => {
+              playing.value = true
+              rafId.current = requestAnimationFrame(tickPlayhead)
+            }}
+            onPause={() => {
+              playing.value = false
+              cancelAnimationFrame(rafId.current)
+            }}
+          />
+
+          {/* Resize handle */}
+          <div
+            class="absolute right-0 bottom-0 z-10 flex h-12 w-12 cursor-nwse-resize items-end justify-end p-2 opacity-0 transition-opacity hover:opacity-100"
+            onPointerDown={onResizePointerDown}
+            title="Drag to resize video player"
+          >
+            <svg
+              class="h-3.5 w-3.5 text-slate-500 dark:text-slate-400"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            >
+              <path d="M2 10L10 2M6 10L10 6" />
+            </svg>
           </div>
-        )}
-        <video
-          ref={videoRef}
-          class="absolute inset-0 h-full w-full object-contain"
-          onTimeUpdate={onTimeUpdate}
-          onPlay={() => {
-            playing.value = true
-            rafId.current = requestAnimationFrame(tickPlayhead)
-          }}
-          onPause={() => {
-            playing.value = false
-            cancelAnimationFrame(rafId.current)
-          }}
-        />
+        </div>
       </div>
 
       {/* Controls */}
@@ -302,23 +343,6 @@ export function VideoPreview() {
             timeline.value.reduce((acc, seg) => acc + (seg.endTime - seg.startTime), 0)
           )}
         </div>
-      </div>
-
-      {/* Resize handle */}
-      <div
-        class="absolute right-0 bottom-0 z-10 flex h-5 w-5 cursor-nwse-resize items-end justify-end p-1 opacity-40 transition-opacity hover:opacity-80"
-        onPointerDown={onResizePointerDown}
-      >
-        <svg
-          class="h-3.5 w-3.5 text-slate-500 dark:text-slate-400"
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-        >
-          <path d="M2 10L10 2M6 10L10 6" />
-        </svg>
       </div>
     </div>
   )
