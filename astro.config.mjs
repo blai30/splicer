@@ -33,7 +33,11 @@ const ffmpegCorePlugin = {
   },
 }
 
+const isProd = process.env.NODE_ENV === 'production'
+
 export default defineConfig({
+  site: isProd ? 'https://blai30.github.io' : undefined,
+  base: isProd ? '/splicer' : undefined,
   integrations: [preact({ compat: false })],
   vite: {
     plugins: [tailwindcss(), ffmpegCorePlugin],

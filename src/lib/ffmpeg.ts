@@ -22,8 +22,8 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     })
     loadingPromise = ffmpeg
       .load({
-        coreURL: '/ffmpeg/ffmpeg-core.js',
-        wasmURL: '/ffmpeg/ffmpeg-core.wasm',
+        coreURL: `${import.meta.env.BASE_URL}ffmpeg/ffmpeg-core.js`,
+        wasmURL: `${import.meta.env.BASE_URL}ffmpeg/ffmpeg-core.wasm`,
       })
       .then(() => {
         instance = ffmpeg

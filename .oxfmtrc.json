@@ -6,13 +6,13 @@
   "arrowParens": "always",
   "bracketSpacing": true,
   "endOfLine": "lf",
+  "ignorePatterns": ["**/public/**", "**/dist/**", "**/node_modules/**"],
   "jsxSingleQuote": false,
   "semi": false,
   "singleQuote": true,
+  "sortImports": true,
+  "sortPackageJson": false,
   "tabWidth": 2,
   "trailingComma": "es5",
-  "useTabs": false,
-  "sortPackageJson": false,
-  "ignorePatterns": [],
-  "sortImports": true
+  "useTabs": false
 }
