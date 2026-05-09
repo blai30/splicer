@@ -4,8 +4,10 @@
     <script is:inline>
       const stored = localStorage.getItem('theme')
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      if (stored === 'dark' || (!stored && prefersDark)) {
+      const isDark = stored === 'dark' || (!stored && prefersDark)
+      if (isDark) {
         document.documentElement.classList.add('dark')
+        document.documentElement.style.backgroundColor = 'black'
       }
     </script>
     <script is:inline src={`${import.meta.env.BASE_URL}coi-serviceworker.min.js`}></script>

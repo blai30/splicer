@@ -1,4 +1,5 @@
-import { Signal, effect, signal } from '@preact/signals'
+import type { Signal } from '@preact/signals'
+import { effect, signal } from '@preact/signals'
 
 import type { Clip, ExportFormat, ExportRecord, Framerate, Quality, Segment } from '@/lib/types'
 
