@@ -9,6 +9,8 @@ import {
   currentSegmentDuration,
   playing,
   playheadTime,
+  previewMuted,
+  previewVolume,
   selectedSegmentId,
   timeline,
   videoEl,
@@ -29,10 +31,18 @@ export function VideoPreview() {
   const containerRef = useRef<HTMLDivElement>(null)
   const previewMaxWidth = useSignal<number | null>(null)
   const playbackSpeed = useSignal(1)
-  const previewVolume = useSignal(1)
-  const previewMuted = useSignal(false)
+  const localVolume = useSignal(previewVolume.value)
   const resumeAfterSwitch = useRef(false)
   const rafId = useRef(0)
+
+  const volumeInputRef = useRef<HTMLInputElement>(null)
+
+  useSignalEffect(() => {
+    localVolume.value = previewVolume.value
+    if (volumeInputRef.current) {
+      volumeInputRef.current.value = String(previewVolume.value)
+    }
+  })
 
   function getActiveSegInfo() {
     const segId = selectedSegmentId.value ?? timeline.value[0]?.id
@@ -47,14 +57,20 @@ export function VideoPreview() {
   useSignalEffect(() => {
     const v = videoRef.current
     if (!v) return
+    // Always sync volume and mute state when they change
+    v.volume = previewVolume.value
+    v.muted = previewMuted.value
+  })
+
+  useSignalEffect(() => {
+    const v = videoRef.current
+    if (!v) return
     videoEl.current = v
     v.playbackRate = playbackSpeed.value
-    v.volume = previewVolume.value
     const info = getActiveSegInfo()
     if (!info) {
       v.removeAttribute('src')
       v.load()
-      v.muted = previewMuted.value
       currentSegmentDuration.value = 0
       currentPlaybackTime.value = 0
       playing.value = false
@@ -259,10 +275,13 @@ export function VideoPreview() {
             min="0"
             max="1"
             step="0.01"
-            value={previewVolume.value}
+            ref={volumeInputRef}
+            value={localVolume.value}
             disabled={previewMuted.value}
             onInput={(e) => {
-              previewVolume.value = Number((e.currentTarget as HTMLInputElement).value)
+              const val = Number((e.currentTarget as HTMLInputElement).value)
+              localVolume.value = val
+              previewVolume.value = val
             }}
             class="w-20 accent-violet-500 disabled:opacity-40"
             title="Preview volume"

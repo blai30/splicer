@@ -525,18 +525,23 @@ export function Timeline() {
           >
             <ZoomIn class="h-3.5 w-3.5" />
           </button>
-          <input
-            type="number"
-            min={ZOOM_MIN}
-            max={ZOOM_MAX}
-            value={Math.round(pxPerSec.value)}
-            onBlur={(e) => zoomTo(Number((e.currentTarget as HTMLInputElement).value))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') zoomTo(Number((e.currentTarget as HTMLInputElement).value))
-            }}
-            class="w-14 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            title="Zoom level (px/sec)"
-          />
+          <div class="relative">
+            <input
+              type="number"
+              min={ZOOM_MIN}
+              max={ZOOM_MAX}
+              value={Math.round(pxPerSec.value)}
+              onBlur={(e) => zoomTo(Number((e.currentTarget as HTMLInputElement).value))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') zoomTo(Number((e.currentTarget as HTMLInputElement).value))
+              }}
+              class="w-14 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 pr-5 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              title="Zoom level (px/sec)"
+            />
+            <span class="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-500">
+              %
+            </span>
+          </div>
         </div>
       </div>
 

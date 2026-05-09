@@ -78,7 +78,7 @@ export function ExportHistory() {
                         `${MIME_TYPES[rec.format]}:${rec.filename}:${rec.url}`
                       )
                     }}
-                    class="cursor-pointer text-violet-500 underline underline-offset-2 hover:text-violet-400 active:cursor-grabbing"
+                    class="cursor-pointer text-violet-600 underline underline-offset-2 hover:text-violet-400 active:cursor-grabbing dark:text-violet-400 dark:hover:text-violet-300"
                     title="Click to download or drag to desktop"
                   >
                     {rec.filename}
