@@ -1,46 +1,125 @@
-# Astro Starter Kit: Basics
+# Splicer
 
-```sh
-pnpm create astro@latest -- --template basics
+Splicer is a browser-based video timeline cutter built with Astro + Preact + FFmpeg (WebAssembly).
+
+It is designed for fast, local edits:
+
+- import clips by click or drag-and-drop
+- trim in/out points and split at the playhead
+- mute/unmute individual segments
+- preview edits with frame stepping and playback speed controls
+- export to MP4, WebM, or MKV directly in the browser
+
+No upload pipeline is used. Processing happens client-side via FFmpeg WASM.
+
+## Core Capabilities
+
+### Timeline Editing
+
+- Append one or more video files to the timeline.
+- Select segments and:
+  - set in-point
+  - set out-point
+  - cut at playhead
+  - mute/unmute
+  - delete
+- Drag segment trim handles for interactive left/right trimming.
+- Seek by clicking/dragging in the timeline.
+
+### Playback
+
+- Segment-aware preview player.
+- Playback speed: `0.25x` to `2x`.
+- Frame stepping controls.
+- Automatic segment advance during playback.
+
+### Export
+
+- Formats: `mp4`, `webm`, `mkv`
+- Quality presets: `lossless`, `high`, `medium`, `low`
+- Framerate options: `original`, `60`, `30`, `24`
+- Export progress + cancel support.
+- Export history table with one-click download and drag-to-desktop support.
+
+## Keyboard Shortcuts
+
+- `Space`: Play/Pause
+- `ArrowLeft` or `,`: Step back one frame
+- `ArrowRight` or `.`: Step forward one frame
+- `I`: Set in-point
+- `O`: Set out-point
+- `M`: Toggle mute on selected segment
+- `Delete` / `Backspace`: Delete selected segment
+
+## Tech Stack
+
+- Astro
+- Preact + Signals
+- Tailwind CSS
+- FFmpeg WASM (`@ffmpeg/ffmpeg`, `@ffmpeg/core`, `@ffmpeg/util`)
+
+## Requirements
+
+- Node.js `>= 22.12.0`
+- pnpm
+
+## Getting Started
+
+```bash
+pnpm install
+pnpm dev
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+Open `http://localhost:4321`.
 
-## 🚀 Project Structure
+## Scripts
 
-Inside of your Astro project, you'll see the following folders and files:
+| Command          | Description                 |
+| :--------------- | :-------------------------- |
+| `pnpm dev`       | Start Astro dev server      |
+| `pnpm build`     | Build production output     |
+| `pnpm preview`   | Run built app locally       |
+| `pnpm lint`      | Run oxlint                  |
+| `pnpm lint:fix`  | Run oxlint with fixes       |
+| `pnpm fmt`       | Format code with oxfmt      |
+| `pnpm fmt:check` | Check formatting with oxfmt |
 
-```text
-/
-├── public/
-│   └── favicon.svg
-├── src
-│   ├── assets
-│   │   └── astro.svg
-│   ├── components
-│   │   └── Welcome.astro
-│   ├── layouts
-│   │   └── Layout.astro
-│   └── pages
-│       └── index.astro
-└── package.json
-```
+## Implementation Notes
 
-To learn more about the folder structure of an Astro project, refer to [our guide on project structure](https://docs.astro.build/en/basics/project-structure/).
+### FFmpeg Core Delivery
 
-## 🧞 Commands
+This project serves `ffmpeg-core.js` from `node_modules` in development through a Vite plugin and copies it into `dist/ffmpeg` at build time.
 
-All commands are run from the root of the project, from a terminal:
+`ffmpeg-core.wasm` is expected at `public/ffmpeg/ffmpeg-core.wasm`.
 
-| Command                | Action                                           |
-| :--------------------- | :----------------------------------------------- |
-| `pnpm install`         | Installs dependencies                            |
-| `pnpm dev`             | Starts local dev server at `localhost:4321`      |
-| `pnpm build`           | Build your production site to `./dist/`          |
-| `pnpm preview`         | Preview your build locally, before deploying     |
-| `pnpm astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `pnpm astro -- --help` | Get help using the Astro CLI                     |
+### Cross-Origin Isolation
 
-## 👀 Want to learn more?
+The app config sets the following headers in dev and preview:
 
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Cross-Origin-Embedder-Policy: require-corp`
+
+These are required for stable FFmpeg WASM execution in the browser.
+
+### Export Path Optimization
+
+When all of the following are true:
+
+- quality = `lossless`
+- fps = `original`
+- no muted segments
+
+Splicer uses a stream-copy concat path (`-c copy`) to avoid re-encoding.
+
+## Usage Guidelines
+
+- Prefer source clips with compatible codecs/containers when aiming for fastest export.
+- Use `lossless + original fps` for near-instant remux exports when possible.
+- Use `high`/`medium` presets for smaller files when re-encoding is acceptable.
+- Large clips can consume significant memory in browser sessions; close/reload tab if memory pressure grows.
+
+## Current Limitations
+
+- Project state is in-memory only (no save/load project file).
+- Export history is session-only and clears on refresh.
+- No multi-track composition.

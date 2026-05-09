@@ -2,6 +2,10 @@ import { Moon, Sun } from 'lucide-preact'
 
 import { theme } from '@/lib/store'
 
+type ThemeSwitcherProps = {
+  class?: string
+}
+
 type ViewTransitionDocument = Document & {
   startViewTransition?: (callback: () => void) => { finished: Promise<void> }
 }
@@ -12,7 +16,7 @@ function setTheme(next: 'light' | 'dark') {
   localStorage.setItem('theme', next)
 }
 
-export function ThemeSwitcher() {
+export function ThemeSwitcher({ class: className }: ThemeSwitcherProps) {
   function toggleTheme(e: MouseEvent) {
     const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark'
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -44,7 +48,7 @@ export function ThemeSwitcher() {
   return (
     <button
       onClick={toggleTheme}
-      class="relative flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+      class={`relative flex items-center justify-center ${className ?? ''}`}
       title="Toggle theme"
       aria-label="Toggle theme"
     >
