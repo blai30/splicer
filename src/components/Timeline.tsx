@@ -1,7 +1,16 @@
 import { useSignal } from '@preact/signals'
-import { Upload } from 'lucide-preact'
+import {
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  Scissors,
+  Trash2,
+  Upload,
+  Volume2,
+  VolumeX,
+} from 'lucide-preact'
 import { useRef } from 'preact/hooks'
 
+import { cutAtPlayhead, deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
 import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
@@ -283,15 +292,16 @@ export function Timeline() {
   }
 
   const isEmpty = timeline.value.length === 0
+  const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)
+  const disabled = !seg
+  const toolBtn =
+    'flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
 
   return (
     <div
-      class={`relative flex shrink-0 flex-col overflow-hidden rounded-lg transition-colors ${
-        draggingOver.value
-          ? 'bg-violet-50 ring-2 ring-violet-400 dark:bg-violet-950/40'
-          : 'bg-slate-100 dark:bg-slate-900'
+      class={`relative flex h-48 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur transition-colors dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30 ${
+        draggingOver.value ? 'ring-2 ring-violet-400' : ''
       }`}
-      style={{ height: '160px' }}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -302,10 +312,61 @@ export function Timeline() {
       }}
     >
       {/* Header */}
-      <div class="flex shrink-0 items-center gap-2.5 px-3 py-1.5">
-        <span class="text-xs font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+      <div class="flex shrink-0 items-start gap-2.5 px-4 pt-3 pb-2">
+        <span class="pt-1 text-xs font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Timeline
         </span>
+        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          <button
+            class={toolBtn}
+            disabled={disabled}
+            onClick={setInPoint}
+            title="Set in-point (I)"
+          >
+            <ArrowLeftToLine class="h-3.5 w-3.5" />
+            In
+          </button>
+
+          <button
+            class={toolBtn}
+            disabled={disabled}
+            onClick={setOutPoint}
+            title="Set out-point (O)"
+          >
+            <ArrowRightToLine class="h-3.5 w-3.5" />
+            Out
+          </button>
+
+          <button
+            class={toolBtn}
+            disabled={disabled}
+            onClick={cutAtPlayhead}
+            title="Split at playhead (C)"
+          >
+            <Scissors class="h-3.5 w-3.5" />
+            Cut
+          </button>
+
+          <button
+            class={toolBtn}
+            disabled={disabled}
+            onClick={toggleMute}
+            title="Toggle mute"
+          >
+            {seg?.muted ? <VolumeX class="h-3.5 w-3.5" /> : <Volume2 class="h-3.5 w-3.5" />}
+            {seg?.muted ? 'Unmute' : 'Mute'}
+          </button>
+
+          <button
+            class="flex items-center gap-1.5 rounded-md bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
+            disabled={disabled}
+            onClick={deleteSegment}
+            title="Delete segment"
+          >
+            <Trash2 class="h-3.5 w-3.5" />
+            Delete
+          </button>
+        </div>
         <span class="ml-auto text-xs text-slate-400 dark:text-slate-500">
           {formatTime(totalDuration)}
         </span>
@@ -319,22 +380,28 @@ export function Timeline() {
       >
         {isEmpty ? (
           <div
-            class="flex h-full cursor-pointer items-center justify-center gap-2"
+            class="flex h-full cursor-pointer items-center justify-center gap-2 px-4 pb-5"
             onClick={() => fileInputRef.current?.click()}
           >
-            {draggingOver.value ? (
-              <p class="text-sm font-medium text-violet-500">Drop to import</p>
-            ) : (
-              <>
-                <Upload class="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                <p class="text-xs text-slate-400 dark:text-slate-500">
-                  Click or drop video files to import
-                </p>
-              </>
-            )}
+            <div
+              class={`flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-xl border-[3px] border-dashed px-5 py-4 text-center transition-colors ${
+                draggingOver.value
+                  ? 'border-violet-500 bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300'
+                  : 'border-slate-300 bg-slate-50 text-slate-500 dark:border-slate-600 dark:bg-slate-800/30 dark:text-slate-400'
+              }`}
+            >
+              {draggingOver.value ? (
+                <p class="text-sm font-semibold">Drop to import</p>
+              ) : (
+                <>
+                  <Upload class="h-4 w-4" />
+                  <p class="text-sm">Click or drop video files to import</p>
+                </>
+              )}
+            </div>
           </div>
         ) : (
-          <div class="relative flex h-full items-center gap-1 px-3">
+          <div class="relative flex h-full items-start gap-1 px-4 pt-12">
             {timeline.value.map((seg) => (
               <SegmentBlock key={seg.id} seg={seg} />
             ))}
@@ -355,7 +422,7 @@ export function Timeline() {
 
       {/* Drop overlay when timeline has content */}
       {draggingOver.value && !isEmpty && (
-        <div class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-violet-400 bg-violet-50/60 dark:bg-violet-950/40">
+        <div class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl border-2 border-dashed border-violet-400 bg-violet-50/60 dark:bg-violet-950/40">
           <p class="text-sm font-medium text-violet-500">Drop to append</p>
         </div>
       )}
