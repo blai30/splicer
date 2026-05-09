@@ -1,6 +1,13 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script is:inline>
+      const stored = localStorage.getItem('theme')
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      if (stored === 'dark' || (!stored && prefersDark)) {
+        document.documentElement.classList.add('dark')
+      }
+    </script>
     <script is:inline src={`${import.meta.env.BASE_URL}coi-serviceworker.min.js`}></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
@@ -13,11 +20,3 @@
     <slot />
   </body>
 </html>
-
-<script is:inline>
-  const stored = localStorage.getItem('theme')
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-  if (stored === 'dark' || (!stored && prefersDark)) {
-    document.documentElement.classList.add('dark')
-  }
-</script>
