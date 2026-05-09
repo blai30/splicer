@@ -1,23 +1,32 @@
 import { useRef } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
-import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '../lib/store'
-import type { Clip, Segment } from '../lib/types'
+import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
+import type { Clip, Segment } from '@/lib/types'
 
 const PX_PER_SEC = 80
-const GAP_PX = 4     // gap-1
+const GAP_PX = 4 // gap-1
 const PADDING_PX = 12 // px-3
 
-const ACCEPTED = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska']
+const ACCEPTED = [
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  'video/x-msvideo',
+  'video/x-matroska',
+]
 
 function isVideoFile(file: File): boolean {
   return ACCEPTED.includes(file.type) || /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name)
 }
 
-function getVideoMetadata(url: string): Promise<{ duration: number; width: number; height: number }> {
+function getVideoMetadata(
+  url: string
+): Promise<{ duration: number; width: number; height: number }> {
   return new Promise((resolve) => {
     const v = document.createElement('video')
     v.preload = 'metadata'
-    v.onloadedmetadata = () => resolve({ duration: v.duration, width: v.videoWidth, height: v.videoHeight })
+    v.onloadedmetadata = () =>
+      resolve({ duration: v.duration, width: v.videoWidth, height: v.videoHeight })
     v.src = url
   })
 }
@@ -131,7 +140,7 @@ function SegmentBlock({ seg }: { seg: Segment }) {
 
   return (
     <div
-      class={`relative flex items-center h-14 rounded cursor-pointer select-none shrink-0 overflow-hidden ${
+      class={`relative flex h-14 shrink-0 cursor-pointer items-center overflow-hidden rounded select-none ${
         isSelected ? 'ring-2 ring-violet-400' : 'ring-1 ring-black/20'
       } ${clipColor(seg.clipId)}`}
       style={{ width: `${width}px` }}
@@ -141,26 +150,26 @@ function SegmentBlock({ seg }: { seg: Segment }) {
         <img
           src={clip.thumbnail}
           alt={clip.name}
-          class="absolute inset-0 w-full h-full object-cover opacity-30"
+          class="absolute inset-0 h-full w-full object-cover opacity-30"
           draggable={false}
         />
       )}
-      <span class="relative z-10 px-2 text-xs font-medium text-white truncate">
+      <span class="relative z-10 truncate px-2 text-xs font-medium text-white">
         {clip?.name ?? 'Clip'}
         {seg.muted && <span class="ml-1 opacity-70">🔇</span>}
       </span>
-      <span class="relative z-10 ml-auto pr-2 text-xs text-white/70 shrink-0">
+      <span class="relative z-10 ml-auto shrink-0 pr-2 text-xs text-white/70">
         {formatTime(dur)}
       </span>
       <div
         ref={leftRef}
-        class="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize bg-white/40 hover:bg-white/70 transition-colors z-20"
+        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70"
         onPointerDown={onTrimPointerDown('left')}
         onClick={(e) => e.stopPropagation()}
       />
       <div
         ref={rightRef}
-        class="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize bg-white/40 hover:bg-white/70 transition-colors z-20"
+        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70"
         onPointerDown={onTrimPointerDown('right')}
         onClick={(e) => e.stopPropagation()}
       />
@@ -207,7 +216,9 @@ export function Timeline() {
     seekFromPointer(e)
     trackEl.setPointerCapture(e.pointerId)
 
-    function onMove(mv: PointerEvent) { seekFromPointer(mv) }
+    function onMove(mv: PointerEvent) {
+      seekFromPointer(mv)
+    }
     function onUp() {
       trackEl.removeEventListener('pointermove', onMove)
       trackEl.removeEventListener('pointerup', onUp)
@@ -229,7 +240,7 @@ export function Timeline() {
       const x = mv.clientX - rect.left + trackEl.scrollLeft
       const t = Math.max(
         activeSeg!.startTime,
-        Math.min(activeSeg!.endTime, activeSeg!.startTime + (x - segStartX) / PX_PER_SEC),
+        Math.min(activeSeg!.endTime, activeSeg!.startTime + (x - segStartX) / PX_PER_SEC)
       )
       playheadTime.value = t
       const v = videoEl.current
@@ -273,9 +284,9 @@ export function Timeline() {
 
   return (
     <div
-      class={`relative flex flex-col rounded-lg shrink-0 overflow-hidden transition-colors ${
+      class={`relative flex shrink-0 flex-col overflow-hidden rounded-lg transition-colors ${
         draggingOver.value
-          ? 'bg-violet-50 dark:bg-violet-950/40 ring-2 ring-violet-400'
+          ? 'bg-violet-50 ring-2 ring-violet-400 dark:bg-violet-950/40'
           : 'bg-slate-100 dark:bg-slate-900'
       }`}
       style={{ height: '160px' }}
@@ -289,11 +300,11 @@ export function Timeline() {
       }}
     >
       {/* Header */}
-      <div class="px-3 py-1.5 flex items-center gap-2.5 shrink-0">
-        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+      <div class="flex shrink-0 items-center gap-2.5 px-3 py-1.5">
+        <span class="text-xs font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Timeline
         </span>
-        <span class="text-xs text-slate-400 dark:text-slate-500 ml-auto">
+        <span class="ml-auto text-xs text-slate-400 dark:text-slate-500">
           {formatTime(totalDuration)}
         </span>
       </div>
@@ -301,40 +312,52 @@ export function Timeline() {
       {/* Track */}
       <div
         ref={trackRef}
-        class="flex-1 min-h-0 overflow-x-auto overflow-y-hidden relative"
+        class="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
         onPointerDown={onTrackPointerDown}
       >
         {isEmpty ? (
           <div
-            class="flex items-center justify-center h-full gap-2 cursor-pointer"
+            class="flex h-full cursor-pointer items-center justify-center gap-2"
             onClick={() => fileInputRef.current?.click()}
           >
             {draggingOver.value ? (
               <p class="text-sm font-medium text-violet-500">Drop to import</p>
             ) : (
               <>
-                <svg class="w-4 h-4 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                <svg
+                  class="h-4 w-4 text-slate-400 dark:text-slate-500"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                  />
                 </svg>
-                <p class="text-xs text-slate-400 dark:text-slate-500">Click or drop video files to import</p>
+                <p class="text-xs text-slate-400 dark:text-slate-500">
+                  Click or drop video files to import
+                </p>
               </>
             )}
           </div>
         ) : (
-          <div class="flex items-center gap-1 h-full px-3 relative">
+          <div class="relative flex h-full items-center gap-1 px-3">
             {timeline.value.map((seg) => (
               <SegmentBlock key={seg.id} seg={seg} />
             ))}
             <div
               data-playhead
-              class="absolute top-0 bottom-0 w-3 -translate-x-1/2 cursor-ew-resize z-30"
+              class="absolute top-0 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize"
               style={{ left: `${playheadLeft}px` }}
               onPointerDown={onPlayheadPointerDown}
             >
-              <div class="absolute inset-x-0 top-0 bottom-0 flex justify-center pointer-events-none">
-                <div class="w-0.5 h-full bg-violet-400" />
+              <div class="pointer-events-none absolute inset-x-0 top-0 bottom-0 flex justify-center">
+                <div class="h-full w-0.5 bg-violet-400" />
               </div>
-              <div class="absolute top-0 left-1/2 w-2.5 h-2.5 bg-violet-400 rounded-full -translate-x-1/2 -translate-y-1 pointer-events-none" />
+              <div class="pointer-events-none absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1 rounded-full bg-violet-400" />
             </div>
           </div>
         )}
@@ -342,7 +365,7 @@ export function Timeline() {
 
       {/* Drop overlay when timeline has content */}
       {draggingOver.value && !isEmpty && (
-        <div class="absolute inset-0 rounded-lg border-2 border-dashed border-violet-400 bg-violet-50/60 dark:bg-violet-950/40 flex items-center justify-center pointer-events-none">
+        <div class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-violet-400 bg-violet-50/60 dark:bg-violet-950/40">
           <p class="text-sm font-medium text-violet-500">Drop to append</p>
         </div>
       )}

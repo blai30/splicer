@@ -1,5 +1,5 @@
-import { exportHistory } from '../lib/store'
-import type { ExportRecord } from '../lib/types'
+import { exportHistory } from '@/lib/store'
+import type { ExportRecord } from '@/lib/types'
 
 function formatDuration(s: number): string {
   const m = Math.floor(s / 60)
@@ -8,6 +8,8 @@ function formatDuration(s: number): string {
 }
 
 function formatSize(bytes: number): string {
+  if (bytes >= 1_000_000_000_000) return `${(bytes / 1_000_000_000_000).toFixed(1)} TB`
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
   if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(0)} KB`
   return `${bytes} B`
@@ -24,64 +26,89 @@ const MIME_TYPES: Record<ExportRecord['format'], string> = {
 }
 
 export function ExportHistory() {
-  if (exportHistory.value.length === 0) return null
+  const isEmpty = exportHistory.value.length === 0
 
-  const th = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400'
-  const td = 'px-3 py-2 text-xs text-slate-700 dark:text-slate-300 whitespace-nowrap'
+  const th =
+    'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400'
+  const td = 'px-3 py-3 text-sm text-slate-700 dark:text-slate-300 whitespace-nowrap'
 
   return (
-    <div class="flex flex-col rounded-lg bg-slate-100 dark:bg-slate-900 shrink-0 overflow-hidden">
-      <div class="px-3 py-1.5 flex items-center gap-2.5 shrink-0 border-b border-slate-200 dark:border-slate-800">
-        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+    <div class="flex shrink-0 flex-col overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-900">
+      <div class="flex shrink-0 items-center gap-2.5 px-3 py-1.5">
+        <span class="text-xs font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Exports
         </span>
-        <button
-          onClick={() => { exportHistory.value = [] }}
-          class="ml-auto text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-        >
-          Clear
-        </button>
+        {!isEmpty && (
+          <button
+            onClick={() => {
+              exportHistory.value = []
+            }}
+            class="ml-auto flex items-center gap-1 text-xs text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+          >
+            <svg
+              class="h-3 w-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="m16 22-1-4" />
+              <path d="M19 14a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2h-3a1 1 0 0 1-1-1V4a2 2 0 0 0-4 0v5a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1" />
+              <path d="M19 14H5l-1.973 6.767A1 1 0 0 0 4 22h16a1 1 0 0 0 .973-1.233z" />
+              <path d="m8 22 1-4" />
+            </svg>
+            Clear
+          </button>
+        )}
       </div>
-      <div class="overflow-x-auto">
-        <table class="w-full border-collapse">
-          <thead>
-            <tr class="border-b border-slate-200 dark:border-slate-800">
-              <th class={th}>File</th>
-              <th class={th}>Duration</th>
-              <th class={th}>Size</th>
-              <th class={th}>FPS</th>
-              <th class={th}>Dimensions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {exportHistory.value.map((rec, i) => (
-              <tr
-                key={rec.id}
-                class={i % 2 === 0 ? '' : 'bg-slate-50 dark:bg-slate-800/40'}
-              >
-                <td class={td}>
-                  <a
-                    href={rec.url}
-                    download={rec.filename}
-                    draggable
-                    onDragStart={(e: DragEvent) => {
-                      e.dataTransfer?.setData('DownloadURL', `${MIME_TYPES[rec.format]}:${rec.filename}:${rec.url}`)
-                    }}
-                    class="text-violet-500 hover:text-violet-400 underline underline-offset-2 cursor-pointer active:cursor-grabbing"
-                    title="Click to download or drag to desktop"
-                  >
-                    {rec.filename}
-                  </a>
-                </td>
-                <td class={td}>{formatDuration(rec.duration)}</td>
-                <td class={td}>{formatSize(rec.size)}</td>
-                <td class={td}>{formatFps(rec.fps)}</td>
-                <td class={td}>{rec.width && rec.height ? `${rec.width}×${rec.height}` : '—'}</td>
+      {isEmpty ? (
+        <div class="flex items-center justify-center px-3 py-10">
+          <p class="text-xs text-slate-400 dark:text-slate-500">Export a video to see files here</p>
+        </div>
+      ) : (
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200 dark:border-slate-800">
+                <th class={th}>File</th>
+                <th class={th}>Duration</th>
+                <th class={th}>Size</th>
+                <th class={th}>FPS</th>
+                <th class={th}>Dimensions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {exportHistory.value.map((rec, i) => (
+                <tr key={rec.id} class={i % 2 === 0 ? '' : 'bg-slate-50 dark:bg-slate-800/40'}>
+                  <td class={td}>
+                    <a
+                      href={rec.url}
+                      download={rec.filename}
+                      draggable
+                      onDragStart={(e: DragEvent) => {
+                        e.dataTransfer?.setData(
+                          'DownloadURL',
+                          `${MIME_TYPES[rec.format]}:${rec.filename}:${rec.url}`
+                        )
+                      }}
+                      class="cursor-pointer text-violet-500 underline underline-offset-2 hover:text-violet-400 active:cursor-grabbing"
+                      title="Click to download or drag to desktop"
+                    >
+                      {rec.filename}
+                    </a>
+                  </td>
+                  <td class={td}>{formatDuration(rec.duration)}</td>
+                  <td class={td}>{formatSize(rec.size)}</td>
+                  <td class={td}>{formatFps(rec.fps)}</td>
+                  <td class={td}>{rec.width && rec.height ? `${rec.width}×${rec.height}` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

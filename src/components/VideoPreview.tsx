@@ -1,6 +1,15 @@
 import { useSignal, useSignalEffect } from '@preact/signals'
-import { useRef } from 'preact/hooks'
-import { clips, currentPlaybackTime, currentSegmentDuration, playing, playheadTime, selectedSegmentId, timeline, videoEl } from '../lib/store'
+import { useEffect, useRef } from 'preact/hooks'
+import {
+  clips,
+  currentPlaybackTime,
+  currentSegmentDuration,
+  playing,
+  playheadTime,
+  selectedSegmentId,
+  timeline,
+  videoEl,
+} from '@/lib/store'
 
 const FRAME_STEP = 1 / 30
 
@@ -16,6 +25,7 @@ export function VideoPreview() {
   const containerRef = useRef<HTMLDivElement>(null)
   const previewMaxWidth = useSignal<number | null>(null)
   const resumeAfterSwitch = useRef(false)
+  const rafId = useRef(0)
 
   function getActiveSegInfo() {
     const segId = selectedSegmentId.value ?? timeline.value[0]?.id
@@ -66,14 +76,21 @@ export function VideoPreview() {
     }
   })
 
-  function onTimeUpdate() {
+  function tickPlayhead() {
     const v = videoRef.current
     if (!v) return
     const info = getActiveSegInfo()
     const segStart = info?.start ?? 0
-    const segEnd = info?.end ?? v.duration
-    currentPlaybackTime.value = Math.max(0, v.currentTime - segStart)
     playheadTime.value = v.currentTime
+    currentPlaybackTime.value = Math.max(0, v.currentTime - segStart)
+    rafId.current = requestAnimationFrame(tickPlayhead)
+  }
+
+  function onTimeUpdate() {
+    const v = videoRef.current
+    if (!v) return
+    const info = getActiveSegInfo()
+    const segEnd = info?.end ?? v.duration
 
     if (v.currentTime >= segEnd) {
       const segs = timeline.value
@@ -128,12 +145,66 @@ export function VideoPreview() {
     currentPlaybackTime.value = Math.max(0, t - segStart)
   }
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault()
+          togglePlay()
+          break
+        case 'ArrowLeft':
+        case ',':
+          e.preventDefault()
+          stepBack()
+          break
+        case 'ArrowRight':
+        case '.':
+          e.preventDefault()
+          stepForward()
+          break
+        case 'i':
+          setInPoint()
+          break
+        case 'o':
+          setOutPoint()
+          break
+        case 'm': {
+          const segId = selectedSegmentId.value
+          if (!segId) break
+          timeline.value = timeline.value.map((s) =>
+            s.id === segId ? { ...s, muted: !s.muted } : s
+          )
+          break
+        }
+        case 'Delete':
+        case 'Backspace': {
+          const segId = selectedSegmentId.value
+          if (!segId) break
+          const segs = timeline.value
+          const idx = segs.findIndex((s) => s.id === segId)
+          const next = segs.filter((s) => s.id !== segId)
+          timeline.value = next
+          selectedSegmentId.value = (next[idx] ?? next[idx - 1] ?? null)?.id ?? null
+          break
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      cancelAnimationFrame(rafId.current)
+    }
+  }, [])
+
   function onResizePointerDown(e: PointerEvent) {
     e.stopPropagation()
     const el = e.currentTarget as HTMLElement
     el.setPointerCapture(e.pointerId)
     const startX = e.clientX
-    const startW = previewMaxWidth.value ?? (containerRef.current?.offsetWidth ?? 800)
+    const startW = previewMaxWidth.value ?? containerRef.current?.offsetWidth ?? 800
     function onMove(mv: PointerEvent) {
       previewMaxWidth.value = Math.max(320, startW + (mv.clientX - startX))
     }
@@ -146,70 +217,95 @@ export function VideoPreview() {
   }
 
   const hasContent = timeline.value.length > 0
-  const btnIcon = 'flex items-center justify-center w-7 h-7 rounded-md text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
+  const btnIcon =
+    'flex items-center justify-center w-7 h-7 rounded-md text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
 
   return (
     <div
       ref={containerRef}
-      class="flex flex-col rounded-lg overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-900 relative w-full"
+      class="relative flex w-full shrink-0 flex-col overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-900"
       style={previewMaxWidth.value ? { maxWidth: `${previewMaxWidth.value}px` } : undefined}
     >
-      <div class="aspect-video w-full bg-black relative">
+      <div class="relative aspect-video w-full bg-black">
         {!hasContent && (
           <div class="absolute inset-0 flex items-center justify-center">
-            <p class="text-slate-500 text-sm select-none">Drop video files onto the timeline</p>
+            <p class="text-sm text-slate-500 select-none">Drop video files onto the timeline</p>
           </div>
         )}
         <video
           ref={videoRef}
-          class="absolute inset-0 w-full h-full object-contain"
+          class="absolute inset-0 h-full w-full object-contain"
           onTimeUpdate={onTimeUpdate}
-          onPlay={() => { playing.value = true }}
-          onPause={() => { playing.value = false }}
+          onPlay={() => {
+            playing.value = true
+            rafId.current = requestAnimationFrame(tickPlayhead)
+          }}
+          onPause={() => {
+            playing.value = false
+            cancelAnimationFrame(rafId.current)
+          }}
         />
       </div>
 
       {/* Controls */}
-      <div class="flex items-center px-4 py-2 relative">
-        <div class="flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
-          <button onClick={stepBack} disabled={!hasContent} class={btnIcon} title="Step back one frame">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+      <div class="relative flex items-center px-4 py-2">
+        <div class="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
+          <button
+            onClick={stepBack}
+            disabled={!hasContent}
+            class={btnIcon}
+            title="Step back one frame (←)"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
             </svg>
           </button>
           <button
             onClick={togglePlay}
             disabled={!hasContent}
-            class="flex items-center justify-center w-8 h-8 rounded-full bg-violet-500 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors mx-1"
+            class="mx-1 flex h-8 w-8 items-center justify-center rounded-full bg-violet-500 text-white transition-colors hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {playing.value ? (
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
                 <rect x="6" y="4" width="4" height="16" rx="1" />
                 <rect x="14" y="4" width="4" height="16" rx="1" />
               </svg>
             ) : (
-              <svg class="w-3.5 h-3.5 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+              <svg class="ml-0.5 h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M5 3l14 9-14 9V3z" />
               </svg>
             )}
           </button>
-          <button onClick={stepForward} disabled={!hasContent} class={btnIcon} title="Step forward one frame">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+          <button
+            onClick={stepForward}
+            disabled={!hasContent}
+            class={btnIcon}
+            title="Step forward one frame (→)"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6 18 14.5 12 6 6v12zm8-12v12h2V6h-2z" />
             </svg>
           </button>
         </div>
-        <span class="ml-auto text-xs tabular-nums text-slate-500 dark:text-slate-400">
-          {formatTimecode(currentPlaybackTime.value)} / {formatTimecode(currentSegmentDuration.value)}
+        <span class="ml-auto text-xs text-slate-500 tabular-nums dark:text-slate-400">
+          {formatTimecode(currentPlaybackTime.value)} /{' '}
+          {formatTimecode(currentSegmentDuration.value)}
         </span>
       </div>
 
       {/* Resize handle */}
       <div
-        class="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-10 flex items-end justify-end p-1 opacity-40 hover:opacity-80 transition-opacity"
+        class="absolute right-0 bottom-0 z-10 flex h-5 w-5 cursor-nwse-resize items-end justify-end p-1 opacity-40 transition-opacity hover:opacity-80"
         onPointerDown={onResizePointerDown}
       >
-        <svg class="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <svg
+          class="h-3.5 w-3.5 text-slate-500 dark:text-slate-400"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        >
           <path d="M2 10L10 2M6 10L10 6" />
         </svg>
       </div>

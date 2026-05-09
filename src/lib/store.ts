@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals'
-import type { Clip, ExportFormat, ExportRecord, Framerate, Quality, Segment } from './types'
+import type { Clip, ExportFormat, ExportRecord, Framerate, Quality, Segment } from '@/lib/types'
 
 export const clips = signal<Clip[]>([])
 export const timeline = signal<Segment[]>([])
@@ -14,7 +14,7 @@ export const framerate = signal<Framerate>('original')
 export const theme = signal<'light' | 'dark'>(
   typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
     ? 'dark'
-    : 'light',
+    : 'light'
 )
 
 export const playing = signal(false)
