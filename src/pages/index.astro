@@ -6,9 +6,17 @@ import { Timeline } from '@/components/Timeline'
 import { ExportPanel } from '@/components/ExportPanel'
 import { ExportHistory } from '@/components/ExportHistory'
 import '@/styles/global.css'
+
+const pageTitle = 'Splicer | Fast Browser Video Trimmer'
+const pageDescription =
+  'Cut and export short video clips in your browser with local FFmpeg processing. No account and no upload required.'
 ---
 
-<Layout>
+<Layout
+  title={pageTitle}
+  description={pageDescription}
+  ogImage="/splash/hero-social.png"
+>
   <main
     class="mx-auto flex h-full w-full max-w-7xl flex-col gap-3 px-3 py-3 md:px-4 md:py-4"
   >

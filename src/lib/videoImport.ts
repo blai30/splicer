@@ -1,3 +1,6 @@
+import { fetchFile } from '@ffmpeg/util'
+
+import { getFFmpeg } from '@/lib/ffmpeg'
 import { clips, timeline } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
@@ -25,7 +28,29 @@ export function getVideoMetadata(
   })
 }
 
-export async function extractWaveformPeaks(file: File, peakCount = 2000): Promise<number[]> {
+function getPeaksFromSamples(samples: Float32Array, peakCount: number): number[] {
+  if (samples.length === 0) return []
+  const target = Math.max(64, Math.floor(peakCount))
+  const samplesPerPeak = Math.max(1, Math.floor(samples.length / target))
+  const peaks: number[] = []
+
+  for (let i = 0; i < samples.length; i += samplesPerPeak) {
+    const end = Math.min(samples.length, i + samplesPerPeak)
+    let peak = 0
+    for (let s = i; s < end; s++) {
+      const amp = Math.abs(samples[s])
+      if (amp > peak) peak = amp
+    }
+    peaks.push(peak)
+  }
+
+  return peaks
+}
+
+async function extractWaveformPeaksWithAudioContext(
+  file: File,
+  peakCount = 2000
+): Promise<number[]> {
   if (typeof window === 'undefined') return []
 
   const AudioCtx =
@@ -41,28 +66,97 @@ export async function extractWaveformPeaks(file: File, peakCount = 2000): Promis
     const totalSamples = decoded.length
     if (!channels || !totalSamples) return []
 
-    const target = Math.max(64, Math.floor(peakCount))
-    const samplesPerPeak = Math.max(1, Math.floor(totalSamples / target))
-    const peaks: number[] = []
-
-    for (let i = 0; i < totalSamples; i += samplesPerPeak) {
-      const end = Math.min(totalSamples, i + samplesPerPeak)
-      let peak = 0
-      for (let c = 0; c < channels; c++) {
-        const data = decoded.getChannelData(c)
-        for (let s = i; s < end; s++) {
-          const amp = Math.abs(data[s])
-          if (amp > peak) peak = amp
-        }
+    const merged = new Float32Array(totalSamples)
+    for (let c = 0; c < channels; c++) {
+      const data = decoded.getChannelData(c)
+      for (let i = 0; i < totalSamples; i++) {
+        const amp = Math.abs(data[i])
+        if (amp > merged[i]) merged[i] = amp
       }
-      peaks.push(peak)
     }
 
-    return peaks
+    return getPeaksFromSamples(merged, peakCount)
   } catch {
     return []
   } finally {
     void ctx.close()
+  }
+}
+
+async function extractWaveformPeaksWithFfmpeg(file: File, peakCount = 2000): Promise<number[]> {
+  const ffmpeg = await getFFmpeg()
+  const ext = file.name.split('.').pop() ?? 'mp4'
+  const runId = crypto.randomUUID().replace(/-/g, '')
+  const inputName = `waveform_${runId}.${ext}`
+  const outputName = `waveform_${runId}.f32`
+
+  try {
+    await ffmpeg.writeFile(inputName, await fetchFile(file))
+    const ret = await ffmpeg.exec([
+      '-i',
+      inputName,
+      '-vn',
+      '-map',
+      'a:0?',
+      '-ac',
+      '1',
+      '-ar',
+      '8000',
+      '-f',
+      'f32le',
+      outputName,
+    ])
+    if (ret !== 0) return []
+
+    const pcm = (await ffmpeg.readFile(outputName)) as Uint8Array
+    const aligned = Math.floor(pcm.byteLength / 4) * 4
+    if (aligned === 0) return []
+
+    const view = new Float32Array(pcm.buffer, pcm.byteOffset, aligned / 4)
+    return getPeaksFromSamples(view, peakCount)
+  } catch {
+    return []
+  } finally {
+    try {
+      await ffmpeg.deleteFile(inputName)
+    } catch {
+      // Best effort cleanup for temp input file.
+    }
+    try {
+      await ffmpeg.deleteFile(outputName)
+    } catch {
+      // Best effort cleanup for temp output file.
+    }
+  }
+}
+
+export async function extractWaveformPeaks(file: File, peakCount = 2000): Promise<number[]> {
+  const byAudioContext = await extractWaveformPeaksWithAudioContext(file, peakCount)
+  if (byAudioContext.length > 0) return byAudioContext
+  return extractWaveformPeaksWithFfmpeg(file, peakCount)
+}
+
+const waveformPending = new Set<string>()
+
+export async function ensureClipWaveform(clipId: string): Promise<void> {
+  const clip = clips.value.find((c) => c.id === clipId)
+  if (!clip || (clip.waveformPeaks?.length ?? 0) > 0) return
+  if (waveformPending.has(clipId)) return
+
+  waveformPending.add(clipId)
+  try {
+    const peaks = await extractWaveformPeaks(clip.file)
+    if (peaks.length === 0) return
+    clips.value = clips.value.map((c) =>
+      c.id === clipId
+        ? {
+            ...c,
+            waveformPeaks: peaks,
+          }
+        : c
+    )
+  } finally {
+    waveformPending.delete(clipId)
   }
 }
 

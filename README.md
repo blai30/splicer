@@ -1,5 +1,7 @@
 # Splicer
 
+![Splicer hero splash](public/splash/hero-social.png)
+
 Splicer is a browser-based video timeline cutter built with Astro + Preact + FFmpeg (WebAssembly).
 
 It is designed for fast, local edits:
@@ -11,6 +13,16 @@ It is designed for fast, local edits:
 - export to MP4, WebM, or MKV directly in the browser
 
 No upload pipeline is used. Processing happens client-side via FFmpeg WASM.
+
+## App Screenshots
+
+### Light Theme
+
+![Splicer light theme](public/screenshots/app-light.png)
+
+### Dark Theme
+
+![Splicer dark theme](public/screenshots/app-dark.png)
 
 ## Core Capabilities
 

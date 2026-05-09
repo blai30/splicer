@@ -128,7 +128,7 @@ export function ExportPanel() {
   if (!hasSegments) return null
 
   return (
-    <div class="sticky bottom-3 z-20 flex shrink-0 flex-col gap-3 rounded-xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30">
+    <div class="flex shrink-0 flex-col gap-3 rounded-xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30">
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Export

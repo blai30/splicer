@@ -1,11 +1,12 @@
 import clsx from 'clsx/lite'
-import { useRef } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
 import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
 import { GAP_PX, clipColor, dragState, getSegmentStartX, pxPerSec } from '@/lib/timelineState'
 import type { Segment } from '@/lib/types'
+import { ensureClipWaveform } from '@/lib/videoImport'
 
 export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: boolean }) {
   const clip = clips.value.find((c) => c.id === seg.clipId)
@@ -14,6 +15,12 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
   const isSelected = selectedSegmentId.value === seg.id
   const leftRef = useRef<HTMLDivElement>(null)
   const rightRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!clip) return
+    if ((clip.waveformPeaks?.length ?? 0) > 0) return
+    void ensureClipWaveform(clip.id)
+  }, [clip?.id, clip?.waveformPeaks?.length])
 
   function onTrimPointerDown(side: 'left' | 'right') {
     return (e: PointerEvent) => {
@@ -125,7 +132,7 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
     >
       {clip && (
         <WaveformView
-          peaks={clip.waveformPeaks}
+          peaks={clip.waveformPeaks ?? []}
           clipDuration={clip.duration}
           segmentStart={seg.startTime}
           segmentEnd={seg.endTime}

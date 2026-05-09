@@ -1,24 +1,97 @@
+---
+interface Props {
+  title?: string
+  description?: string
+  canonical?: string
+  ogImage?: string
+  noindex?: boolean
+}
+
+const {
+  title = 'Splicer | Browser Video Trimmer',
+  description = 'Trim and export video clips directly in your browser with local processing and no upload required.',
+  canonical,
+  ogImage,
+  noindex = false,
+} = Astro.props
+
+const siteName = 'Splicer'
+const pageUrl = canonical ?? Astro.url.href
+const ogImageUrl = ogImage
+  ? new URL(ogImage, Astro.url).toString()
+  : new URL('/splash/hero-social.png', Astro.url).toString()
+const socialImageAlt =
+  'Splicer app preview showing timeline-based browser video trimming'
+const robots = noindex ? 'noindex, nofollow' : 'index, follow'
+
+const webAppJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: siteName,
+  applicationCategory: 'MultimediaApplication',
+  operatingSystem: 'Web Browser',
+  url: pageUrl,
+  description,
+}
+---
+
 <!doctype html>
 <html lang="en">
   <head>
     <script is:inline>
       const stored = localStorage.getItem('theme')
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      const prefersDark = window.matchMedia(
+        '(prefers-color-scheme: dark)'
+      ).matches
       const isDark = stored === 'dark' || (!stored && prefersDark)
       if (isDark) {
         document.documentElement.classList.add('dark')
         document.documentElement.style.backgroundColor = 'black'
       }
     </script>
-    <script is:inline src={`${import.meta.env.BASE_URL}coi-serviceworker.min.js`}></script>
+    <script
+      is:inline
+      src={`${import.meta.env.BASE_URL}coi-serviceworker.min.js`}></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="icon" href="./favicon.ico" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href={`${import.meta.env.BASE_URL}brand/logo-mark.svg`}
+    />
+    <link rel="icon" href={`${import.meta.env.BASE_URL}brand/logo-mark.svg`} />
     <meta name="generator" content={Astro.generator} />
-    <title>Splicer</title>
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content={robots} />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="canonical" href={pageUrl} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={socialImageAlt} />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:image:alt" content={socialImageAlt} />
+
+    <script
+      is:inline
+      type="application/ld+json"
+      set:html={JSON.stringify(webAppJsonLd)}
+    />
   </head>
-  <body class="h-screen bg-linear-to-b from-slate-100 via-slate-200 to-slate-300 text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-50">
+  <body
+    class="min-h-screen bg-linear-to-b from-slate-100 via-slate-200 to-slate-300 text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-50"
+  >
     <slot />
   </body>
 </html>
