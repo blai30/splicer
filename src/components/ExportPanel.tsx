@@ -23,6 +23,38 @@ function makeFilename(format: ExportFormat): string {
   return `splicer-${ts}.${format}`
 }
 
+const activeBtn =
+  'rounded-md bg-violet-500 px-2.5 py-1 text-sm font-medium text-white transition-colors'
+const inactiveBtn =
+  'rounded-md bg-slate-200 px-2.5 py-1 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+
+function OptionButtonGroup<T extends string>({
+  label,
+  options,
+  selected,
+  onSelect,
+}: {
+  label: string
+  options: { value: T; label: string }[]
+  selected: T
+  onSelect: (v: T) => void
+}) {
+  return (
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="w-14 text-sm text-slate-500 dark:text-slate-400">{label}</span>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          class={clsx(selected === o.value ? activeBtn : inactiveBtn)}
+          onClick={() => onSelect(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function ExportPanel() {
   const exporting = useSignal(false)
   const error = useSignal<string | null>(null)
@@ -72,7 +104,11 @@ export function ExportPanel() {
     cancelExport()
   }
 
-  const formats: ExportFormat[] = ['mp4', 'webm', 'mkv']
+  const formats: { value: ExportFormat; label: string }[] = [
+    { value: 'mp4', label: 'MP4' },
+    { value: 'webm', label: 'WEBM' },
+    { value: 'mkv', label: 'MKV' },
+  ]
   const qualities: { value: Quality; label: string }[] = [
     { value: 'lossless', label: 'Lossless' },
     { value: 'high', label: 'High' },
@@ -100,62 +136,30 @@ export function ExportPanel() {
       </div>
 
       <div class="grid gap-2">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="w-14 text-sm text-slate-500 dark:text-slate-400">Format</span>
-          {formats.map((f) => (
-            <button
-              key={f}
-              class={clsx(
-                exportFormat.value === f
-                  ? 'rounded-md bg-violet-500 px-2.5 py-1 text-sm font-medium text-white transition-colors'
-                  : 'rounded-md bg-slate-200 px-2.5 py-1 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-              )}
-              onClick={() => {
-                exportFormat.value = f
-              }}
-            >
-              {f.toUpperCase()}
-            </button>
-          ))}
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="w-14 text-sm text-slate-500 dark:text-slate-400">Quality</span>
-          {qualities.map((q) => (
-            <button
-              key={q.value}
-              class={clsx(
-                quality.value === q.value
-                  ? 'rounded-md bg-violet-500 px-2.5 py-1 text-sm font-medium text-white transition-colors'
-                  : 'rounded-md bg-slate-200 px-2.5 py-1 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-              )}
-              onClick={() => {
-                quality.value = q.value
-              }}
-            >
-              {q.label}
-            </button>
-          ))}
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="w-14 text-sm text-slate-500 dark:text-slate-400">FPS</span>
-          {framerates.map((f) => (
-            <button
-              key={f.value}
-              class={clsx(
-                framerate.value === f.value
-                  ? 'rounded-md bg-violet-500 px-2.5 py-1 text-sm font-medium text-white transition-colors'
-                  : 'rounded-md bg-slate-200 px-2.5 py-1 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-              )}
-              onClick={() => {
-                framerate.value = f.value
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <OptionButtonGroup
+          label="Format"
+          options={formats}
+          selected={exportFormat.value}
+          onSelect={(v) => {
+            exportFormat.value = v
+          }}
+        />
+        <OptionButtonGroup
+          label="Quality"
+          options={qualities}
+          selected={quality.value}
+          onSelect={(v) => {
+            quality.value = v
+          }}
+        />
+        <OptionButtonGroup
+          label="FPS"
+          options={framerates}
+          selected={framerate.value}
+          onSelect={(v) => {
+            framerate.value = v
+          }}
+        />
       </div>
 
       <div class="flex flex-col gap-2 border-t border-slate-200/80 pt-2 sm:flex-row sm:items-center dark:border-slate-700/80">

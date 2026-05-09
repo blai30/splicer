@@ -1,9 +1,14 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 
-import { ffmpegProgress, ffmpegReady } from '@/lib/store'
-import { clips } from '@/lib/store'
+import { clips, ffmpegProgress, ffmpegReady } from '@/lib/store'
 import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
+
+const MIME_TYPES: Record<ExportFormat, string> = {
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mkv: 'video/x-matroska',
+}
 
 let instance: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null
@@ -111,12 +116,7 @@ async function exportStreamCopy(
   ffmpegProgress.value = 1
 
   const data = await ffmpeg.readFile(outputFile)
-  const mimeMap: Record<ExportFormat, string> = {
-    mp4: 'video/mp4',
-    webm: 'video/webm',
-    mkv: 'video/x-matroska',
-  }
-  const blob = new Blob([data as BlobPart], { type: mimeMap[format] })
+  const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
 
   for (const f of inputFiles) await ffmpeg.deleteFile(f)
   await ffmpeg.deleteFile('concat.txt')
@@ -193,12 +193,7 @@ export async function exportVideo(
   ])
 
   const data = await ffmpeg.readFile(outputFile)
-  const mimeMap: Record<ExportFormat, string> = {
-    mp4: 'video/mp4',
-    webm: 'video/webm',
-    mkv: 'video/x-matroska',
-  }
-  const blob = new Blob([data as BlobPart], { type: mimeMap[format] })
+  const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
 
   for (const f of inputFiles) await ffmpeg.deleteFile(f)
   await ffmpeg.deleteFile(outputFile)

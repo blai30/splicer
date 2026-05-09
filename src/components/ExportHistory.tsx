@@ -1,26 +1,9 @@
 import clsx from 'clsx/lite'
 import { Trash2 } from 'lucide-preact'
 
+import { formatFps, formatSize, formatTime } from '@/lib/format'
 import { exportHistory } from '@/lib/store'
 import type { ExportRecord } from '@/lib/types'
-
-function formatDuration(s: number): string {
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
-}
-
-function formatSize(bytes: number): string {
-  if (bytes >= 1_000_000_000_000) return `${(bytes / 1_000_000_000_000).toFixed(1)} TB`
-  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`
-  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
-  if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(0)} KB`
-  return `${bytes} B`
-}
-
-function formatFps(fps: ExportRecord['fps']): string {
-  return fps === 'original' ? 'Original' : `${fps} fps`
-}
 
 const MIME_TYPES: Record<ExportRecord['format'], string> = {
   mp4: 'video/mp4',
@@ -84,7 +67,7 @@ export function ExportHistory() {
                     {rec.filename}
                   </a>
                 </td>
-                <td class={td}>{formatDuration(rec.duration)}</td>
+                <td class={td}>{formatTime(rec.duration)}</td>
                 <td class={td}>{formatSize(rec.size)}</td>
                 <td class={td}>{formatFps(rec.fps)}</td>
                 <td class={td}>{rec.width && rec.height ? `${rec.width}×${rec.height}` : '—'}</td>

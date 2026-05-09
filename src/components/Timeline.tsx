@@ -1,4 +1,4 @@
-import { signal, useSignal } from '@preact/signals'
+import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
@@ -13,256 +13,20 @@ import {
 } from 'lucide-preact'
 import { useRef } from 'preact/hooks'
 
+import { SegmentBlock } from '@/components/SegmentBlock'
+import { ZoomSlider } from '@/components/ZoomSlider'
 import { cutAtPlayhead, deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
-import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
-import type { Clip, Segment } from '@/lib/types'
-
-const pxPerSec = signal(80)
-const ZOOM_MIN = 20
-const ZOOM_MAX = 200
-const GAP_PX = 4 // gap-1
-const PADDING_PX = 12 // px-3
-
-interface DragState {
-  segId: string
-  dropIndex: number
-}
-const dragState = signal<DragState | null>(null)
-
-const ACCEPTED = [
-  'video/mp4',
-  'video/webm',
-  'video/quicktime',
-  'video/x-msvideo',
-  'video/x-matroska',
-]
-
-function isVideoFile(file: File): boolean {
-  return ACCEPTED.includes(file.type) || /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name)
-}
-
-function getVideoMetadata(
-  url: string
-): Promise<{ duration: number; width: number; height: number }> {
-  return new Promise((resolve) => {
-    const v = document.createElement('video')
-    v.preload = 'metadata'
-    v.onloadedmetadata = () =>
-      resolve({ duration: v.duration, width: v.videoWidth, height: v.videoHeight })
-    v.src = url
-  })
-}
-
-function captureThumbnail(url: string): Promise<string> {
-  return new Promise((resolve) => {
-    const v = document.createElement('video')
-    v.preload = 'metadata'
-    v.src = url
-    v.currentTime = 0.5
-    v.onseeked = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 160
-      canvas.height = 90
-      canvas.getContext('2d')!.drawImage(v, 0, 0, 160, 90)
-      resolve(canvas.toDataURL('image/jpeg', 0.6))
-    }
-  })
-}
-
-async function importAndAppend(file: File): Promise<void> {
-  if (!isVideoFile(file)) return
-  const objectUrl = URL.createObjectURL(file)
-  const { duration, width, height } = await getVideoMetadata(objectUrl)
-  const thumbnail = await captureThumbnail(objectUrl)
-  const clip: Clip = {
-    id: crypto.randomUUID(),
-    file,
-    name: file.name.replace(/\.[^.]+$/, ''),
-    duration,
-    width,
-    height,
-    objectUrl,
-    thumbnail,
-  }
-  clips.value = [...clips.value, clip]
-  const seg: Segment = {
-    id: crypto.randomUUID(),
-    clipId: clip.id,
-    startTime: 0,
-    endTime: duration,
-    muted: false,
-  }
-  timeline.value = [...timeline.value, seg]
-}
-
-function formatTime(s: number): string {
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
-}
-
-function clipColor(clipId: string): string {
-  const colors = ['bg-violet-500', 'bg-teal-500', 'bg-cyan-500', 'bg-green-500', 'bg-sky-500']
-  let hash = 0
-  for (let i = 0; i < clipId.length; i++) hash = (hash * 31 + clipId.charCodeAt(i)) | 0
-  return colors[Math.abs(hash) % colors.length]
-}
-
-function getSegmentStartX(segId: string): number {
-  let x = PADDING_PX
-  for (const seg of timeline.value) {
-    if (seg.id === segId) return x
-    x += (seg.endTime - seg.startTime) * pxPerSec.value + GAP_PX
-  }
-  return PADDING_PX
-}
-
-function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: boolean }) {
-  const clip = clips.value.find((c) => c.id === seg.clipId)
-  const dur = seg.endTime - seg.startTime
-  const width = dur * pxPerSec.value
-  const isSelected = selectedSegmentId.value === seg.id
-  const leftRef = useRef<HTMLDivElement>(null)
-  const rightRef = useRef<HTMLDivElement>(null)
-
-  function onTrimPointerDown(side: 'left' | 'right') {
-    return (e: PointerEvent) => {
-      e.stopPropagation()
-      const handle = side === 'left' ? leftRef.current! : rightRef.current!
-      handle.setPointerCapture(e.pointerId)
-      const startX = e.clientX
-      const startTime = side === 'left' ? seg.startTime : seg.endTime
-
-      function onMove(mv: PointerEvent) {
-        const dt = (mv.clientX - startX) / pxPerSec.value
-        const clipDur = clips.value.find((c) => c.id === seg.clipId)?.duration ?? seg.endTime
-        timeline.value = timeline.value.map((s) => {
-          if (s.id !== seg.id) return s
-          if (side === 'left') {
-            return { ...s, startTime: Math.max(0, Math.min(startTime + dt, s.endTime - 0.1)) }
-          } else {
-            return { ...s, endTime: Math.min(clipDur, Math.max(startTime + dt, s.startTime + 0.1)) }
-          }
-        })
-      }
-
-      function onUp() {
-        handle.removeEventListener('pointermove', onMove)
-        handle.removeEventListener('pointerup', onUp)
-      }
-
-      handle.addEventListener('pointermove', onMove)
-      handle.addEventListener('pointerup', onUp)
-    }
-  }
-
-  function onBodyPointerDown(e: PointerEvent) {
-    const el = e.currentTarget as HTMLElement
-    const trackEl = el.closest('[data-track]') as HTMLElement | null
-    if (!trackEl) return
-    e.stopPropagation()
-    el.setPointerCapture(e.pointerId)
-    const startX = e.clientX
-    let moved = false
-
-    function onMove(mv: PointerEvent) {
-      if (!moved && Math.abs(mv.clientX - startX) > 8) {
-        moved = true
-      }
-      if (moved && trackEl) {
-        const rect = trackEl.getBoundingClientRect()
-        const x = mv.clientX - rect.left + trackEl.scrollLeft - PADDING_PX
-        let accX = 0
-        let dropIdx = 0
-        for (let i = 0; i < timeline.value.length; i++) {
-          const s = timeline.value[i]
-          const w = (s.endTime - s.startTime) * pxPerSec.value
-          if (x < accX + w / 2) {
-            dropIdx = i
-            break
-          }
-          accX += w + GAP_PX
-          dropIdx = i + 1
-        }
-        dragState.value = { segId: seg.id, dropIndex: dropIdx }
-      }
-    }
-
-    function onUp() {
-      el.removeEventListener('pointermove', onMove)
-      el.removeEventListener('pointerup', onUp)
-      if (moved && dragState.value) {
-        const fromIdx = timeline.value.findIndex((s) => s.id === seg.id)
-        const toIdx = dragState.value.dropIndex
-        if (fromIdx !== toIdx && fromIdx + 1 !== toIdx) {
-          const segs = [...timeline.value]
-          const [removed] = segs.splice(fromIdx, 1)
-          const adjusted = toIdx > fromIdx ? toIdx - 1 : toIdx
-          segs.splice(adjusted, 0, removed)
-          timeline.value = segs
-        }
-        dragState.value = null
-      } else if (!moved) {
-        selectedSegmentId.value = seg.id
-        if (trackEl) {
-          const rect = trackEl.getBoundingClientRect()
-          const x = e.clientX - rect.left + trackEl.scrollLeft
-          const segStartX = getSegmentStartX(seg.id)
-          const t = seg.startTime + Math.max(0, x - segStartX) / pxPerSec.value
-          const clamped = Math.max(seg.startTime, Math.min(seg.endTime, t))
-          playheadTime.value = clamped
-          const v = videoEl.current
-          if (v) v.currentTime = clamped
-        }
-      }
-    }
-
-    el.addEventListener('pointermove', onMove)
-    el.addEventListener('pointerup', onUp)
-  }
-
-  return (
-    <div
-      data-segment
-      class={clsx(
-        'relative flex h-14 shrink-0 cursor-grab items-center overflow-hidden rounded select-none',
-        isSelected ? 'ring-2 ring-violet-400' : 'ring-1 ring-black/20',
-        clipColor(seg.clipId),
-        isDragging && 'opacity-40'
-      )}
-      style={{ width: `${width}px` }}
-      onPointerDown={onBodyPointerDown}
-    >
-      {clip?.thumbnail && (
-        <img
-          src={clip.thumbnail}
-          alt={clip.name}
-          class="absolute inset-0 h-full w-full object-cover opacity-30"
-          draggable={false}
-        />
-      )}
-      <span class="relative z-10 truncate px-2 text-sm font-medium text-white">
-        {clip?.name ?? 'Clip'}
-        {seg.muted && <span class="ml-1 opacity-70">🔇</span>}
-      </span>
-      <span class="relative z-10 ml-auto shrink-0 pr-2 text-sm text-white/70">
-        {formatTime(dur)}
-      </span>
-      <div
-        ref={leftRef}
-        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70"
-        onPointerDown={onTrimPointerDown('left')}
-        onClick={(e) => e.stopPropagation()}
-      />
-      <div
-        ref={rightRef}
-        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70"
-        onPointerDown={onTrimPointerDown('right')}
-        onClick={(e) => e.stopPropagation()}
-      />
-    </div>
-  )
-}
+import { playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
+import {
+  GAP_PX,
+  PADDING_PX,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  dragState,
+  getSegmentStartX,
+  pxPerSec,
+} from '@/lib/timelineState'
+import { importAndAppend } from '@/lib/videoImport'
 
 export function Timeline() {
   const trackRef = useRef<HTMLDivElement>(null)
@@ -466,58 +230,7 @@ export function Timeline() {
           >
             <ZoomOut class="h-3.5 w-3.5" />
           </button>
-          {/* Custom zoom slider */}
-          {(() => {
-            const pct = (pxPerSec.value - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN)
-            const TICKS = [0, 0.25, 0.5, 0.75, 1]
-            function seekFromPointer(ev: PointerEvent, el: HTMLElement) {
-              const rect = el.getBoundingClientRect()
-              const p = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
-              zoomTo(ZOOM_MIN + p * (ZOOM_MAX - ZOOM_MIN))
-            }
-            function onSliderPointerDown(e: PointerEvent) {
-              e.stopPropagation()
-              const el = e.currentTarget as HTMLElement
-              el.setPointerCapture(e.pointerId)
-              seekFromPointer(e, el)
-              function onMove(mv: PointerEvent) {
-                seekFromPointer(mv, el)
-              }
-              function onUp() {
-                el.removeEventListener('pointermove', onMove)
-                el.removeEventListener('pointerup', onUp)
-              }
-              el.addEventListener('pointermove', onMove)
-              el.addEventListener('pointerup', onUp)
-            }
-            return (
-              <div class="relative h-5 w-28 select-none" onPointerDown={onSliderPointerDown}>
-                {/* Track */}
-                <div class="absolute top-1/2 right-0 left-0 h-px -translate-y-1/2 rounded-full bg-slate-200 dark:bg-slate-700" />
-                {/* Fill */}
-                <div
-                  class="absolute top-1/2 left-0 h-px -translate-y-1/2 rounded-full bg-violet-600 dark:bg-violet-400"
-                  style={{ width: `${pct * 100}%` }}
-                />
-                {/* Ticks */}
-                {TICKS.map((t) => (
-                  <div
-                    key={t}
-                    class="absolute top-1/2 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-300 dark:bg-slate-600"
-                    style={{
-                      left: `${t * 100}%`,
-                      height: t === 0 || t === 1 ? '8px' : '5px',
-                    }}
-                  />
-                ))}
-                {/* Handle */}
-                <div
-                  class="absolute top-1/2 h-3.5 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600 dark:bg-violet-400"
-                  style={{ left: `${pct * 100}%` }}
-                />
-              </div>
-            )
-          })()}
+          <ZoomSlider value={pxPerSec.value} min={ZOOM_MIN} max={ZOOM_MAX} onChange={zoomTo} />
           <button
             onClick={() => zoomTo(pxPerSec.value + 10)}
             class="text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"

@@ -1,8 +1,11 @@
-import { useSignal, useSignalEffect } from '@preact/signals'
-import { Pause, Play, StepBack, StepForward, Volume2, VolumeX } from 'lucide-preact'
+import { useSignalEffect } from '@preact/signals'
+import { useSignal } from '@preact/signals'
+import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { VolumeControl } from '@/components/VolumeControl'
 import { deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
+import { formatTimecode } from '@/lib/format'
 import {
   clips,
   currentPlaybackTime,
@@ -19,30 +22,13 @@ import {
 const FRAME_STEP = 1 / 30
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
-function formatTimecode(s: number): string {
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  const ms = Math.floor((s % 1) * 10)
-  return `${m}:${sec.toString().padStart(2, '0')}.${ms}`
-}
-
 export function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const previewMaxWidth = useSignal<number | null>(null)
   const playbackSpeed = useSignal(1)
-  const localVolume = useSignal(previewVolume.value)
   const resumeAfterSwitch = useRef(false)
   const rafId = useRef(0)
-
-  const volumeInputRef = useRef<HTMLInputElement>(null)
-
-  useSignalEffect(() => {
-    localVolume.value = previewVolume.value
-    if (volumeInputRef.current) {
-      volumeInputRef.current.value = String(previewVolume.value)
-    }
-  })
 
   function getActiveSegInfo() {
     const segId = selectedSegmentId.value ?? timeline.value[0]?.id
@@ -57,7 +43,6 @@ export function VideoPreview() {
   useSignalEffect(() => {
     const v = videoRef.current
     if (!v) return
-    // Always sync volume and mute state when they change
     v.volume = previewVolume.value
     v.muted = previewMuted.value
   })
@@ -260,33 +245,7 @@ export function VideoPreview() {
 
       {/* Controls */}
       <div class="relative flex items-center border-t border-slate-200/80 px-4 py-2 dark:border-slate-700/80">
-        <div class="flex items-center gap-2">
-          <button
-            onClick={() => {
-              previewMuted.value = !previewMuted.value
-            }}
-            class="flex h-7 w-7 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-            title={previewMuted.value ? 'Unmute preview' : 'Mute preview'}
-          >
-            {previewMuted.value ? <VolumeX class="h-4 w-4" /> : <Volume2 class="h-4 w-4" />}
-          </button>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            ref={volumeInputRef}
-            value={localVolume.value}
-            disabled={previewMuted.value}
-            onInput={(e) => {
-              const val = Number((e.currentTarget as HTMLInputElement).value)
-              localVolume.value = val
-              previewVolume.value = val
-            }}
-            class="w-20 accent-violet-500 disabled:opacity-40"
-            title="Preview volume"
-          />
-        </div>
+        <VolumeControl />
         <div class="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
           <button
             onClick={stepBack}
