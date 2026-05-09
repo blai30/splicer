@@ -1,10 +1,10 @@
-// @ts-check
-import preact from '@astrojs/preact'
-import { defineConfig } from 'astro/config'
 import { createReadStream, copyFileSync, mkdirSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 
+// @ts-check
+import preact from '@astrojs/preact'
 import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from 'astro/config'
 
 const coopCoep = {
   'Cross-Origin-Opener-Policy': 'same-origin',

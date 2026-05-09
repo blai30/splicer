@@ -1,8 +1,9 @@
-import { useRef } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
+import { Upload } from 'lucide-preact'
+import { useRef } from 'preact/hooks'
+
 import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
-import { Upload } from 'lucide-preact'
 
 const PX_PER_SEC = 80
 const GAP_PX = 4 // gap-1

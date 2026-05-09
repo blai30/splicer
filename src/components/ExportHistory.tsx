@@ -1,6 +1,7 @@
+import { Trash2 } from 'lucide-preact'
+
 import { exportHistory } from '@/lib/store'
 import type { ExportRecord } from '@/lib/types'
-import { Trash2 } from 'lucide-preact'
 
 function formatDuration(s: number): string {
   const m = Math.floor(s / 60)

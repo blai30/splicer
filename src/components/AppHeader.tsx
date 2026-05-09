@@ -1,5 +1,6 @@
-import { theme } from '@/lib/store'
 import { Film, Moon, Sun } from 'lucide-preact'
+
+import { theme } from '@/lib/store'
 
 export function AppHeader() {
   function toggleTheme() {

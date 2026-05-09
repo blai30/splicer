@@ -1,8 +1,9 @@
-import { fetchFile } from '@ffmpeg/util'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
+import { fetchFile } from '@ffmpeg/util'
+
 import { ffmpegProgress, ffmpegReady } from '@/lib/store'
-import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
 import { clips } from '@/lib/store'
+import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
 
 let instance: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null

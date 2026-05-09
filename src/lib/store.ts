@@ -1,4 +1,5 @@
 import { signal } from '@preact/signals'
+
 import type { Clip, ExportFormat, ExportRecord, Framerate, Quality, Segment } from '@/lib/types'
 
 export const clips = signal<Clip[]>([])

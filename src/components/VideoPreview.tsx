@@ -1,5 +1,8 @@
 import { useSignal, useSignalEffect } from '@preact/signals'
+import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
+
+import { deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
 import {
   clips,
   currentPlaybackTime,
@@ -10,8 +13,6 @@ import {
   timeline,
   videoEl,
 } from '@/lib/store'
-import { deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
-import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
 
 const FRAME_STEP = 1 / 30
 

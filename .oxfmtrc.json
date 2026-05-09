@@ -13,5 +13,6 @@
   "trailingComma": "es5",
   "useTabs": false,
   "sortPackageJson": false,
-  "ignorePatterns": []
+  "ignorePatterns": [],
+  "sortImports": true
 }

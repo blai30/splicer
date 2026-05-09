@@ -1,6 +1,14 @@
-import { selectedSegmentId, timeline } from '@/lib/store'
+import {
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  Scissors,
+  Trash2,
+  Volume2,
+  VolumeX,
+} from 'lucide-preact'
+
 import { cutAtPlayhead, deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
-import { ArrowLeftToLine, ArrowRightToLine, Scissors, Trash2, Volume2, VolumeX } from 'lucide-preact'
+import { selectedSegmentId, timeline } from '@/lib/store'
 
 export function EditToolbar() {
   const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)

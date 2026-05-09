@@ -1,4 +1,7 @@
 import { useSignal } from '@preact/signals'
+import { CirclePlay, X } from 'lucide-preact'
+
+import { exportVideo, cancelExport, getFFmpeg } from '@/lib/ffmpeg'
 import {
   clips,
   exportFormat,
@@ -10,8 +13,6 @@ import {
   timeline,
 } from '@/lib/store'
 import type { ExportFormat, ExportRecord, Framerate, Quality } from '@/lib/types'
-import { exportVideo, cancelExport, getFFmpeg } from '@/lib/ffmpeg'
-import { CirclePlay, X } from 'lucide-preact'
 
 function makeFilename(format: ExportFormat): string {
   const ts = new Date()
