@@ -1,5 +1,5 @@
 import { useSignal, useSignalEffect } from '@preact/signals'
-import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
+import { Pause, Play, StepBack, StepForward, Volume2, VolumeX } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
@@ -29,6 +29,8 @@ export function VideoPreview() {
   const containerRef = useRef<HTMLDivElement>(null)
   const previewMaxWidth = useSignal<number | null>(null)
   const playbackSpeed = useSignal(1)
+  const previewVolume = useSignal(1)
+  const previewMuted = useSignal(false)
   const resumeAfterSwitch = useRef(false)
   const rafId = useRef(0)
 
@@ -47,18 +49,19 @@ export function VideoPreview() {
     if (!v) return
     videoEl.current = v
     v.playbackRate = playbackSpeed.value
+    v.volume = previewVolume.value
     const info = getActiveSegInfo()
     if (!info) {
       v.removeAttribute('src')
       v.load()
-      v.muted = false
+      v.muted = previewMuted.value
       currentSegmentDuration.value = 0
       currentPlaybackTime.value = 0
       playing.value = false
       return
     }
 
-    v.muted = info.seg.muted
+    v.muted = info.seg.muted || previewMuted.value
 
     const resume = resumeAfterSwitch.current
     resumeAfterSwitch.current = false
@@ -242,24 +245,28 @@ export function VideoPreview() {
       {/* Controls */}
       <div class="relative flex items-center border-t border-slate-200/80 px-4 py-2 dark:border-slate-700/80">
         <div class="flex items-center gap-2">
-          <label for="playback-speed" class="text-sm text-slate-500 dark:text-slate-400">
-            Speed
-          </label>
-          <select
-            id="playback-speed"
-            value={playbackSpeed.value}
-            onChange={(e) => {
-              playbackSpeed.value = Number((e.currentTarget as HTMLSelectElement).value)
+          <button
+            onClick={() => {
+              previewMuted.value = !previewMuted.value
             }}
-            class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-            title="Playback speed"
+            class="flex h-7 w-7 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+            title={previewMuted.value ? 'Unmute preview' : 'Mute preview'}
           >
-            {SPEED_OPTIONS.map((speed) => (
-              <option key={speed} value={speed}>
-                {speed}×
-              </option>
-            ))}
-          </select>
+            {previewMuted.value ? <VolumeX class="h-4 w-4" /> : <Volume2 class="h-4 w-4" />}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={previewVolume.value}
+            disabled={previewMuted.value}
+            onInput={(e) => {
+              previewVolume.value = Number((e.currentTarget as HTMLInputElement).value)
+            }}
+            class="w-20 accent-violet-500 disabled:opacity-40"
+            title="Preview volume"
+          />
         </div>
         <div class="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
           <button
@@ -286,10 +293,29 @@ export function VideoPreview() {
             <StepForward class="h-5 w-5" />
           </button>
         </div>
-        <span class="ml-auto text-sm text-slate-500 tabular-nums dark:text-slate-400">
-          {formatTimecode(currentPlaybackTime.value)} /{' '}
-          {formatTimecode(currentSegmentDuration.value)}
-        </span>
+        <div class="ml-auto flex items-center gap-4">
+          <select
+            id="playback-speed"
+            value={playbackSpeed.value}
+            onChange={(e) => {
+              playbackSpeed.value = Number((e.currentTarget as HTMLSelectElement).value)
+            }}
+            class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+            title="Playback speed"
+          >
+            {SPEED_OPTIONS.map((speed) => (
+              <option key={speed} value={speed}>
+                {speed}×
+              </option>
+            ))}
+          </select>
+          <span class="text-sm text-slate-500 tabular-nums dark:text-slate-400">
+            {formatTimecode(currentPlaybackTime.value)} /{' '}
+            {formatTimecode(
+              timeline.value.reduce((acc, seg) => acc + (seg.endTime - seg.startTime), 0)
+            )}
+          </span>
+        </div>
       </div>
 
       {/* Resize handle */}
