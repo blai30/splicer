@@ -10,6 +10,8 @@ import {
   timeline,
   videoEl,
 } from '@/lib/store'
+import { deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
+import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
 
 const FRAME_STEP = 1 / 30
 
@@ -171,25 +173,13 @@ export function VideoPreview() {
         case 'o':
           setOutPoint()
           break
-        case 'm': {
-          const segId = selectedSegmentId.value
-          if (!segId) break
-          timeline.value = timeline.value.map((s) =>
-            s.id === segId ? { ...s, muted: !s.muted } : s
-          )
+        case 'm':
+          toggleMute()
           break
-        }
         case 'Delete':
-        case 'Backspace': {
-          const segId = selectedSegmentId.value
-          if (!segId) break
-          const segs = timeline.value
-          const idx = segs.findIndex((s) => s.id === segId)
-          const next = segs.filter((s) => s.id !== segId)
-          timeline.value = next
-          selectedSegmentId.value = (next[idx] ?? next[idx - 1] ?? null)?.id ?? null
+        case 'Backspace':
+          deleteSegment()
           break
-        }
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -217,8 +207,6 @@ export function VideoPreview() {
   }
 
   const hasContent = timeline.value.length > 0
-  const btnIcon =
-    'flex items-center justify-center w-7 h-7 rounded-md text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
 
   return (
     <div
@@ -253,38 +241,25 @@ export function VideoPreview() {
           <button
             onClick={stepBack}
             disabled={!hasContent}
-            class={btnIcon}
+            class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
             title="Step back one frame (←)"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
-            </svg>
+            <StepBack class="h-5 w-5" />
           </button>
           <button
             onClick={togglePlay}
             disabled={!hasContent}
-            class="mx-1 flex h-8 w-8 items-center justify-center rounded-full bg-violet-500 text-white transition-colors hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-40"
+            class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
           >
-            {playing.value ? (
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="4" width="4" height="16" rx="1" />
-                <rect x="14" y="4" width="4" height="16" rx="1" />
-              </svg>
-            ) : (
-              <svg class="ml-0.5 h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M5 3l14 9-14 9V3z" />
-              </svg>
-            )}
+            {playing.value ? <Pause class="h-5 w-5" /> : <Play class="ml-0.5 h-5 w-5" />}
           </button>
           <button
             onClick={stepForward}
             disabled={!hasContent}
-            class={btnIcon}
+            class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
             title="Step forward one frame (→)"
           >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 18 14.5 12 6 6v12zm8-12v12h2V6h-2z" />
-            </svg>
+            <StepForward class="h-5 w-5" />
           </button>
         </div>
         <span class="ml-auto text-xs text-slate-500 tabular-nums dark:text-slate-400">

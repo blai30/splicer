@@ -2,6 +2,7 @@ import { useRef } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
 import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
+import { Upload } from 'lucide-preact'
 
 const PX_PER_SEC = 80
 const GAP_PX = 4 // gap-1
@@ -324,19 +325,7 @@ export function Timeline() {
               <p class="text-sm font-medium text-violet-500">Drop to import</p>
             ) : (
               <>
-                <svg
-                  class="h-4 w-4 text-slate-400 dark:text-slate-500"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                  />
-                </svg>
+                <Upload class="h-4 w-4 text-slate-400 dark:text-slate-500" />
                 <p class="text-xs text-slate-400 dark:text-slate-500">
                   Click or drop video files to import
                 </p>

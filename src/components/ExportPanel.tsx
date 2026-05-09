@@ -11,6 +11,7 @@ import {
 } from '@/lib/store'
 import type { ExportFormat, ExportRecord, Framerate, Quality } from '@/lib/types'
 import { exportVideo, cancelExport, getFFmpeg } from '@/lib/ffmpeg'
+import { CirclePlay, X } from 'lucide-preact'
 
 function makeFilename(format: ExportFormat): string {
   const ts = new Date()
@@ -84,9 +85,6 @@ export function ExportPanel() {
   ]
 
   const hasSegments = timeline.value.length > 0
-  const btnBase = 'px-2.5 py-1 rounded text-xs font-medium transition-colors'
-  const btnActive = `${btnBase} bg-violet-500 text-white`
-  const btnInactive = `${btnBase} bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700`
 
   return (
     <div class="flex shrink-0 flex-col gap-2.5 rounded-lg bg-slate-100 px-4 py-3 dark:bg-slate-900">
@@ -97,7 +95,11 @@ export function ExportPanel() {
           {formats.map((f) => (
             <button
               key={f}
-              class={exportFormat.value === f ? btnActive : btnInactive}
+              class={
+                exportFormat.value === f
+                  ? 'rounded bg-violet-500 px-2.5 py-1 text-xs font-medium text-white transition-colors'
+                  : 'rounded bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+              }
               onClick={() => {
                 exportFormat.value = f
               }}
@@ -112,7 +114,11 @@ export function ExportPanel() {
           {qualities.map((q) => (
             <button
               key={q.value}
-              class={quality.value === q.value ? btnActive : btnInactive}
+              class={
+                quality.value === q.value
+                  ? 'rounded bg-violet-500 px-2.5 py-1 text-xs font-medium text-white transition-colors'
+                  : 'rounded bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+              }
               onClick={() => {
                 quality.value = q.value
               }}
@@ -127,7 +133,11 @@ export function ExportPanel() {
           {framerates.map((f) => (
             <button
               key={f.value}
-              class={framerate.value === f.value ? btnActive : btnInactive}
+              class={
+                framerate.value === f.value
+                  ? 'rounded bg-violet-500 px-2.5 py-1 text-xs font-medium text-white transition-colors'
+                  : 'rounded bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+              }
               onClick={() => {
                 framerate.value = f.value
               }}
@@ -167,15 +177,7 @@ export function ExportPanel() {
             onClick={handleCancel}
             class="flex items-center gap-1.5 rounded-md bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-red-100 hover:text-red-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-red-900/40 dark:hover:text-red-400"
           >
-            <svg
-              class="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X class="h-3.5 w-3.5" />
             Cancel
           </button>
         ) : (
@@ -185,24 +187,7 @@ export function ExportPanel() {
             disabled={!hasSegments}
             class="flex items-center gap-1.5 rounded-md bg-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <svg
-              class="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-              />
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <CirclePlay class="h-3.5 w-3.5" />
             Export
           </button>
         )}
