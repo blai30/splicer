@@ -46,6 +46,10 @@ No upload pipeline is used. Processing happens client-side via FFmpeg WASM.
 - `Space`: Play/Pause
 - `ArrowLeft` or `,`: Step back one frame
 - `ArrowRight` or `.`: Step forward one frame
+- `-`: Zoom timeline out
+- `=`: Zoom timeline in
+- `Ctrl` + mouse wheel up/down: Zoom timeline in/out at cursor
+- `Enter` (while focused in zoom % field): Apply typed zoom level
 - `I`: Set in-point
 - `O`: Set out-point
 - `M`: Toggle mute on selected segment
@@ -71,18 +75,6 @@ pnpm dev
 ```
 
 Open `http://localhost:4321`.
-
-## Scripts
-
-| Command          | Description                 |
-| :--------------- | :-------------------------- |
-| `pnpm dev`       | Start Astro dev server      |
-| `pnpm build`     | Build production output     |
-| `pnpm preview`   | Run built app locally       |
-| `pnpm lint`      | Run oxlint                  |
-| `pnpm lint:fix`  | Run oxlint with fixes       |
-| `pnpm fmt`       | Format code with oxfmt      |
-| `pnpm fmt:check` | Check formatting with oxfmt |
 
 ## Implementation Notes
 

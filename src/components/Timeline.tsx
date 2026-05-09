@@ -11,7 +11,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-preact'
-import { useRef } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 
 import { SegmentBlock } from '@/components/SegmentBlock'
 import { ZoomSlider } from '@/components/ZoomSlider'
@@ -118,6 +118,24 @@ export function Timeline() {
       pxPerSec.value = clamped
     }
   }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault()
+        zoomTo(pxPerSec.value - 10)
+      } else if (e.key === '=' || e.key === '+') {
+        e.preventDefault()
+        zoomTo(pxPerSec.value + 10)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   function onWheel(e: WheelEvent) {
     if (!trackRef.current) return
