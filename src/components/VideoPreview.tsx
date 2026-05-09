@@ -15,6 +15,7 @@ import {
 } from '@/lib/store'
 
 const FRAME_STEP = 1 / 30
+const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
 function formatTimecode(s: number): string {
   const m = Math.floor(s / 60)
@@ -27,6 +28,7 @@ export function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const previewMaxWidth = useSignal<number | null>(null)
+  const playbackSpeed = useSignal(1)
   const resumeAfterSwitch = useRef(false)
   const rafId = useRef(0)
 
@@ -44,6 +46,7 @@ export function VideoPreview() {
     const v = videoRef.current
     if (!v) return
     videoEl.current = v
+    v.playbackRate = playbackSpeed.value
     const info = getActiveSegInfo()
     if (!info) {
       v.removeAttribute('src')
@@ -238,6 +241,26 @@ export function VideoPreview() {
 
       {/* Controls */}
       <div class="relative flex items-center border-t border-slate-200/80 px-4 py-2 dark:border-slate-700/80">
+        <div class="flex items-center gap-2">
+          <label for="playback-speed" class="text-xs text-slate-500 dark:text-slate-400">
+            Speed
+          </label>
+          <select
+            id="playback-speed"
+            value={playbackSpeed.value}
+            onChange={(e) => {
+              playbackSpeed.value = Number((e.currentTarget as HTMLSelectElement).value)
+            }}
+            class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+            title="Playback speed"
+          >
+            {SPEED_OPTIONS.map((speed) => (
+              <option key={speed} value={speed}>
+                {speed}×
+              </option>
+            ))}
+          </select>
+        </div>
         <div class="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
           <button
             onClick={stepBack}
