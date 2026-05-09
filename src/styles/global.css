@@ -7,14 +7,30 @@
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 
-html {
-  font-size: 106.25%;
-}
-
 * {
   scrollbar-color: theme(colors.slate.400) transparent;
 }
 
 .dark * {
   scrollbar-color: theme(colors.slate.700) transparent;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-group(root) {
+    animation: none;
+  }
+
+  ::view-transition-new(root) {
+    animation: theme-sweep-new 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+}
+
+@keyframes theme-sweep-new {
+  from {
+    clip-path: circle(0 at var(--theme-sweep-x, 50vw) var(--theme-sweep-y, 50vh));
+  }
+
+  to {
+    clip-path: circle(150vmax at var(--theme-sweep-x, 50vw) var(--theme-sweep-y, 50vh));
+  }
 }
