@@ -27,9 +27,40 @@ export function VideoPreview() {
   const containerRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<HTMLDivElement>(null)
   const previewMaxWidth = useSignal<number | null>(null)
+  const previewAspectRatio = useSignal(16 / 9)
   const playbackSpeed = useSignal(1)
   const resumeAfterSwitch = useRef(false)
   const rafId = useRef(0)
+
+  function getTimelineAspectRatio(): number {
+    const ratios = timeline.value
+      .map((seg) => {
+        if (seg.crop && seg.crop.width > 0 && seg.crop.height > 0) {
+          return seg.crop.width / seg.crop.height
+        }
+
+        const clip = clips.value.find((c) => c.id === seg.clipId)
+        if (clip && clip.width > 0 && clip.height > 0) {
+          return clip.width / clip.height
+        }
+
+        return null
+      })
+      .filter((ratio): ratio is number => ratio !== null)
+
+    if (ratios.length === 0) return 16 / 9
+
+    const min = Math.min(...ratios)
+    const max = Math.max(...ratios)
+    const isMixed = max - min > 0.01
+
+    if (isMixed) {
+      // Mixed aspect clips: use the smallest ratio as the common preview canvas.
+      return min
+    }
+
+    return ratios[0]
+  }
 
   function getActiveSegInfo() {
     const segId = selectedSegmentId.value ?? timeline.value[0]?.id
@@ -53,6 +84,7 @@ export function VideoPreview() {
     if (!v) return
     videoEl.current = v
     v.playbackRate = playbackSpeed.value
+    previewAspectRatio.value = getTimelineAspectRatio()
     const info = getActiveSegInfo()
     if (!info) {
       v.removeAttribute('src')
@@ -237,12 +269,14 @@ export function VideoPreview() {
       class="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30"
     >
       {/* Video Player */}
-      <div class="relative flex h-64 flex-1 items-center justify-center overflow-hidden bg-black md:h-48">
+      <div class="relative flex flex-1 items-center justify-center overflow-hidden bg-slate-100 dark:bg-slate-950">
         <div
           ref={playerRef}
-          class="relative aspect-video bg-black"
+          class="relative w-full max-w-full bg-black transition-[aspect-ratio] duration-200 ease-out"
           style={
-            previewMaxWidth.value ? { width: `${previewMaxWidth.value}px` } : { width: '100%' }
+            previewMaxWidth.value
+              ? { width: `${previewMaxWidth.value}px`, aspectRatio: `${previewAspectRatio.value}` }
+              : { width: '100%', aspectRatio: `${previewAspectRatio.value}` }
           }
         >
           {!hasContent && (
