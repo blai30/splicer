@@ -34,15 +34,9 @@ export function ThemeSwitcher({ class: className }: ThemeSwitcherProps) {
       return
     }
 
-    const transition = doc.startViewTransition(() => {
+    doc.startViewTransition(() => {
       setTheme(next)
     })
-    transition.finished
-      .catch(() => {})
-      .finally(() => {
-        document.documentElement.style.removeProperty('--theme-sweep-x')
-        document.documentElement.style.removeProperty('--theme-sweep-y')
-      })
   }
 
   return (

@@ -293,7 +293,7 @@ export function Timeline() {
       <div
         ref={trackRef}
         data-track
-        class="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
+        class="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent dark:scrollbar-thumb-slate-700"
         onPointerDown={onTrackPointerDown}
       >
         {isEmpty ? (

@@ -7,14 +7,6 @@
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 
-* {
-  scrollbar-color: theme(colors.slate.400) transparent;
-}
-
-.dark * {
-  scrollbar-color: theme(colors.slate.700) transparent;
-}
-
 @media (prefers-reduced-motion: no-preference) {
   ::view-transition-group(root) {
     animation: none;
