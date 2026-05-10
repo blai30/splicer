@@ -1,6 +1,6 @@
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
 
-const logoSrc = `${import.meta.env.BASE_URL}/brand/logo-mark.svg`
+const logoSrc = `${import.meta.env.BASE_URL}brand/logo-mark.svg`
 
 export function AppHeader() {
   return (
