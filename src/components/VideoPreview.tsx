@@ -315,12 +315,12 @@ export function VideoPreview() {
 
           {/* Resize handle */}
           <div
-            class="absolute right-0 bottom-0 z-10 flex h-12 w-12 cursor-nwse-resize items-end justify-end p-2 opacity-0 transition-opacity group-hover/preview:opacity-100"
+            class="absolute right-0 bottom-0 z-10 flex h-14 w-14 cursor-nwse-resize items-end justify-end rounded-tl-md bg-linear-to-br from-transparent via-transparent to-black/20 p-2.5 opacity-0 transition-opacity group-hover/preview:opacity-100"
             onPointerDown={onResizePointerDown}
             title="Drag to resize video player"
           >
             <svg
-              class="h-3.5 w-3.5 text-slate-500 dark:text-slate-400"
+              class="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
               viewBox="0 0 12 12"
               fill="none"
               stroke="currentColor"
