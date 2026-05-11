@@ -1,6 +1,6 @@
 import clsx from 'clsx/lite'
 
-interface ZoomSliderProps {
+type ZoomSliderProps = {
   value: number
   min: number
   max: number

@@ -1,16 +1,12 @@
 import { signal } from '@preact/signals'
 
 import { timeline } from '@/lib/store'
+import type { DragState } from '@/lib/types'
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200
 export const GAP_PX = 4
 export const PADDING_PX = 12
-
-export interface DragState {
-  segId: string
-  dropIndex: number
-}
 
 export const pxPerSec = signal(80)
 export const dragState = signal<DragState | null>(null)

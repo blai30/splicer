@@ -1,16 +1,10 @@
-import type { Segment } from '@/lib/types'
+import type { Segment, SegmentLayoutItem } from '@/lib/types'
 
 /**
  * Minimum allowed duration for a segment in seconds.
  * Prevents creation of very short segments that can't be meaningfully worked with.
  */
 export const MIN_SEGMENT_DURATION = 0.1
-
-export interface SegmentLayoutItem {
-  seg: Segment
-  startX: number
-  endX: number
-}
 
 export function clampPlayheadForSegment(seg: Segment, playhead: number): number {
   return Math.min(seg.endTime, Math.max(seg.startTime, playhead))
