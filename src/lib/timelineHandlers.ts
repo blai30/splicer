@@ -45,12 +45,6 @@ export function createRafThrottler() {
         callback()
       })
     },
-    /**
-     * Get the current pending frame ID (for cleanup)
-     */
-    getPendingId() {
-      return pendingId
-    },
   }
 }
 
