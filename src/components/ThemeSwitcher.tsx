@@ -1,3 +1,4 @@
+import clsx from 'clsx/lite'
 import { Moon, Sun } from 'lucide-preact'
 
 import { theme } from '@/lib/store'
@@ -42,7 +43,7 @@ export function ThemeSwitcher({ class: className }: ThemeSwitcherProps) {
   return (
     <button
       onClick={toggleTheme}
-      class={`relative flex items-center justify-center ${className ?? ''}`}
+      class={clsx('relative flex items-center justify-center', className ?? '')}
       title="Toggle theme"
       aria-label="Toggle theme"
     >

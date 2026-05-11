@@ -1,5 +1,6 @@
 import { useSignalEffect } from '@preact/signals'
 import { useSignal } from '@preact/signals'
+import clsx from 'clsx/lite'
 import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
@@ -21,8 +22,8 @@ import {
 
 const FRAME_STEP = 1 / 30
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
-const DEFAULT_PREVIEW_HEIGHT = 720
-const DEFAULT_PREVIEW_MAX_WIDTH = 1920
+const DEFAULT_PREVIEW_HEIGHT = 600
+const DEFAULT_PREVIEW_MAX_WIDTH = 1600
 
 export function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -281,10 +282,18 @@ export function VideoPreview() {
       class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40"
     >
       {/* Video Player */}
-      <div class="relative flex flex-1 items-center justify-center overflow-hidden bg-slate-950 dark:bg-slate-950">
+      <div
+        class={clsx(
+          'group/preview relative flex flex-1 items-center justify-center overflow-hidden',
+          hasContent ? 'bg-slate-950 dark:bg-slate-950' : 'bg-slate-200 dark:bg-slate-950'
+        )}
+      >
         <div
           ref={playerRef}
-          class="relative w-full max-w-full bg-black transition-[aspect-ratio] duration-200 ease-out"
+          class={clsx(
+            'relative w-full max-w-full transition-[aspect-ratio] duration-200 ease-out',
+            hasContent ? 'bg-black' : 'bg-slate-100 dark:bg-slate-900'
+          )}
           style={{
             width: `${previewMaxWidth.value}px`,
             aspectRatio: `${previewAspectRatio.value}`,
@@ -311,7 +320,7 @@ export function VideoPreview() {
 
           {/* Resize handle */}
           <div
-            class="absolute right-0 bottom-0 z-10 flex h-12 w-12 cursor-nwse-resize items-end justify-end p-2 opacity-0 transition-opacity hover:opacity-100"
+            class="absolute right-0 bottom-0 z-10 flex h-12 w-12 cursor-nwse-resize items-end justify-end p-2 opacity-0 transition-opacity group-hover/preview:opacity-100"
             onPointerDown={onResizePointerDown}
             title="Drag to resize video player"
           >
