@@ -21,15 +21,18 @@ import {
 
 const FRAME_STEP = 1 / 30
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
+const DEFAULT_PREVIEW_HEIGHT = 720
+const DEFAULT_PREVIEW_MAX_WIDTH = 1920
 
 export function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<HTMLDivElement>(null)
-  const previewMaxWidth = useSignal<number | null>(null)
+  const previewMaxWidth = useSignal(Math.round(DEFAULT_PREVIEW_HEIGHT * (16 / 9)))
   const previewAspectRatio = useSignal(16 / 9)
   const playbackSpeed = useSignal(1)
   const resumeAfterSwitch = useRef(false)
+  const hasManualResize = useRef(false)
   const rafId = useRef(0)
 
   function getTimelineAspectRatio(): number {
@@ -84,7 +87,15 @@ export function VideoPreview() {
     if (!v) return
     videoEl.current = v
     v.playbackRate = playbackSpeed.value
-    previewAspectRatio.value = getTimelineAspectRatio()
+    const nextAspectRatio = getTimelineAspectRatio()
+    previewAspectRatio.value = nextAspectRatio
+    if (!hasManualResize.current) {
+      const defaultWidth = Math.min(
+        DEFAULT_PREVIEW_MAX_WIDTH,
+        Math.max(320, Math.round(DEFAULT_PREVIEW_HEIGHT * nextAspectRatio))
+      )
+      previewMaxWidth.value = defaultWidth
+    }
     const info = getActiveSegInfo()
     if (!info) {
       v.removeAttribute('src')
@@ -251,6 +262,7 @@ export function VideoPreview() {
     function onUp() {
       const finalWidth = playerRef.current?.offsetWidth
       if (finalWidth) {
+        hasManualResize.current = true
         previewMaxWidth.value = finalWidth
       }
       el.removeEventListener('pointermove', onMove)
@@ -266,18 +278,17 @@ export function VideoPreview() {
   return (
     <div
       ref={containerRef}
-      class="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30"
+      class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40"
     >
       {/* Video Player */}
-      <div class="relative flex flex-1 items-center justify-center overflow-hidden bg-slate-100 dark:bg-slate-950">
+      <div class="relative flex flex-1 items-center justify-center overflow-hidden bg-slate-950 dark:bg-slate-950">
         <div
           ref={playerRef}
           class="relative w-full max-w-full bg-black transition-[aspect-ratio] duration-200 ease-out"
-          style={
-            previewMaxWidth.value
-              ? { width: `${previewMaxWidth.value}px`, aspectRatio: `${previewAspectRatio.value}` }
-              : { width: '100%', aspectRatio: `${previewAspectRatio.value}` }
-          }
+          style={{
+            width: `${previewMaxWidth.value}px`,
+            aspectRatio: `${previewAspectRatio.value}`,
+          }}
         >
           {!hasContent && (
             <div class="absolute inset-0 flex items-center justify-center">
@@ -319,14 +330,14 @@ export function VideoPreview() {
       </div>
 
       {/* Controls */}
-      <div class="flex flex-col border-t border-slate-200/80 dark:border-slate-700/80">
-        <div class="grid grid-cols-[1fr_auto_1fr] items-center px-4 py-2">
+      <div class="flex flex-col border-t border-slate-200/60 dark:border-slate-700/60">
+        <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 py-2">
           <VolumeControl />
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-0.5">
             <button
               onClick={stepBack}
               disabled={!hasContent}
-              class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              class="flex h-9 w-9 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               title="Step back one frame (←)"
             >
               <StepBack class="h-5 w-5" />
@@ -334,14 +345,14 @@ export function VideoPreview() {
             <button
               onClick={togglePlay}
               disabled={!hasContent}
-              class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              class="flex h-9 w-9 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
             >
               {playing.value ? <Pause class="h-5 w-5" /> : <Play class="ml-0.5 h-5 w-5" />}
             </button>
             <button
               onClick={stepForward}
               disabled={!hasContent}
-              class="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              class="flex h-9 w-9 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               title="Step forward one frame (→)"
             >
               <StepForward class="h-5 w-5" />
@@ -354,7 +365,7 @@ export function VideoPreview() {
               onChange={(e) => {
                 playbackSpeed.value = Number((e.currentTarget as HTMLSelectElement).value)
               }}
-              class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              class="rounded border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
               title="Playback speed"
             >
               {SPEED_OPTIONS.map((speed) => (

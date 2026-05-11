@@ -21,7 +21,7 @@ export function ExportHistory() {
   const td = 'px-4 py-3 text-base text-slate-700 dark:text-slate-300 whitespace-nowrap'
 
   return (
-    <div class="flex shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30">
+    <div class="flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       <div class="flex shrink-0 items-center gap-2.5 px-4 pt-3 pb-2">
         <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Export Library
@@ -39,7 +39,7 @@ export function ExportHistory() {
       <div class="overflow-x-auto">
         <table class="w-full border-collapse">
           <thead>
-            <tr class="border-b border-slate-200 dark:border-slate-700/80">
+            <tr class="border-b border-slate-200/60 dark:border-slate-700/60">
               <th class={th}>File</th>
               <th class={th}>Duration</th>
               <th class={th}>Size</th>

@@ -1,10 +1,11 @@
+import { KeyboardLegend } from '@/components/KeyboardLegend'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
 
 const logoSrc = `${import.meta.env.BASE_URL}brand/logo-mark.svg`
 
 export function AppHeader() {
   return (
-    <header class="flex min-h-14 shrink-0 items-center justify-between rounded-xl border border-slate-200/80 bg-white/90 px-4 py-2 shadow-sm shadow-slate-900/5 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/80 dark:shadow-black/30">
+    <header class="flex min-h-14 shrink-0 items-center justify-between rounded-lg border border-slate-200/60 bg-slate-50/40 px-4 py-2 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       <div class="flex items-center gap-3">
         <div class="flex h-9 w-9 items-center justify-center rounded-lg">
           <img src={logoSrc} alt="Splicer logo" />
@@ -20,6 +21,7 @@ export function AppHeader() {
       </div>
 
       <div class="flex items-center gap-2">
+        <KeyboardLegend />
         <a
           href="https://github.com/blai30/splicer"
           target="_self"

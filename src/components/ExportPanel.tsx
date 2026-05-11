@@ -24,9 +24,9 @@ function makeFilename(format: ExportFormat): string {
 }
 
 const activeBtn =
-  'rounded-md bg-violet-500 px-2.5 py-1 text-sm font-medium text-white transition-colors'
+  'rounded bg-violet-500 px-2.5 py-1 text-sm font-medium text-white transition-colors'
 const inactiveBtn =
-  'rounded-md bg-slate-200 px-2.5 py-1 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+  'rounded px-2.5 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
 
 function OptionButtonGroup<T extends string>({
   label,
@@ -128,7 +128,7 @@ export function ExportPanel() {
   if (!hasSegments) return null
 
   return (
-    <div class="flex shrink-0 flex-col gap-3 rounded-xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-lg shadow-slate-900/10 backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30">
+    <div class="flex shrink-0 flex-col gap-3 rounded-lg border border-slate-200/60 bg-slate-50/40 px-4 py-3 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Export
@@ -162,14 +162,14 @@ export function ExportPanel() {
         />
       </div>
 
-      <div class="flex flex-col gap-2 border-t border-slate-200/80 pt-2 sm:flex-row sm:items-center dark:border-slate-700/80">
+      <div class="flex flex-col gap-2 border-t border-slate-200/60 pt-2 sm:flex-row sm:items-center dark:border-slate-700/60">
         <div class="min-w-0 flex-1">
           {exporting.value && !ffmpegReady.value && (
             <span class="text-sm text-slate-500 dark:text-slate-400">Initializing FFmpeg…</span>
           )}
           {exporting.value && ffmpegReady.value && (
             <div class="flex items-center gap-2">
-              <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+              <div class="h-1.5 flex-1 overflow-hidden rounded bg-slate-200 dark:bg-slate-700">
                 <div
                   class="h-full bg-violet-500 transition-all"
                   style={{ width: `${progressPct}%` }}
@@ -186,7 +186,7 @@ export function ExportPanel() {
         {exporting.value ? (
           <button
             onClick={handleCancel}
-            class="inline-flex h-10 items-center justify-center gap-1.5 rounded-md bg-slate-200 px-4 text-base font-semibold text-slate-700 transition-colors hover:bg-red-100 hover:text-red-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-red-900/40 dark:hover:text-red-400"
+            class="inline-flex h-10 items-center justify-center gap-1.5 rounded bg-slate-100 px-4 text-base font-semibold text-slate-600 transition-colors hover:bg-red-100 hover:text-red-600 dark:bg-slate-800/50 dark:text-slate-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
           >
             <X class="h-4 w-4" />
             Cancel Export
@@ -196,7 +196,7 @@ export function ExportPanel() {
             onClick={handleExport}
             onMouseEnter={initFFmpeg}
             disabled={!hasSegments}
-            class="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-500 px-4 text-base font-semibold text-white transition-colors hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-40"
+            class="inline-flex h-10 items-center justify-center gap-2 rounded bg-violet-500 px-4 text-base font-semibold text-white transition-colors hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <CirclePlay class="h-4 w-4" />
             Export Video

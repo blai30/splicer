@@ -181,12 +181,12 @@ export function Timeline() {
   const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)
   const disabled = !seg
   const toolBtn =
-    'flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
+    'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
 
   return (
     <div
       class={clsx(
-        'relative flex h-64 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white/95 shadow-lg shadow-slate-900/10 backdrop-blur transition-colors md:h-48 dark:border-slate-700/70 dark:bg-slate-900/95 dark:shadow-black/30',
+        'relative flex h-64 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur transition-colors md:h-48 dark:border-slate-700/60 dark:bg-slate-900/40',
         draggingOver.value && 'ring-2 ring-violet-400'
       )}
       onDragOver={onDragOver}
@@ -237,7 +237,7 @@ export function Timeline() {
             </button>
 
             <button
-              class="flex items-center gap-1.5 rounded-md bg-red-100 px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60"
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
               disabled={disabled}
               onClick={deleteSegment}
               title="Delete segment"
@@ -278,7 +278,7 @@ export function Timeline() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') zoomTo(Number((e.currentTarget as HTMLInputElement).value))
                 }}
-                class="w-14 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 pr-5 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                class="w-14 rounded border border-slate-300 bg-white px-1.5 py-0.5 pr-5 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 title="Zoom level (px/sec)"
               />
               <span class="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-500">
@@ -293,7 +293,7 @@ export function Timeline() {
       <div
         ref={trackRef}
         data-track
-        class="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent dark:scrollbar-thumb-slate-700"
+        class="relative min-h-0 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto overflow-y-hidden dark:scrollbar-thumb-slate-700"
         onPointerDown={onTrackPointerDown}
       >
         {isEmpty ? (
@@ -303,10 +303,10 @@ export function Timeline() {
           >
             <div
               class={clsx(
-                'flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-xl border-[3px] border-dashed px-5 py-4 text-center transition-colors',
+                'flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-lg border-2 border-dashed px-5 py-4 text-center transition-colors',
                 draggingOver.value
-                  ? 'border-violet-500 bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300'
-                  : 'border-slate-300 bg-slate-50 text-slate-500 dark:border-slate-600 dark:bg-slate-800/30 dark:text-slate-400'
+                  ? 'border-violet-400 bg-violet-50/50 text-violet-600 dark:border-violet-500/50 dark:bg-violet-950/30 dark:text-violet-300'
+                  : 'border-slate-300 bg-slate-50/50 text-slate-500 dark:border-slate-600 dark:bg-slate-800/20 dark:text-slate-400'
               )}
             >
               {draggingOver.value ? (
@@ -370,7 +370,7 @@ export function Timeline() {
 
       {/* Drop overlay when timeline has content */}
       {draggingOver.value && !isEmpty && (
-        <div class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl border-2 border-dashed border-violet-400 bg-violet-50/60 dark:bg-violet-950/40">
+        <div class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-violet-400 bg-violet-50/30 dark:bg-violet-950/20">
           <p class="text-base font-medium text-violet-500">Drop to append</p>
         </div>
       )}

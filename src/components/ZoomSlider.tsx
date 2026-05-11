@@ -35,9 +35,9 @@ export function ZoomSlider({ value, min, max, onChange, class: className }: Zoom
 
   return (
     <div class={`relative h-5 select-none ${className ?? 'w-28'}`} onPointerDown={onPointerDown}>
-      <div class="absolute top-1/2 right-0 left-0 h-px -translate-y-1/2 rounded-full bg-slate-200 dark:bg-slate-700" />
+      <div class="absolute top-1/2 right-0 left-0 h-px -translate-y-1/2 bg-slate-200 dark:bg-slate-700" />
       <div
-        class="absolute top-1/2 left-0 h-px -translate-y-1/2 rounded-full bg-violet-600 dark:bg-violet-400"
+        class="absolute top-1/2 left-0 h-px -translate-y-1/2 bg-violet-600 dark:bg-violet-400"
         style={{ width: `${pct * 100}%` }}
       />
       {TICKS.map((t) => (
@@ -51,7 +51,7 @@ export function ZoomSlider({ value, min, max, onChange, class: className }: Zoom
         />
       ))}
       <div
-        class="absolute top-1/2 h-3.5 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600 dark:bg-violet-400"
+        class="absolute top-1/2 h-3 w-1 -translate-x-1/2 -translate-y-1/2 bg-violet-600 dark:bg-violet-400"
         style={{ left: `${pct * 100}%` }}
       />
     </div>

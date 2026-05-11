@@ -1,12 +1,4 @@
 ---
-interface Props {
-  title?: string
-  description?: string
-  canonical?: string
-  ogImage?: string
-  noindex?: boolean
-}
-
 const {
   title = 'Splicer | Browser Video Trimmer',
   description = 'Trim and export video clips directly in your browser with local processing and no upload required.',
@@ -90,7 +82,7 @@ const webAppJsonLd = {
     />
   </head>
   <body
-    class="min-h-screen bg-linear-to-b from-slate-100 via-slate-200 to-slate-300 text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-50"
+    class="min-h-screen bg-slate-300 text-slate-900 dark:bg-slate-950 dark:text-slate-50"
   >
     <slot />
   </body>

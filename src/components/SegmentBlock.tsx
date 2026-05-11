@@ -122,8 +122,10 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
     <div
       data-segment
       class={clsx(
-        'relative flex h-14 shrink-0 cursor-grab items-center overflow-hidden rounded select-none',
-        isSelected ? 'ring-2 ring-violet-400' : 'ring-1 ring-black/20',
+        'relative flex h-14 shrink-0 cursor-grab items-center overflow-hidden rounded border select-none',
+        isSelected
+          ? 'border-violet-400 ring-1 ring-violet-400'
+          : 'border-black/10 dark:border-white/10',
         clipColor(seg.clipId),
         isDragging && 'opacity-40'
       )}

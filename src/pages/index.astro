@@ -1,5 +1,5 @@
 ---
-import Layout from '../layouts/Layout.astro'
+import Layout from '@/layouts/Layout.astro'
 import { AppHeader } from '@/components/AppHeader'
 import { VideoPreview } from '@/components/VideoPreview'
 import { Timeline } from '@/components/Timeline'
@@ -18,7 +18,7 @@ const pageDescription =
   ogImage={`${import.meta.env.BASE_URL}splash/hero-social.png`}
 >
   <main
-    class="mx-auto flex h-full w-full max-w-7xl flex-col gap-3 px-3 py-3 md:px-4 md:py-4"
+    class="mx-auto flex h-full w-full flex-col gap-3 px-3 py-3 md:px-4 md:py-4"
   >
     <AppHeader client:load />
     <VideoPreview client:load />
