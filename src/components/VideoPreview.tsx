@@ -5,8 +5,8 @@ import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { VolumeControl } from '@/components/VolumeControl'
-import { deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
 import { formatTimecode } from '@/lib/format'
+import { deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/store'
 import {
   clips,
   currentPlaybackTime,

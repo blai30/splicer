@@ -4,13 +4,13 @@ import { useEffect, useRef } from 'preact/hooks'
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
 import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
+import { GAP_PX, clipColor, dragState, getSegmentStartX, pxPerSec } from '@/lib/store'
 import {
   clampPlayheadForSegment,
   findDropIndexAtTrackX,
   updateSegmentEndTime,
   updateSegmentStartTime,
 } from '@/lib/timelineDomain'
-import { GAP_PX, clipColor, dragState, getSegmentStartX, pxPerSec } from '@/lib/timelineState'
 import type { Segment } from '@/lib/types'
 import { ensureClipWaveform } from '@/lib/videoImport'
 

@@ -15,22 +15,29 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { SegmentBlock } from '@/components/SegmentBlock'
 import { ZoomSlider } from '@/components/ZoomSlider'
-import { cutAtPlayhead, deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
-import { playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
-import {
-  computeZoomScroll,
-  createPlayheadDragHandler,
-  createTrackSeekHandler,
-} from '@/lib/timelineHandlers'
 import {
   GAP_PX,
   PADDING_PX,
   ZOOM_MAX,
   ZOOM_MIN,
+  cutAtPlayhead,
+  deleteSegment,
   dragState,
   getSegmentStartX,
+  playheadTime,
   pxPerSec,
-} from '@/lib/timelineState'
+  selectedSegmentId,
+  setInPoint,
+  setOutPoint,
+  timeline,
+  toggleMute,
+  videoEl,
+} from '@/lib/store'
+import {
+  computeZoomScroll,
+  createPlayheadDragHandler,
+  createTrackSeekHandler,
+} from '@/lib/timelineDomain'
 import { importAndAppend } from '@/lib/videoImport'
 
 const ZOOM_KEYBOARD_STEP = 10

@@ -1,9 +1,5 @@
 import type { Segment, SegmentLayoutItem } from '@/lib/types'
 
-/**
- * Minimum allowed duration for a segment in seconds.
- * Prevents creation of very short segments that can't be meaningfully worked with.
- */
 export const MIN_SEGMENT_DURATION = 0.1
 
 export function clampPlayheadForSegment(seg: Segment, playhead: number): number {
@@ -130,4 +126,142 @@ export function findDropIndexAtTrackX(
   }
 
   return dropIdx
+}
+
+export function createRafThrottler() {
+  let pendingId: number | null = null
+
+  return {
+    cancel() {
+      if (pendingId !== null) {
+        cancelAnimationFrame(pendingId)
+        pendingId = null
+      }
+    },
+    queue(callback: () => void) {
+      if (pendingId !== null) cancelAnimationFrame(pendingId)
+      pendingId = requestAnimationFrame(() => {
+        pendingId = null
+        callback()
+      })
+    },
+  }
+}
+
+export function viewportToTrackX(
+  clientX: number,
+  trackRect: DOMRect,
+  trackScrollLeft: number
+): number {
+  return clientX - trackRect.left + trackScrollLeft
+}
+
+export function trackXToSegmentTime(
+  trackX: number,
+  segmentStartX: number,
+  pxPerSec: number
+): number {
+  return (trackX - segmentStartX) / pxPerSec
+}
+
+export function createTrackSeekHandler(options: {
+  timeline: Segment[]
+  pxPerSec: number
+  padding: number
+  gap: number
+  trackEl: HTMLElement
+  onSeek: (segmentId: string, time: number) => void
+}) {
+  const { timeline, pxPerSec, padding, gap, trackEl, onSeek } = options
+  const throttler = createRafThrottler()
+  const layout = buildSegmentLayout(timeline, pxPerSec, gap, padding)
+
+  return {
+    onPointerDown(e: PointerEvent) {
+      if (timeline.length === 0) return
+
+      function seekFromPointer(ev: PointerEvent) {
+        const rect = trackEl.getBoundingClientRect()
+        const trackX = viewportToTrackX(ev.clientX, rect, trackEl.scrollLeft)
+        const hit = findSegmentAtTrackX(layout, trackX, pxPerSec)
+        if (!hit) return
+        onSeek(hit.seg.id, hit.time)
+      }
+
+      seekFromPointer(e)
+      trackEl.setPointerCapture(e.pointerId)
+
+      function onMove(mv: PointerEvent) {
+        throttler.queue(() => seekFromPointer(mv))
+      }
+
+      function onUp() {
+        throttler.cancel()
+        trackEl.removeEventListener('pointermove', onMove)
+        trackEl.removeEventListener('pointerup', onUp)
+      }
+
+      trackEl.addEventListener('pointermove', onMove)
+      trackEl.addEventListener('pointerup', onUp)
+    },
+
+    cleanup() {
+      throttler.cancel()
+    },
+  }
+}
+
+export function createPlayheadDragHandler(options: {
+  segment: Segment
+  segmentStartX: number
+  pxPerSec: number
+  trackEl: HTMLElement
+  onUpdate: (time: number) => void
+}) {
+  const { segment, segmentStartX, pxPerSec, trackEl, onUpdate } = options
+  const throttler = createRafThrottler()
+
+  return {
+    onPointerDown(e: PointerEvent) {
+      e.stopPropagation()
+      const el = e.currentTarget as HTMLElement
+      el.setPointerCapture(e.pointerId)
+
+      function syncPlayheadFromPointer(mv: PointerEvent) {
+        const rect = trackEl.getBoundingClientRect()
+        const trackX = viewportToTrackX(mv.clientX, rect, trackEl.scrollLeft)
+        const segmentTime = trackXToSegmentTime(trackX, segmentStartX, pxPerSec)
+        const clampedTime = clampPlayheadForSegment(segment, segment.startTime + segmentTime)
+        onUpdate(clampedTime)
+      }
+
+      function onMove(mv: PointerEvent) {
+        throttler.queue(() => syncPlayheadFromPointer(mv))
+      }
+
+      function onUp() {
+        throttler.cancel()
+        el.removeEventListener('pointermove', onMove)
+        el.removeEventListener('pointerup', onUp)
+      }
+
+      el.addEventListener('pointermove', onMove)
+      el.addEventListener('pointerup', onUp)
+    },
+
+    cleanup() {
+      throttler.cancel()
+    },
+  }
+}
+
+export function computeZoomScroll(
+  oldPx: number,
+  newPx: number,
+  anchorX: number,
+  currentScroll: number,
+  padding: number
+): number {
+  const timeAtCursor = (anchorX + currentScroll - padding) / oldPx
+  return timeAtCursor * newPx + padding - anchorX
 }
