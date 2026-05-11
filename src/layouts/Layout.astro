@@ -1,4 +1,6 @@
 ---
+import { assetPath } from '@/lib/paths'
+
 const {
   title = 'Splicer | Browser Video Trimmer',
   description = 'Trim and export video clips directly in your browser with local processing and no upload required.',
@@ -41,17 +43,15 @@ const webAppJsonLd = {
         document.documentElement.style.backgroundColor = 'black'
       }
     </script>
-    <script
-      is:inline
-      src={`${import.meta.env.BASE_URL}coi-serviceworker.min.js`}></script>
+    <script is:inline src={assetPath('coi-serviceworker.min.js')}></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
     <link
       rel="icon"
       type="image/svg+xml"
-      href={`${import.meta.env.BASE_URL}brand/logo-mark.svg`}
+      href={assetPath('brand/logo-mark.svg')}
     />
-    <link rel="icon" href={`${import.meta.env.BASE_URL}brand/logo-mark.svg`} />
+    <link rel="icon" href={assetPath('brand/logo-mark.svg')} />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
     <meta name="description" content={description} />

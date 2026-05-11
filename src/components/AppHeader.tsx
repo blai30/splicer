@@ -1,7 +1,8 @@
 import { KeyboardLegend } from '@/components/KeyboardLegend'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
+import { assetPath } from '@/lib/paths'
 
-const logoSrc = `${import.meta.env.BASE_URL}brand/logo-mark.svg`
+const logoSrc = assetPath('brand/logo-mark.svg')
 
 export function AppHeader() {
   return (

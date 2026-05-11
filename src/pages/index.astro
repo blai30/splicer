@@ -1,4 +1,5 @@
 ---
+import { assetPath } from '@/lib/paths'
 import Layout from '@/layouts/Layout.astro'
 import { AppHeader } from '@/components/AppHeader'
 import { VideoPreview } from '@/components/VideoPreview'
@@ -15,7 +16,7 @@ const pageDescription =
 <Layout
   title={pageTitle}
   description={pageDescription}
-  ogImage={`${import.meta.env.BASE_URL}splash/hero-social.png`}
+  ogImage={assetPath('splash/hero-social.png')}
 >
   <main
     class="mx-auto flex h-full w-full flex-col gap-3 px-3 py-3 md:px-4 md:py-4"

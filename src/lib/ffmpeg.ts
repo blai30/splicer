@@ -1,6 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 
+import { assetPath } from '@/lib/paths'
 import { clips, ffmpegProgress, ffmpegReady } from '@/lib/store'
 import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
 
@@ -51,8 +52,8 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     })
     loadingPromise = ffmpeg
       .load({
-        coreURL: `${import.meta.env.BASE_URL}ffmpeg/ffmpeg-core.js`,
-        wasmURL: `${import.meta.env.BASE_URL}ffmpeg/ffmpeg-core.wasm`,
+        coreURL: assetPath('ffmpeg/ffmpeg-core.js'),
+        wasmURL: assetPath('ffmpeg/ffmpeg-core.wasm'),
       })
       .then(() => {
         instance = ffmpeg
