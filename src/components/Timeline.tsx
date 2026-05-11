@@ -18,10 +18,10 @@ import { ZoomSlider } from '@/components/ZoomSlider'
 import { cutAtPlayhead, deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
 import { playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
 import {
-  buildSegmentLayout,
-  clampPlayheadForSegment,
-  findSegmentAtTrackX,
-} from '@/lib/timelineDomain'
+  computeZoomScroll,
+  createPlayheadDragHandler,
+  createTrackSeekHandler,
+} from '@/lib/timelineHandlers'
 import {
   GAP_PX,
   PADDING_PX,
@@ -37,11 +37,12 @@ export function Timeline() {
   const trackRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const draggingOver = useSignal(false)
-  const seekRafRef = useRef<number | null>(null)
-  const playheadRafRef = useRef<number | null>(null)
+  const trackSeekHandlerRef = useRef<ReturnType<typeof createTrackSeekHandler> | null>(null)
+  const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
 
   const activeSegId = selectedSegmentId.value ?? timeline.value[0]?.id
   const activeSeg = timeline.value.find((s) => s.id === activeSegId)
+  // Playhead position: segment start pixel + time offset scaled by zoom level
   const playheadLeft = activeSeg
     ? getSegmentStartX(activeSeg.id) + (playheadTime.value - activeSeg.startTime) * pxPerSec.value
     : PADDING_PX
@@ -49,89 +50,45 @@ export function Timeline() {
   function onTrackPointerDown(e: PointerEvent) {
     if (!trackRef.current) return
     if (timeline.value.length === 0) return
+    // Ignore clicks on playhead and segment containers
     if ((e.target as HTMLElement).closest('[data-playhead]')) return
     if ((e.target as HTMLElement).closest('[data-segment]')) return
-    const trackEl = trackRef.current
-    const layout = buildSegmentLayout(timeline.value, pxPerSec.value, GAP_PX, PADDING_PX)
 
-    function seekFromPointer(ev: PointerEvent) {
-      const rect = trackEl.getBoundingClientRect()
-      const x = ev.clientX - rect.left + trackEl.scrollLeft
-      const hit = findSegmentAtTrackX(layout, x, pxPerSec.value)
-      if (!hit) return
-      selectedSegmentId.value = hit.seg.id
-      playheadTime.value = hit.time
-      const v = videoEl.current
-      if (v) v.currentTime = hit.time
-    }
+    // Create and cache handler for this drag session
+    trackSeekHandlerRef.current = createTrackSeekHandler({
+      timeline: timeline.value,
+      pxPerSec: pxPerSec.value,
+      padding: PADDING_PX,
+      gap: GAP_PX,
+      trackEl: trackRef.current,
+      onSeek(segmentId, time) {
+        selectedSegmentId.value = segmentId
+        playheadTime.value = time
+        const v = videoEl.current
+        if (v) v.currentTime = time
+      },
+    })
 
-    function queueSeekFromPointer(ev: PointerEvent) {
-      if (seekRafRef.current !== null) cancelAnimationFrame(seekRafRef.current)
-      seekRafRef.current = requestAnimationFrame(() => {
-        seekRafRef.current = null
-        seekFromPointer(ev)
-      })
-    }
-
-    seekFromPointer(e)
-    trackEl.setPointerCapture(e.pointerId)
-
-    function onMove(mv: PointerEvent) {
-      queueSeekFromPointer(mv)
-    }
-    function onUp() {
-      if (seekRafRef.current !== null) {
-        cancelAnimationFrame(seekRafRef.current)
-        seekRafRef.current = null
-      }
-      trackEl.removeEventListener('pointermove', onMove)
-      trackEl.removeEventListener('pointerup', onUp)
-    }
-    trackEl.addEventListener('pointermove', onMove)
-    trackEl.addEventListener('pointerup', onUp)
+    trackSeekHandlerRef.current.onPointerDown(e)
   }
 
   function onPlayheadPointerDown(e: PointerEvent) {
     if (!activeSeg || !trackRef.current) return
-    e.stopPropagation()
-    const el = e.currentTarget as HTMLElement
-    el.setPointerCapture(e.pointerId)
-    const segStartX = getSegmentStartX(activeSeg.id)
-    const trackEl = trackRef.current
 
-    function syncPlayheadFromPointer(mv: PointerEvent) {
-      const rect = trackEl.getBoundingClientRect()
-      const x = mv.clientX - rect.left + trackEl.scrollLeft
-      const t = clampPlayheadForSegment(
-        activeSeg!,
-        activeSeg!.startTime + (x - segStartX) / pxPerSec.value
-      )
-      playheadTime.value = t
-      const v = videoEl.current
-      if (v) v.currentTime = t
-    }
+    // Create and cache handler for this drag session
+    playheadDragHandlerRef.current = createPlayheadDragHandler({
+      segment: activeSeg,
+      segmentStartX: getSegmentStartX(activeSeg.id),
+      pxPerSec: pxPerSec.value,
+      trackEl: trackRef.current,
+      onUpdate(time) {
+        playheadTime.value = time
+        const v = videoEl.current
+        if (v) v.currentTime = time
+      },
+    })
 
-    function queuePlayheadFromPointer(mv: PointerEvent) {
-      if (playheadRafRef.current !== null) cancelAnimationFrame(playheadRafRef.current)
-      playheadRafRef.current = requestAnimationFrame(() => {
-        playheadRafRef.current = null
-        syncPlayheadFromPointer(mv)
-      })
-    }
-
-    function onMove(mv: PointerEvent) {
-      queuePlayheadFromPointer(mv)
-    }
-    function onUp() {
-      if (playheadRafRef.current !== null) {
-        cancelAnimationFrame(playheadRafRef.current)
-        playheadRafRef.current = null
-      }
-      el.removeEventListener('pointermove', onMove)
-      el.removeEventListener('pointerup', onUp)
-    }
-    el.addEventListener('pointermove', onMove)
-    el.addEventListener('pointerup', onUp)
+    playheadDragHandlerRef.current.onPointerDown(e)
   }
 
   function zoomTo(newPx: number, anchorX?: number) {
@@ -139,13 +96,13 @@ export function Timeline() {
     if (!track) return
     const oldPx = pxPerSec.value
     const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
+
     if (anchorX !== undefined) {
-      const timeAtCursor = (anchorX + track.scrollLeft - PADDING_PX) / oldPx
-      pxPerSec.value = clamped
-      track.scrollLeft = timeAtCursor * clamped + PADDING_PX - anchorX
-    } else {
-      pxPerSec.value = clamped
+      // Zoom with anchor point: compute new scroll to keep cursor position fixed
+      track.scrollLeft = computeZoomScroll(oldPx, clamped, anchorX, track.scrollLeft, PADDING_PX)
     }
+
+    pxPerSec.value = clamped
   }
 
   useEffect(() => {
@@ -166,10 +123,11 @@ export function Timeline() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // Cleanup any pending drag handlers on unmount
   useEffect(
     () => () => {
-      if (seekRafRef.current !== null) cancelAnimationFrame(seekRafRef.current)
-      if (playheadRafRef.current !== null) cancelAnimationFrame(playheadRafRef.current)
+      trackSeekHandlerRef.current?.cleanup()
+      playheadDragHandlerRef.current?.cleanup()
     },
     []
   )
