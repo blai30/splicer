@@ -23,11 +23,6 @@ function makeFilename(format: ExportFormat): string {
   return `splicer-${ts}.${format}`
 }
 
-const activeBtn =
-  'rounded bg-violet-500 px-2.5 py-1 text-sm font-medium text-white transition-colors'
-const inactiveBtn =
-  'rounded px-2.5 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
-
 function OptionButtonGroup<T extends string>({
   label,
   options,
@@ -45,7 +40,11 @@ function OptionButtonGroup<T extends string>({
       {options.map((o) => (
         <button
           key={o.value}
-          class={clsx(selected === o.value ? activeBtn : inactiveBtn)}
+          class={clsx(
+            selected === o.value
+              ? 'rounded bg-violet-500 px-2.5 py-1 text-sm font-medium text-white transition-colors'
+              : 'rounded px-2.5 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
+          )}
           onClick={() => onSelect(o.value)}
         >
           {o.label}

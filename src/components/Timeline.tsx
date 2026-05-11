@@ -33,6 +33,9 @@ import {
 } from '@/lib/timelineState'
 import { importAndAppend } from '@/lib/videoImport'
 
+const ZOOM_KEYBOARD_STEP = 10
+const ZOOM_SCALE_FACTOR = 1.25
+
 export function Timeline() {
   const trackRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -98,7 +101,7 @@ export function Timeline() {
     const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
 
     if (anchorX !== undefined) {
-      // Zoom with anchor point: compute new scroll to keep cursor position fixed
+      // Keep cursor position fixed while zooming: scroll offset adjusted by scale ratio
       track.scrollLeft = computeZoomScroll(oldPx, clamped, anchorX, track.scrollLeft, PADDING_PX)
     }
 
@@ -112,10 +115,10 @@ export function Timeline() {
 
       if (e.key === '-' || e.key === '_') {
         e.preventDefault()
-        zoomTo(pxPerSec.value - 10)
+        zoomTo(pxPerSec.value - ZOOM_KEYBOARD_STEP)
       } else if (e.key === '=' || e.key === '+') {
         e.preventDefault()
-        zoomTo(pxPerSec.value + 10)
+        zoomTo(pxPerSec.value + ZOOM_KEYBOARD_STEP)
       }
     }
 
@@ -138,7 +141,7 @@ export function Timeline() {
       e.preventDefault()
       const rect = trackRef.current.getBoundingClientRect()
       const anchorX = e.clientX - rect.left
-      const factor = e.deltaY > 0 ? 1 / 1.25 : 1.25
+      const factor = e.deltaY > 0 ? 1 / ZOOM_SCALE_FACTOR : ZOOM_SCALE_FACTOR
       zoomTo(pxPerSec.value * factor, anchorX)
     } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
       e.preventDefault()
@@ -175,8 +178,6 @@ export function Timeline() {
   const isEmpty = timeline.value.length === 0
   const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)
   const disabled = !seg
-  const toolBtn =
-    'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
 
   return (
     <div
@@ -197,7 +198,7 @@ export function Timeline() {
         <div class="flex items-start gap-2.5 md:flex-1">
           <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             <button
-              class={toolBtn}
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={disabled}
               onClick={setInPoint}
               title="Set in-point (I)"
@@ -208,7 +209,7 @@ export function Timeline() {
             </button>
 
             <button
-              class={toolBtn}
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={disabled}
               onClick={setOutPoint}
               title="Set out-point (O)"
@@ -219,7 +220,7 @@ export function Timeline() {
             </button>
 
             <button
-              class={toolBtn}
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={disabled}
               onClick={cutAtPlayhead}
               title="Split at playhead (C)"
@@ -230,7 +231,7 @@ export function Timeline() {
             </button>
 
             <button
-              class={toolBtn}
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={disabled}
               onClick={toggleMute}
               title="Toggle mute"
@@ -389,6 +390,7 @@ export function Timeline() {
         multiple
         class="hidden"
         onChange={onFileInputChange}
+        aria-label="Select video files to import into timeline"
       />
     </div>
   )

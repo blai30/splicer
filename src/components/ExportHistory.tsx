@@ -16,10 +16,6 @@ export function ExportHistory() {
 
   if (isEmpty) return null
 
-  const th =
-    'px-4 py-2 text-left text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400'
-  const td = 'px-4 py-3 text-base text-slate-700 dark:text-slate-300 whitespace-nowrap'
-
   return (
     <div class="flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       <div class="flex shrink-0 items-center gap-2.5 px-4 pt-3 pb-2">
@@ -43,17 +39,27 @@ export function ExportHistory() {
         <table class="w-full border-collapse">
           <thead>
             <tr class="border-b border-slate-200/60 dark:border-slate-700/60">
-              <th class={th}>File</th>
-              <th class={th}>Duration</th>
-              <th class={th}>Size</th>
-              <th class={th}>FPS</th>
-              <th class={th}>Dimensions</th>
+              <th class="px-4 py-2 text-left text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+                File
+              </th>
+              <th class="px-4 py-2 text-left text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+                Duration
+              </th>
+              <th class="px-4 py-2 text-left text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+                Size
+              </th>
+              <th class="px-4 py-2 text-left text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+                FPS
+              </th>
+              <th class="px-4 py-2 text-left text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+                Dimensions
+              </th>
             </tr>
           </thead>
           <tbody>
             {exportHistory.value.map((rec, i) => (
               <tr key={rec.id} class={clsx(i % 2 !== 0 && 'bg-slate-50/80 dark:bg-slate-800/50')}>
-                <td class={td}>
+                <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
                   <a
                     href={rec.url}
                     download={rec.filename}
@@ -70,10 +76,18 @@ export function ExportHistory() {
                     {rec.filename}
                   </a>
                 </td>
-                <td class={td}>{formatTime(rec.duration)}</td>
-                <td class={td}>{formatSize(rec.size)}</td>
-                <td class={td}>{formatFps(rec.fps)}</td>
-                <td class={td}>{rec.width && rec.height ? `${rec.width}×${rec.height}` : '—'}</td>
+                <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
+                  {formatTime(rec.duration)}
+                </td>
+                <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
+                  {formatSize(rec.size)}
+                </td>
+                <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
+                  {formatFps(rec.fps)}
+                </td>
+                <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
+                  {rec.width && rec.height ? `${rec.width}×${rec.height}` : '—'}
+                </td>
               </tr>
             ))}
           </tbody>

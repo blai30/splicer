@@ -8,10 +8,6 @@ type WaveformViewProps = {
   class?: string
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
 export function WaveformView({
   peaks,
   clipDuration,
@@ -63,8 +59,8 @@ export function WaveformView({
 
       if (peaks.length === 0 || clipDuration <= 0 || segmentEnd <= segmentStart) return
 
-      const startRatio = clamp(segmentStart / clipDuration, 0, 1)
-      const endRatio = clamp(segmentEnd / clipDuration, 0, 1)
+      const startRatio = Math.min(1, Math.max(0, segmentStart / clipDuration))
+      const endRatio = Math.min(1, Math.max(0, segmentEnd / clipDuration))
       const startIdx = Math.floor(startRatio * (peaks.length - 1))
       const endIdx = Math.max(startIdx + 1, Math.ceil(endRatio * (peaks.length - 1)))
       const visibleLength = Math.max(1, endIdx - startIdx)

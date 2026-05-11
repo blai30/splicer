@@ -21,9 +21,10 @@ import {
 } from '@/lib/store'
 
 const FRAME_STEP = 1 / 30
-const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 const DEFAULT_PREVIEW_HEIGHT = 600
 const DEFAULT_PREVIEW_MAX_WIDTH = 1600
+const ASPECT_RATIO_VARIANCE_THRESHOLD = 0.01
+const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
 export function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -56,7 +57,7 @@ export function VideoPreview() {
 
     const min = Math.min(...ratios)
     const max = Math.max(...ratios)
-    const isMixed = max - min > 0.01
+    const isMixed = max - min > ASPECT_RATIO_VARIANCE_THRESHOLD
 
     if (isMixed) {
       // Mixed aspect clips: use the smallest ratio as the common preview canvas.
@@ -372,7 +373,7 @@ export function VideoPreview() {
               class="rounded border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
               title="Playback speed"
             >
-              {SPEED_OPTIONS.map((speed) => (
+              {PLAYBACK_SPEED_OPTIONS.map((speed) => (
                 <option key={speed} value={speed}>
                   {speed}×
                 </option>
