@@ -282,12 +282,7 @@ export function VideoPreview() {
       class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40"
     >
       {/* Video Player */}
-      <div
-        class={clsx(
-          'group/preview relative flex flex-1 items-center justify-center overflow-hidden',
-          hasContent ? 'bg-slate-950 dark:bg-slate-950' : 'bg-slate-200 dark:bg-slate-950'
-        )}
-      >
+      <div class="group/preview relative flex flex-1 items-center justify-center overflow-hidden bg-slate-200 dark:bg-slate-950">
         <div
           ref={playerRef}
           class={clsx(
