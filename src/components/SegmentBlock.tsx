@@ -4,6 +4,12 @@ import { useEffect, useRef } from 'preact/hooks'
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
 import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
+import {
+  clampPlayheadForSegment,
+  findDropIndexAtTrackX,
+  updateSegmentEndTime,
+  updateSegmentStartTime,
+} from '@/lib/timelineDomain'
 import { GAP_PX, clipColor, dragState, getSegmentStartX, pxPerSec } from '@/lib/timelineState'
 import type { Segment } from '@/lib/types'
 import { ensureClipWaveform } from '@/lib/videoImport'
@@ -33,14 +39,11 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
       function onMove(mv: PointerEvent) {
         const dt = (mv.clientX - startX) / pxPerSec.value
         const clipDur = clips.value.find((c) => c.id === seg.clipId)?.duration ?? seg.endTime
-        timeline.value = timeline.value.map((s) => {
-          if (s.id !== seg.id) return s
-          if (side === 'left') {
-            return { ...s, startTime: Math.max(0, Math.min(startTime + dt, s.endTime - 0.1)) }
-          } else {
-            return { ...s, endTime: Math.min(clipDur, Math.max(startTime + dt, s.startTime + 0.1)) }
-          }
-        })
+        if (side === 'left') {
+          timeline.value = updateSegmentStartTime(timeline.value, seg.id, startTime + dt)
+        } else {
+          timeline.value = updateSegmentEndTime(timeline.value, seg.id, startTime + dt, clipDur)
+        }
       }
 
       function onUp() {
@@ -69,18 +72,7 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
       if (moved && trackEl) {
         const rect = trackEl.getBoundingClientRect()
         const x = mv.clientX - rect.left + trackEl.scrollLeft - GAP_PX
-        let accX = 0
-        let dropIdx = 0
-        for (let i = 0; i < timeline.value.length; i++) {
-          const s = timeline.value[i]
-          const w = (s.endTime - s.startTime) * pxPerSec.value
-          if (x < accX + w / 2) {
-            dropIdx = i
-            break
-          }
-          accX += w + GAP_PX
-          dropIdx = i + 1
-        }
+        const dropIdx = findDropIndexAtTrackX(timeline.value, x, pxPerSec.value, GAP_PX)
         dragState.value = { segId: seg.id, dropIndex: dropIdx }
       }
     }
@@ -106,7 +98,7 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
           const x = e.clientX - rect.left + trackEl.scrollLeft
           const segStartX = getSegmentStartX(seg.id)
           const t = seg.startTime + Math.max(0, x - segStartX) / pxPerSec.value
-          const clamped = Math.max(seg.startTime, Math.min(seg.endTime, t))
+          const clamped = clampPlayheadForSegment(seg, t)
           playheadTime.value = clamped
           const v = videoEl.current
           if (v) v.currentTime = clamped
@@ -145,7 +137,7 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
         {clip?.name ?? 'Clip'}
         {seg.muted && <span class="ml-1 opacity-70">🔇</span>}
       </span>
-      <span class="relative z-10 ml-auto shrink-0 pr-2 text-sm text-white/70">
+      <span class="relative z-10 ml-auto shrink-0 self-end pr-2 text-sm text-white/70">
         {formatTime(dur)}
       </span>
       <div

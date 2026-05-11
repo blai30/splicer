@@ -19,11 +19,27 @@ export function isVideoFile(file: File): boolean {
 export function getVideoMetadata(
   url: string
 ): Promise<{ duration: number; width: number; height: number }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const v = document.createElement('video')
     v.preload = 'metadata'
-    v.onloadedmetadata = () =>
-      resolve({ duration: v.duration, width: v.videoWidth, height: v.videoHeight })
+
+    const cleanup = () => {
+      v.onloadedmetadata = null
+      v.onerror = null
+      v.src = ''
+      v.load()
+    }
+
+    v.onloadedmetadata = () => {
+      const metadata = { duration: v.duration, width: v.videoWidth, height: v.videoHeight }
+      cleanup()
+      resolve(metadata)
+    }
+    v.onerror = () => {
+      cleanup()
+      reject(new Error('Failed to read video metadata'))
+    }
+
     v.src = url
   })
 }
@@ -84,13 +100,14 @@ async function extractWaveformPeaksWithAudioContext(
 }
 
 async function extractWaveformPeaksWithFfmpeg(file: File, peakCount = 2000): Promise<number[]> {
-  const ffmpeg = await getFFmpeg()
   const ext = file.name.split('.').pop() ?? 'mp4'
   const runId = crypto.randomUUID().replace(/-/g, '')
   const inputName = `waveform_${runId}.${ext}`
   const outputName = `waveform_${runId}.f32`
 
+  let ffmpeg
   try {
+    ffmpeg = await getFFmpeg()
     await ffmpeg.writeFile(inputName, await fetchFile(file))
     const ret = await ffmpeg.exec([
       '-i',
@@ -117,15 +134,17 @@ async function extractWaveformPeaksWithFfmpeg(file: File, peakCount = 2000): Pro
   } catch {
     return []
   } finally {
-    try {
-      await ffmpeg.deleteFile(inputName)
-    } catch {
-      // Best effort cleanup for temp input file.
-    }
-    try {
-      await ffmpeg.deleteFile(outputName)
-    } catch {
-      // Best effort cleanup for temp output file.
+    if (ffmpeg) {
+      try {
+        await ffmpeg.deleteFile(inputName)
+      } catch {
+        // Best effort cleanup for temp input file.
+      }
+      try {
+        await ffmpeg.deleteFile(outputName)
+      } catch {
+        // Best effort cleanup for temp output file.
+      }
     }
   }
 }
@@ -162,26 +181,41 @@ export async function ensureClipWaveform(clipId: string): Promise<void> {
 
 export async function importAndAppend(file: File): Promise<void> {
   if (!isVideoFile(file)) return
+
   const objectUrl = URL.createObjectURL(file)
-  const { duration, width, height } = await getVideoMetadata(objectUrl)
-  const waveformPeaks = await extractWaveformPeaks(file)
-  const clip: Clip = {
-    id: crypto.randomUUID(),
-    file,
-    name: file.name.replace(/\.[^.]+$/, ''),
-    duration,
-    width,
-    height,
-    objectUrl,
-    waveformPeaks,
+  let imported = false
+
+  try {
+    const { duration, width, height } = await getVideoMetadata(objectUrl)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new Error('Invalid video duration')
+    }
+
+    const waveformPeaks = await extractWaveformPeaks(file)
+    const clip: Clip = {
+      id: crypto.randomUUID(),
+      file,
+      name: file.name.replace(/\.[^.]+$/, ''),
+      duration,
+      width,
+      height,
+      objectUrl,
+      waveformPeaks,
+    }
+    clips.value = [...clips.value, clip]
+
+    const seg: Segment = {
+      id: crypto.randomUUID(),
+      clipId: clip.id,
+      startTime: 0,
+      endTime: duration,
+      muted: false,
+    }
+    timeline.value = [...timeline.value, seg]
+    imported = true
+  } catch {
+    // Ignore individual import failures so batch imports continue.
+  } finally {
+    if (!imported) URL.revokeObjectURL(objectUrl)
   }
-  clips.value = [...clips.value, clip]
-  const seg: Segment = {
-    id: crypto.randomUUID(),
-    clipId: clip.id,
-    startTime: 0,
-    endTime: duration,
-    muted: false,
-  }
-  timeline.value = [...timeline.value, seg]
 }

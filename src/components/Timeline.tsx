@@ -18,6 +18,11 @@ import { ZoomSlider } from '@/components/ZoomSlider'
 import { cutAtPlayhead, deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/actions'
 import { playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
 import {
+  buildSegmentLayout,
+  clampPlayheadForSegment,
+  findSegmentAtTrackX,
+} from '@/lib/timelineDomain'
+import {
   GAP_PX,
   PADDING_PX,
   ZOOM_MAX,
@@ -32,6 +37,8 @@ export function Timeline() {
   const trackRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const draggingOver = useSignal(false)
+  const seekRafRef = useRef<number | null>(null)
+  const playheadRafRef = useRef<number | null>(null)
 
   const activeSegId = selectedSegmentId.value ?? timeline.value[0]?.id
   const activeSeg = timeline.value.find((s) => s.id === activeSegId)
@@ -45,32 +52,38 @@ export function Timeline() {
     if ((e.target as HTMLElement).closest('[data-playhead]')) return
     if ((e.target as HTMLElement).closest('[data-segment]')) return
     const trackEl = trackRef.current
+    const layout = buildSegmentLayout(timeline.value, pxPerSec.value, GAP_PX, PADDING_PX)
 
     function seekFromPointer(ev: PointerEvent) {
       const rect = trackEl.getBoundingClientRect()
       const x = ev.clientX - rect.left + trackEl.scrollLeft
-      let segX = PADDING_PX
-      for (const seg of timeline.value) {
-        const segWidth = (seg.endTime - seg.startTime) * pxPerSec.value
-        if (x >= segX && x <= segX + segWidth) {
-          const t = seg.startTime + (x - segX) / pxPerSec.value
-          selectedSegmentId.value = seg.id
-          playheadTime.value = t
-          const v = videoEl.current
-          if (v) v.currentTime = t
-          return
-        }
-        segX += segWidth + GAP_PX
-      }
+      const hit = findSegmentAtTrackX(layout, x, pxPerSec.value)
+      if (!hit) return
+      selectedSegmentId.value = hit.seg.id
+      playheadTime.value = hit.time
+      const v = videoEl.current
+      if (v) v.currentTime = hit.time
+    }
+
+    function queueSeekFromPointer(ev: PointerEvent) {
+      if (seekRafRef.current !== null) cancelAnimationFrame(seekRafRef.current)
+      seekRafRef.current = requestAnimationFrame(() => {
+        seekRafRef.current = null
+        seekFromPointer(ev)
+      })
     }
 
     seekFromPointer(e)
     trackEl.setPointerCapture(e.pointerId)
 
     function onMove(mv: PointerEvent) {
-      seekFromPointer(mv)
+      queueSeekFromPointer(mv)
     }
     function onUp() {
+      if (seekRafRef.current !== null) {
+        cancelAnimationFrame(seekRafRef.current)
+        seekRafRef.current = null
+      }
       trackEl.removeEventListener('pointermove', onMove)
       trackEl.removeEventListener('pointerup', onUp)
     }
@@ -86,18 +99,34 @@ export function Timeline() {
     const segStartX = getSegmentStartX(activeSeg.id)
     const trackEl = trackRef.current
 
-    function onMove(mv: PointerEvent) {
+    function syncPlayheadFromPointer(mv: PointerEvent) {
       const rect = trackEl.getBoundingClientRect()
       const x = mv.clientX - rect.left + trackEl.scrollLeft
-      const t = Math.max(
-        activeSeg!.startTime,
-        Math.min(activeSeg!.endTime, activeSeg!.startTime + (x - segStartX) / pxPerSec.value)
+      const t = clampPlayheadForSegment(
+        activeSeg!,
+        activeSeg!.startTime + (x - segStartX) / pxPerSec.value
       )
       playheadTime.value = t
       const v = videoEl.current
       if (v) v.currentTime = t
     }
+
+    function queuePlayheadFromPointer(mv: PointerEvent) {
+      if (playheadRafRef.current !== null) cancelAnimationFrame(playheadRafRef.current)
+      playheadRafRef.current = requestAnimationFrame(() => {
+        playheadRafRef.current = null
+        syncPlayheadFromPointer(mv)
+      })
+    }
+
+    function onMove(mv: PointerEvent) {
+      queuePlayheadFromPointer(mv)
+    }
     function onUp() {
+      if (playheadRafRef.current !== null) {
+        cancelAnimationFrame(playheadRafRef.current)
+        playheadRafRef.current = null
+      }
       el.removeEventListener('pointermove', onMove)
       el.removeEventListener('pointerup', onUp)
     }
@@ -136,6 +165,14 @@ export function Timeline() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  useEffect(
+    () => () => {
+      if (seekRafRef.current !== null) cancelAnimationFrame(seekRafRef.current)
+      if (playheadRafRef.current !== null) cancelAnimationFrame(playheadRafRef.current)
+    },
+    []
+  )
 
   function onWheel(e: WheelEvent) {
     if (!trackRef.current) return

@@ -28,6 +28,9 @@ export function ExportHistory() {
         </span>
         <button
           onClick={() => {
+            for (const rec of exportHistory.value) {
+              URL.revokeObjectURL(rec.url)
+            }
             exportHistory.value = []
           }}
           class="ml-auto flex items-center gap-1 text-sm text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"

@@ -20,6 +20,7 @@ export function WaveformView({
   class: className,
 }: WaveformViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const lastSizeRef = useRef<{ width: number; height: number; dpr: number } | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -34,8 +35,19 @@ export function WaveformView({
       const dpr = window.devicePixelRatio || 1
       const width = Math.floor(rect.width)
       const height = Math.floor(rect.height)
-      el.width = Math.max(1, Math.floor(width * dpr))
-      el.height = Math.max(1, Math.floor(height * dpr))
+      const nextSize = { width, height, dpr }
+      const prevSize = lastSizeRef.current
+      const resized =
+        !prevSize ||
+        prevSize.width !== nextSize.width ||
+        prevSize.height !== nextSize.height ||
+        prevSize.dpr !== nextSize.dpr
+
+      if (resized) {
+        el.width = Math.max(1, Math.floor(width * dpr))
+        el.height = Math.max(1, Math.floor(height * dpr))
+        lastSizeRef.current = nextSize
+      }
 
       const ctx = el.getContext('2d')
       if (!ctx) return
@@ -63,16 +75,16 @@ export function WaveformView({
 
       ctx.fillStyle = 'rgba(255,255,255,0.78)'
 
+      const bucketMax = new Float32Array(barCount)
+      for (let i = startIdx; i < endIdx && i < peaks.length; i++) {
+        const relative = (i - startIdx) / visibleLength
+        const bucket = Math.min(barCount - 1, Math.max(0, Math.floor(relative * barCount)))
+        const value = peaks[i]
+        if (value > bucketMax[bucket]) bucketMax[bucket] = value
+      }
+
       for (let bar = 0; bar < barCount; bar++) {
-        const from = startIdx + Math.floor((bar / barCount) * visibleLength)
-        const to = startIdx + Math.floor(((bar + 1) / barCount) * visibleLength)
-
-        let peak = 0
-        for (let i = from; i <= to && i < peaks.length; i++) {
-          if (peaks[i] > peak) peak = peaks[i]
-        }
-
-        const h = Math.max(1, Math.round(peak * maxHalfHeight))
+        const h = Math.max(1, Math.round(bucketMax[bar] * maxHalfHeight))
         const x = bar * barStep
         const y = Math.floor(center - h)
         ctx.fillRect(x, y, 1, h * 2)

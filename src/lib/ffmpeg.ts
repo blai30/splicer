@@ -13,6 +13,35 @@ const MIME_TYPES: Record<ExportFormat, string> = {
 let instance: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null
 
+function getFileExtension(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase() ?? ''
+}
+
+async function deleteFilesBestEffort(ffmpeg: FFmpeg, files: string[]): Promise<void> {
+  await Promise.all(
+    files.map(async (file) => {
+      try {
+        await ffmpeg.deleteFile(file)
+      } catch {
+        // Best effort cleanup for temporary virtual files.
+      }
+    })
+  )
+}
+
+function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
+  if (segments.length === 0) return false
+
+  for (const seg of segments) {
+    if (seg.muted || seg.crop) return false
+    const clip = clips.value.find((c) => c.id === seg.clipId)
+    if (!clip) return false
+    if (getFileExtension(clip.file.name) !== format) return false
+  }
+
+  return true
+}
+
 export async function getFFmpeg(): Promise<FFmpeg> {
   if (instance) return instance
   if (!loadingPromise) {
@@ -90,39 +119,43 @@ async function exportStreamCopy(
   const ffmpeg = await getFFmpeg()
   ffmpegProgress.value = 0
 
+  const runId = crypto.randomUUID().replace(/-/g, '')
   const inputFiles: string[] = []
+  const tempFiles: string[] = []
+  const concatFile = `concat_${runId}.txt`
+  const outputFile = `output_${runId}.${format}`
   let concatList = ''
 
-  for (const seg of segments) {
-    const clip = clips.value.find((c) => c.id === seg.clipId)
-    if (!clip) continue
+  try {
+    for (const seg of segments) {
+      const clip = clips.value.find((c) => c.id === seg.clipId)
+      if (!clip) continue
 
-    const ext = clip.file.name.split('.').pop() ?? 'mp4'
-    const fname = `input_${inputFiles.length}.${ext}`
-    await ffmpeg.writeFile(fname, await fetchFile(clip.file))
-    inputFiles.push(fname)
+      const ext = getFileExtension(clip.file.name) || 'mp4'
+      const fname = `input_${runId}_${inputFiles.length}.${ext}`
+      await ffmpeg.writeFile(fname, await fetchFile(clip.file))
+      inputFiles.push(fname)
+      tempFiles.push(fname)
 
-    concatList += `file '${fname}'\n`
-    concatList += `inpoint ${seg.startTime}\n`
-    concatList += `outpoint ${seg.endTime}\n`
+      concatList += `file '${fname}'\n`
+      concatList += `inpoint ${seg.startTime}\n`
+      concatList += `outpoint ${seg.endTime}\n`
+    }
+
+    if (inputFiles.length === 0) throw new Error('No valid segments')
+
+    await ffmpeg.writeFile(concatFile, concatList)
+    tempFiles.push(concatFile)
+
+    await exec(ffmpeg, ['-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', outputFile])
+    ffmpegProgress.value = 1
+
+    const data = await ffmpeg.readFile(outputFile)
+    const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
+    return { url: URL.createObjectURL(blob), size: blob.size }
+  } finally {
+    await deleteFilesBestEffort(ffmpeg, [...tempFiles, outputFile])
   }
-
-  if (inputFiles.length === 0) throw new Error('No valid segments')
-
-  await ffmpeg.writeFile('concat.txt', concatList)
-
-  const outputFile = `output.${format}`
-  await exec(ffmpeg, ['-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c', 'copy', outputFile])
-  ffmpegProgress.value = 1
-
-  const data = await ffmpeg.readFile(outputFile)
-  const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
-
-  for (const f of inputFiles) await ffmpeg.deleteFile(f)
-  await ffmpeg.deleteFile('concat.txt')
-  await ffmpeg.deleteFile(outputFile)
-
-  return { url: URL.createObjectURL(blob), size: blob.size }
 }
 
 export async function exportVideo(
@@ -134,69 +167,73 @@ export async function exportVideo(
   if (segments.length === 0) throw new Error('No segments')
 
   // Use stream copy when lossless + original fps + no muted segments
-  if (quality === 'lossless' && fps === 'original' && segments.every((s) => !s.muted)) {
+  if (quality === 'lossless' && fps === 'original' && canUseStreamCopy(segments, format)) {
     return exportStreamCopy(segments, format)
   }
 
   const ffmpeg = await getFFmpeg()
   ffmpegProgress.value = 0
 
+  const runId = crypto.randomUUID().replace(/-/g, '')
   const inputFiles: string[] = []
+  const tempFiles: string[] = []
   const filterParts: string[] = []
   const concatInputs: string[] = []
   let idx = 0
 
-  for (const seg of segments) {
-    const clip = clips.value.find((c) => c.id === seg.clipId)
-    if (!clip) continue
+  const outputFile = `output_${runId}.${format}`
 
-    const ext = clip.file.name.split('.').pop() ?? 'mp4'
-    const fname = `input_${idx}.${ext}`
-    await ffmpeg.writeFile(fname, await fetchFile(clip.file))
-    inputFiles.push(fname)
+  try {
+    for (const seg of segments) {
+      const clip = clips.value.find((c) => c.id === seg.clipId)
+      if (!clip) continue
 
-    let videoFilter = `[${idx}:v]trim=${seg.startTime}:${seg.endTime},setpts=PTS-STARTPTS`
-    if (seg.crop) {
-      const { x, y, width, height } = seg.crop
-      videoFilter += `,crop=${width}:${height}:${x}:${y}`
+      const ext = getFileExtension(clip.file.name) || 'mp4'
+      const fname = `input_${runId}_${idx}.${ext}`
+      await ffmpeg.writeFile(fname, await fetchFile(clip.file))
+      inputFiles.push(fname)
+      tempFiles.push(fname)
+
+      let videoFilter = `[${idx}:v]trim=${seg.startTime}:${seg.endTime},setpts=PTS-STARTPTS`
+      if (seg.crop) {
+        const { x, y, width, height } = seg.crop
+        videoFilter += `,crop=${width}:${height}:${x}:${y}`
+      }
+      videoFilter += `[v${idx}]`
+
+      const dur = seg.endTime - seg.startTime
+      const audioFilter = seg.muted
+        ? `aevalsrc=0:channel_layout=stereo:sample_rate=44100:duration=${dur}[a${idx}]`
+        : `[${idx}:a]atrim=${seg.startTime}:${seg.endTime},asetpts=PTS-STARTPTS[a${idx}]`
+
+      filterParts.push(videoFilter, audioFilter)
+      concatInputs.push(`[v${idx}][a${idx}]`)
+      idx++
     }
-    videoFilter += `[v${idx}]`
 
-    const dur = seg.endTime - seg.startTime
-    const audioFilter = seg.muted
-      ? `aevalsrc=0:channel_layout=stereo:sample_rate=44100:duration=${dur}[a${idx}]`
-      : `[${idx}:a]atrim=${seg.startTime}:${seg.endTime},asetpts=PTS-STARTPTS[a${idx}]`
+    if (idx === 0) throw new Error('No valid segments')
 
-    filterParts.push(videoFilter, audioFilter)
-    concatInputs.push(`[v${idx}][a${idx}]`)
-    idx++
+    const filterComplex =
+      filterParts.join(';') + `;${concatInputs.join('')}concat=n=${idx}:v=1:a=1[outv][outa]`
+
+    const inputArgs = inputFiles.flatMap((f) => ['-i', f])
+
+    await exec(ffmpeg, [
+      ...inputArgs,
+      '-filter_complex',
+      filterComplex,
+      '-map',
+      '[outv]',
+      '-map',
+      '[outa]',
+      ...getOutputArgs(format, quality, fps),
+      outputFile,
+    ])
+
+    const data = await ffmpeg.readFile(outputFile)
+    const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
+    return { url: URL.createObjectURL(blob), size: blob.size }
+  } finally {
+    await deleteFilesBestEffort(ffmpeg, [...tempFiles, outputFile])
   }
-
-  if (idx === 0) throw new Error('No valid segments')
-
-  const filterComplex =
-    filterParts.join(';') + `;${concatInputs.join('')}concat=n=${idx}:v=1:a=1[outv][outa]`
-
-  const outputFile = `output.${format}`
-  const inputArgs = inputFiles.flatMap((f) => ['-i', f])
-
-  await exec(ffmpeg, [
-    ...inputArgs,
-    '-filter_complex',
-    filterComplex,
-    '-map',
-    '[outv]',
-    '-map',
-    '[outa]',
-    ...getOutputArgs(format, quality, fps),
-    outputFile,
-  ])
-
-  const data = await ffmpeg.readFile(outputFile)
-  const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
-
-  for (const f of inputFiles) await ffmpeg.deleteFile(f)
-  await ffmpeg.deleteFile(outputFile)
-
-  return { url: URL.createObjectURL(blob), size: blob.size }
 }

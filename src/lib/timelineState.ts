@@ -2,7 +2,7 @@ import { signal } from '@preact/signals'
 
 import { timeline } from '@/lib/store'
 
-export const ZOOM_MIN = 20
+export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200
 export const GAP_PX = 4
 export const PADDING_PX = 12

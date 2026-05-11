@@ -1,33 +1,30 @@
-import { clips, playheadTime, selectedSegmentId, timeline } from './store'
+import { clips, playheadTime, selectedSegmentId, timeline } from '@/lib/store'
+import {
+  splitSegmentAtPlayhead,
+  updateSegmentEndTime,
+  updateSegmentStartTime,
+} from '@/lib/timelineDomain'
 
 export function setInPoint() {
   const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)
   if (!seg) return
-  const t = playheadTime.value
-  timeline.value = timeline.value.map((s) =>
-    s.id === seg.id ? { ...s, startTime: Math.max(0, Math.min(t, s.endTime - 0.1)) } : s
-  )
+  timeline.value = updateSegmentStartTime(timeline.value, seg.id, playheadTime.value)
 }
 
 export function setOutPoint() {
   const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)
   if (!seg) return
-  const t = playheadTime.value
-  const clipDur = clips.value.find((c) => c.id === seg.clipId)?.duration ?? t
-  timeline.value = timeline.value.map((s) =>
-    s.id === seg.id ? { ...s, endTime: Math.min(clipDur, Math.max(t, s.startTime + 0.1)) } : s
-  )
+  const clipDur = clips.value.find((c) => c.id === seg.clipId)?.duration ?? playheadTime.value
+  timeline.value = updateSegmentEndTime(timeline.value, seg.id, playheadTime.value, clipDur)
 }
 
 export function cutAtPlayhead() {
   const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)
   if (!seg) return
-  const t = playheadTime.value
-  if (t <= seg.startTime || t >= seg.endTime) return
-  const first = { ...seg, endTime: t }
-  const second = { ...seg, id: crypto.randomUUID(), startTime: t }
-  timeline.value = timeline.value.flatMap((s) => (s.id === seg.id ? [first, second] : [s]))
-  selectedSegmentId.value = second.id
+  const split = splitSegmentAtPlayhead(timeline.value, seg.id, playheadTime.value)
+  if (!split) return
+  timeline.value = split.nextSegments
+  selectedSegmentId.value = split.newSegmentId
 }
 
 export function toggleMute() {
