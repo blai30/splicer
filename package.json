@@ -15,10 +15,12 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
-    "fmt:check": "oxfmt --check"
+    "fmt:check": "oxfmt --check",
+    "check": "pnpm lint && pnpm fmt:check && pnpm typecheck && pnpm build"
   },
   "dependencies": {
     "@astrojs/preact": "^5.1.2",
+    "@astrojs/sitemap": "^3.1.6",
     "@ffmpeg/core": "0.12.10",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",

@@ -19,11 +19,21 @@ const pageDescription =
 >
   <main
     class="mx-auto flex h-full w-full flex-col gap-3 px-3 py-3 md:px-4 md:py-4"
+    role="application"
+    aria-label="Video timeline editor and exporter application"
   >
     <AppHeader client:load />
-    <VideoPreview client:load />
-    <Timeline client:load />
-    <ExportPanel client:load />
-    <ExportHistory client:load />
+    <section aria-label="Video preview and playback controls">
+      <VideoPreview client:load />
+    </section>
+    <section aria-label="Timeline editor with segments">
+      <Timeline client:load />
+    </section>
+    <section aria-label="Export settings and controls">
+      <ExportPanel client:load />
+    </section>
+    <section aria-label="Export history and downloads">
+      <ExportHistory client:load />
+    </section>
   </main>
 </Layout>

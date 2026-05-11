@@ -3,6 +3,7 @@ import { resolve, join } from 'node:path'
 
 // @ts-check
 import preact from '@astrojs/preact'
+import sitemap from '@astrojs/sitemap'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'astro/config'
 
@@ -34,9 +35,17 @@ const ffmpegCorePlugin = {
 }
 
 export default defineConfig({
+  site: 'https://github.com/blai30/splicer',
   trailingSlash: 'always',
   base: process.env.NODE_ENV === 'production' ? '/splicer' : undefined,
-  integrations: [preact({ compat: false })],
+  integrations: [
+    preact({ compat: false }),
+    sitemap({
+      changefreq: 'monthly',
+      priority: 0.7,
+      lastmod: new Date(),
+    }),
+  ],
   vite: {
     plugins: [tailwindcss(), ffmpegCorePlugin],
     optimizeDeps: { exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'] },

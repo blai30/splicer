@@ -243,6 +243,7 @@ export function Timeline() {
               disabled={disabled}
               onClick={setInPoint}
               title="Set in-point (I)"
+              aria-label="Set segment in-point at current playhead position"
             >
               <ArrowLeftToLine class="h-3.5 w-3.5" />
               In
@@ -253,6 +254,7 @@ export function Timeline() {
               disabled={disabled}
               onClick={setOutPoint}
               title="Set out-point (O)"
+              aria-label="Set segment out-point at current playhead position"
             >
               <ArrowRightToLine class="h-3.5 w-3.5" />
               Out
@@ -263,12 +265,20 @@ export function Timeline() {
               disabled={disabled}
               onClick={cutAtPlayhead}
               title="Split at playhead (C)"
+              aria-label="Split segment at current playhead position"
             >
               <Scissors class="h-3.5 w-3.5" />
               Cut
             </button>
 
-            <button class={toolBtn} disabled={disabled} onClick={toggleMute} title="Toggle mute">
+            <button
+              class={toolBtn}
+              disabled={disabled}
+              onClick={toggleMute}
+              title="Toggle mute"
+              aria-label={seg?.muted ? 'Unmute segment' : 'Mute segment'}
+              aria-pressed={seg?.muted ?? false}
+            >
               {seg?.muted ? <VolumeX class="h-3.5 w-3.5" /> : <Volume2 class="h-3.5 w-3.5" />}
               {seg?.muted ? 'Unmute' : 'Mute'}
             </button>
@@ -278,6 +288,7 @@ export function Timeline() {
               disabled={disabled}
               onClick={deleteSegment}
               title="Delete segment"
+              aria-label="Delete selected segment"
             >
               <Trash2 class="h-3.5 w-3.5" />
               Delete
@@ -330,6 +341,8 @@ export function Timeline() {
       <div
         ref={trackRef}
         data-track
+        role="region"
+        aria-label="Timeline scrubber - click to seek, drag edges to trim segments"
         class="relative min-h-0 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto overflow-y-hidden dark:scrollbar-thumb-slate-700"
         onPointerDown={onTrackPointerDown}
       >

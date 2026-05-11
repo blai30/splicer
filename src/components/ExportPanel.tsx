@@ -165,14 +165,27 @@ export function ExportPanel() {
       <div class="flex flex-col gap-2 border-t border-slate-200/60 pt-2 sm:flex-row sm:items-center dark:border-slate-700/60">
         <div class="min-w-0 flex-1">
           {exporting.value && !ffmpegReady.value && (
-            <span class="text-sm text-slate-500 dark:text-slate-400">Initializing FFmpeg…</span>
+            <div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <div class="h-2 w-2 animate-pulse rounded-full bg-violet-500" />
+              <span role="status" aria-live="polite">
+                Initializing FFmpeg…
+              </span>
+            </div>
           )}
           {exporting.value && ffmpegReady.value && (
-            <div class="flex items-center gap-2">
+            <div
+              class="flex items-center gap-2"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
               <div class="h-1.5 flex-1 overflow-hidden rounded bg-slate-200 dark:bg-slate-700">
                 <div
                   class="h-full bg-violet-500 transition-all"
                   style={{ width: `${progressPct}%` }}
+                  aria-valuenow={progressPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
                 />
               </div>
               <span class="w-8 shrink-0 text-right text-sm text-slate-500 dark:text-slate-400">
@@ -180,7 +193,11 @@ export function ExportPanel() {
               </span>
             </div>
           )}
-          {error.value && <span class="text-sm text-red-500">{error.value}</span>}
+          {error.value && (
+            <div role="alert" class="text-sm font-medium text-red-600 dark:text-red-400">
+              Export failed: {error.value}
+            </div>
+          )}
         </div>
 
         {exporting.value ? (

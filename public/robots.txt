@@ -1,0 +1,10 @@
+# Splicer: Browser-based video trimmer
+# https://github.com/blai30/splicer
+
+User-agent: *
+Allow: /
+Allow: /splicer/
+Disallow: /splicer/*.wasm
+Disallow: /splicer/ffmpeg/
+
+Sitemap: https://github.com/blai30/splicer/sitemap-index.xml
