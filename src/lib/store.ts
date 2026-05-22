@@ -99,6 +99,7 @@ export const PADDING_PX = 12
 
 export const pxPerSec = signal(80)
 export const dragState = signal<DragState | null>(null)
+export const importing = signal(false)
 
 export function clipColor(clipId: string): string {
   const colors = ['bg-violet-700', 'bg-teal-700', 'bg-cyan-700', 'bg-emerald-700', 'bg-sky-700']
@@ -152,7 +153,17 @@ export function deleteSegment() {
   const segId = selectedSegmentId.value
   if (!segId) return
   const currentIdx = timeline.value.findIndex((s) => s.id === segId)
+  const removedSegs = timeline.value.filter((s) => s.id === segId)
   const next = timeline.value.filter((s) => s.id !== segId)
+  // push to undo stack
+  for (const rs of removedSegs) {
+    const relatedClips = clips.value.filter((c) => c.id === rs.clipId)
+    // store a shallow copy of clip(s) so undo can restore
+    const clipsCopy = relatedClips.map((c) => ({ ...c }))
+    _undoStack.unshift({ segment: rs, clips: clipsCopy, index: currentIdx })
+    if (_undoStack.length > UNDO_STACK_LIMIT) _undoStack.length = UNDO_STACK_LIMIT
+  }
+
   timeline.value = next
   selectedSegmentId.value = next[currentIdx]?.id ?? next[currentIdx - 1]?.id ?? null
   // Remove orphaned clips: if the removed segment referenced a clip
@@ -170,4 +181,39 @@ export function deleteSegment() {
     }
   }
   clips.value = remainingClips
+}
+
+// Undo support for recent deletions
+const UNDO_STACK_LIMIT = 5
+type UndoEntry = { segment: Segment; clips: Clip[]; index: number }
+const _undoStack: UndoEntry[] = []
+
+export function undoDelete(): void {
+  const entry = _undoStack.shift()
+  if (!entry) return
+  // restore segment at index
+  const segs = [...timeline.value]
+  const insertAt = Math.min(Math.max(0, entry.index), segs.length)
+  segs.splice(insertAt, 0, entry.segment)
+  timeline.value = segs
+  // restore clip(s)
+  for (const c of entry.clips) {
+    // if the clip already exists, skip
+    if (clips.value.find((x) => x.id === c.id)) continue
+    // recreate objectUrl if missing or revoked
+    const restored = { ...c }
+    try {
+      // Always recreate the object URL from the original File reference when possible.
+      // This avoids using a stale/revoked URL string which can lead to a non-playing video.
+      if (restored.file) {
+        restored.objectUrl = URL.createObjectURL(restored.file)
+      } else if (!restored.objectUrl) {
+        restored.objectUrl = ''
+      }
+    } catch {
+      // ignore
+    }
+    clips.value = [...clips.value, restored]
+  }
+  selectedSegmentId.value = entry.segment.id
 }

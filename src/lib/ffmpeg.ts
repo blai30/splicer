@@ -4,12 +4,7 @@ import { fetchFile } from '@ffmpeg/util'
 import { assetPath } from '@/lib/paths'
 import { ffmpegProgress, ffmpegReady, getClipById } from '@/lib/store'
 import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
-
-const MIME_TYPES: Record<ExportFormat, string> = {
-  mp4: 'video/mp4',
-  webm: 'video/webm',
-  mkv: 'video/x-matroska',
-}
+import { MIME_TYPES } from '@/lib/types'
 
 let instance: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null

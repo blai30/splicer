@@ -1,7 +1,7 @@
 import { fetchFile } from '@ffmpeg/util'
 
 import { getFFmpeg } from '@/lib/ffmpeg'
-import { clips, timeline, getClipById } from '@/lib/store'
+import { clips, timeline, getClipById, importing } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
 export const ACCEPTED = [
@@ -186,6 +186,7 @@ export async function importAndAppend(file: File): Promise<void> {
   let imported = false
 
   try {
+    importing.value = true
     const { duration, width, height } = await getVideoMetadata(objectUrl)
     if (!Number.isFinite(duration) || duration <= 0) {
       throw new Error('Invalid video duration')
@@ -218,5 +219,6 @@ export async function importAndAppend(file: File): Promise<void> {
     // Ignore individual import failures so batch imports continue.
   } finally {
     if (!imported) URL.revokeObjectURL(objectUrl)
+    importing.value = false
   }
 }
