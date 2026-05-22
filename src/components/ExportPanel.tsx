@@ -2,7 +2,7 @@ import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { CirclePlay, X } from 'lucide-preact'
 
-import { exportVideo, cancelExport, getFFmpeg } from '@/lib/ffmpeg'
+import { exportVideo, cancelExport, getFfmpeg } from '@/lib/ffmpeg'
 import {
   clips,
   exportFormat,
@@ -42,8 +42,9 @@ function OptionButtonGroup<T extends string>({
           key={o.value}
           class={clsx(
             selected === o.value
-              ? 'rounded bg-violet-500 px-2.5 py-1 text-sm font-medium text-white transition-colors'
-              : 'rounded px-2.5 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
+              ? 'bg-violet-500 text-white'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100',
+            'rounded px-2.5 py-1 text-sm font-medium transition-colors hover:duration-0'
           )}
           onClick={() => onSelect(o.value)}
         >
@@ -83,7 +84,7 @@ export function ExportPanel() {
 
   async function initFFmpeg() {
     if (ffmpegReady.value) return
-    await getFFmpeg()
+    await getFfmpeg()
   }
 
   async function handleExport() {
@@ -145,7 +146,7 @@ export function ExportPanel() {
   ]
 
   const hasSegments = timeline.value.length > 0
-  const progressPct = Math.round(ffmpegProgress.value * 100)
+  const progressPct = Math.max(0, Math.min(100, Math.round(ffmpegProgress.value * 100)))
   const estimatedSize = estimateSize()
 
   if (!hasSegments) return null
@@ -185,8 +186,8 @@ export function ExportPanel() {
         />
       </div>
 
-      <div class="flex flex-col gap-2 border-t border-slate-200/60 pt-2 sm:flex-row sm:items-center dark:border-slate-700/60">
-        <div class="min-w-0 flex-1">
+      <div class="flex flex-col gap-4 border-t border-slate-200/60 pt-2 sm:flex-row sm:items-center dark:border-slate-700/60">
+        <div class="flex h-13 min-w-0 flex-1 flex-col gap-1">
           <div class="mb-1 text-sm text-slate-500 dark:text-slate-400">
             Estimated export size:{' '}
             {estimatedSize > 0 ? `${Math.round(estimatedSize / 1024 / 1024)} MB` : '—'}
@@ -230,7 +231,7 @@ export function ExportPanel() {
         {exporting.value ? (
           <button
             onClick={handleCancel}
-            class="inline-flex h-10 items-center justify-center gap-1.5 rounded bg-slate-100 px-4 text-base font-semibold text-slate-600 transition-colors hover:bg-red-100 hover:text-red-600 dark:bg-slate-800/50 dark:text-slate-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+            class="inline-flex h-10 w-42 items-center justify-center gap-1.5 rounded bg-slate-100 px-4 text-base font-semibold text-slate-600 transition-colors hover:bg-red-100 hover:text-red-600 hover:duration-0 dark:bg-slate-800/50 dark:text-slate-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
           >
             <X class="h-4 w-4" />
             Cancel Export
@@ -240,7 +241,7 @@ export function ExportPanel() {
             onClick={handleExport}
             onMouseEnter={initFFmpeg}
             disabled={!hasSegments}
-            class="inline-flex h-10 items-center justify-center gap-2 rounded bg-violet-500 px-4 text-base font-semibold text-white transition-colors hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-40"
+            class="inline-flex h-10 w-42 items-center justify-center gap-2 rounded bg-violet-500 px-4 text-base font-semibold text-white transition-colors hover:bg-violet-600 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <CirclePlay class="h-4 w-4" />
             Export Video
