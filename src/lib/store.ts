@@ -49,6 +49,25 @@ export const ffmpegReady = signal<boolean>(false)
 export const ffmpegProgress = signal<number>(0)
 export const exportHistory = signal<ExportRecord[]>([])
 
+export const EXPORT_HISTORY_LIMIT = 50
+
+export function addExportRecord(rec: ExportRecord) {
+  const next = [rec, ...exportHistory.value]
+  if (next.length > EXPORT_HISTORY_LIMIT) next.length = EXPORT_HISTORY_LIMIT
+  exportHistory.value = next
+}
+
+// Internal map for O(1) clip lookups. Rebuilt whenever `clips` changes.
+const clipsMap: Map<string, Clip> = new Map()
+effect(() => {
+  clipsMap.clear()
+  for (const c of clips.value) clipsMap.set(c.id, c)
+})
+
+export function getClipById(id: string): Clip | undefined {
+  return clipsMap.get(id)
+}
+
 export const exportFormat = signal<ExportFormat>(loadFromStorage('exportFormat', 'mp4'))
 export const quality = signal<Quality>(loadFromStorage('quality', 'lossless'))
 export const framerate = signal<Framerate>(loadFromStorage('framerate', 'original'))
@@ -136,4 +155,19 @@ export function deleteSegment() {
   const next = timeline.value.filter((s) => s.id !== segId)
   timeline.value = next
   selectedSegmentId.value = next[currentIdx]?.id ?? next[currentIdx - 1]?.id ?? null
+  // Remove orphaned clips: if the removed segment referenced a clip
+  // that is no longer used by any remaining segment, revoke its object URL
+  // and remove it from `clips`.
+  // Note: scan for clips referenced by remaining segments and remove unreferenced clips.
+  const referenced = new Set<string>(timeline.value.map((s) => s.clipId))
+  const remainingClips = clips.value.filter((c) => referenced.has(c.id))
+  const removedClips = clips.value.filter((c) => !referenced.has(c.id))
+  for (const rc of removedClips) {
+    try {
+      URL.revokeObjectURL(rc.objectUrl)
+    } catch {
+      // Best-effort
+    }
+  }
+  clips.value = remainingClips
 }

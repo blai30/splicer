@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
-import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
+import { clips, playheadTime, selectedSegmentId, timeline, videoEl, getClipById } from '@/lib/store'
 import { GAP_PX, clipColor, dragState, getSegmentStartX, pxPerSec } from '@/lib/store'
 import {
   clampPlayheadForSegment,
@@ -15,7 +15,7 @@ import type { Segment } from '@/lib/types'
 import { ensureClipWaveform } from '@/lib/videoImport'
 
 export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: boolean }) {
-  const clip = clips.value.find((c) => c.id === seg.clipId)
+  const clip = getClipById(seg.clipId)
   const dur = seg.endTime - seg.startTime
   const width = dur * pxPerSec.value
   const isSelected = selectedSegmentId.value === seg.id

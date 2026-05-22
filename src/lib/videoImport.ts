@@ -1,7 +1,7 @@
 import { fetchFile } from '@ffmpeg/util'
 
 import { getFFmpeg } from '@/lib/ffmpeg'
-import { clips, timeline } from '@/lib/store'
+import { clips, timeline, getClipById } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
 export const ACCEPTED = [
@@ -158,7 +158,7 @@ export async function extractWaveformPeaks(file: File, peakCount = 2000): Promis
 const waveformPending = new Set<string>()
 
 export async function ensureClipWaveform(clipId: string): Promise<void> {
-  const clip = clips.value.find((c) => c.id === clipId)
+  const clip = getClipById(clipId)
   if (!clip || (clip.waveformPeaks?.length ?? 0) > 0) return
   if (waveformPending.has(clipId)) return
 
@@ -191,7 +191,8 @@ export async function importAndAppend(file: File): Promise<void> {
       throw new Error('Invalid video duration')
     }
 
-    const waveformPeaks = await extractWaveformPeaks(file)
+    // Defer waveform extraction to avoid blocking import. Waveform will be
+    // generated lazily when the segment's view mounts (see SegmentBlock).
     const clip: Clip = {
       id: crypto.randomUUID(),
       file,
@@ -200,7 +201,7 @@ export async function importAndAppend(file: File): Promise<void> {
       width,
       height,
       objectUrl,
-      waveformPeaks,
+      waveformPeaks: [],
     }
     clips.value = [...clips.value, clip]
 

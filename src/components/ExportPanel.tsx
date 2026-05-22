@@ -6,7 +6,7 @@ import { exportVideo, cancelExport, getFFmpeg } from '@/lib/ffmpeg'
 import {
   clips,
   exportFormat,
-  exportHistory,
+  addExportRecord,
   ffmpegProgress,
   ffmpegReady,
   framerate,
@@ -90,7 +90,7 @@ export function ExportPanel() {
         height: firstClip?.height ?? 0,
         format: exportFormat.value,
       }
-      exportHistory.value = [record, ...exportHistory.value]
+      addExportRecord(record)
     } catch (e) {
       if (exporting.value) error.value = e instanceof Error ? e.message : 'Export failed'
     } finally {

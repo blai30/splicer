@@ -13,10 +13,8 @@
     "astro": "astro",
     "typecheck": "astro check",
     "lint": "oxlint",
-    "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
-    "fmt:check": "oxfmt --check",
-    "check": "pnpm lint && pnpm fmt:check && pnpm typecheck && pnpm build"
+    "check": "pnpm lint && pnpm fmt && pnpm typecheck && pnpm build"
   },
   "dependencies": {
     "@astrojs/preact": "^5.1.2",

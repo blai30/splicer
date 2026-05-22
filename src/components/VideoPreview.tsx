@@ -18,6 +18,7 @@ import {
   selectedSegmentId,
   timeline,
   videoEl,
+  getClipById,
 } from '@/lib/store'
 
 const FRAME_STEP = 1 / 30
@@ -72,7 +73,7 @@ export function VideoPreview() {
     if (!segId) return null
     const seg = timeline.value.find((s) => s.id === segId)
     if (!seg) return null
-    const clip = clips.value.find((c) => c.id === seg.clipId)
+    const clip = getClipById(seg.clipId)
     if (!clip) return null
     return { url: clip.objectUrl, start: seg.startTime, end: seg.endTime, seg, clip }
   }
