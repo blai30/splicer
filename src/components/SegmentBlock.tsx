@@ -3,8 +3,9 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
-import { clips, playheadTime, selectedSegmentId, timeline, videoEl } from '@/lib/store'
-import { GAP_PX, clipColor, dragState, getSegmentStartX, pxPerSec } from '@/lib/store'
+import { playheadTime, selectedSegmentId, timeline, videoEl, getClipById } from '@/lib/store'
+import { GAP_PX, clipColor, dragState, pxPerSec } from '@/lib/store'
+import { createRafThrottler } from '@/lib/timelineDomain'
 import {
   clampPlayheadForSegment,
   findDropIndexAtTrackX,
@@ -14,10 +15,19 @@ import {
 import type { Segment } from '@/lib/types'
 import { ensureClipWaveform } from '@/lib/videoImport'
 
-export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: boolean }) {
-  const clip = clips.value.find((c) => c.id === seg.clipId)
+export function SegmentBlock({
+  seg,
+  isDragging,
+  startX,
+  width,
+}: {
+  seg: Segment
+  isDragging?: boolean
+  startX: number
+  width: number
+}) {
+  const clip = getClipById(seg.clipId)
   const dur = seg.endTime - seg.startTime
-  const width = dur * pxPerSec.value
   const isSelected = selectedSegmentId.value === seg.id
   const leftRef = useRef<HTMLDivElement>(null)
   const rightRef = useRef<HTMLDivElement>(null)
@@ -33,20 +43,25 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
       e.stopPropagation()
       const handle = side === 'left' ? leftRef.current! : rightRef.current!
       handle.setPointerCapture(e.pointerId)
-      const startX = e.clientX
+      const startClientX = e.clientX
       const startTime = side === 'left' ? seg.startTime : seg.endTime
 
+      const throttler = createRafThrottler()
+
       function onMove(mv: PointerEvent) {
-        const dt = (mv.clientX - startX) / pxPerSec.value
-        const clipDur = clips.value.find((c) => c.id === seg.clipId)?.duration ?? seg.endTime
-        if (side === 'left') {
-          timeline.value = updateSegmentStartTime(timeline.value, seg.id, startTime + dt)
-        } else {
-          timeline.value = updateSegmentEndTime(timeline.value, seg.id, startTime + dt, clipDur)
-        }
+        const dt = (mv.clientX - startClientX) / pxPerSec.value
+        const clipDur = getClipById(seg.clipId)?.duration ?? seg.endTime
+        throttler.queue(() => {
+          if (side === 'left') {
+            timeline.value = updateSegmentStartTime(timeline.value, seg.id, startTime + dt)
+          } else {
+            timeline.value = updateSegmentEndTime(timeline.value, seg.id, startTime + dt, clipDur)
+          }
+        })
       }
 
       function onUp() {
+        throttler.cancel()
         handle.removeEventListener('pointermove', onMove)
         handle.removeEventListener('pointerup', onUp)
       }
@@ -62,11 +77,11 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
     if (!trackEl) return
     e.stopPropagation()
     el.setPointerCapture(e.pointerId)
-    const startX = e.clientX
+    const startClientX = e.clientX
     let moved = false
 
     function onMove(mv: PointerEvent) {
-      if (!moved && Math.abs(mv.clientX - startX) > 8) {
+      if (!moved && Math.abs(mv.clientX - startClientX) > 8) {
         moved = true
       }
       if (moved && trackEl) {
@@ -96,7 +111,7 @@ export function SegmentBlock({ seg, isDragging }: { seg: Segment; isDragging?: b
         if (trackEl) {
           const rect = trackEl.getBoundingClientRect()
           const x = e.clientX - rect.left + trackEl.scrollLeft
-          const segStartX = getSegmentStartX(seg.id)
+          const segStartX = startX
           const t = seg.startTime + Math.max(0, x - segStartX) / pxPerSec.value
           const clamped = clampPlayheadForSegment(seg, t)
           playheadTime.value = clamped

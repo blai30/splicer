@@ -3,13 +3,7 @@ import { Trash2 } from 'lucide-preact'
 
 import { formatFps, formatSize, formatTime } from '@/lib/format'
 import { exportHistory } from '@/lib/store'
-import type { ExportRecord } from '@/lib/types'
-
-const MIME_TYPES: Record<ExportRecord['format'], string> = {
-  mp4: 'video/mp4',
-  webm: 'video/webm',
-  mkv: 'video/x-matroska',
-}
+import { MIME_TYPES } from '@/lib/types'
 
 export function ExportHistory() {
   const isEmpty = exportHistory.value.length === 0

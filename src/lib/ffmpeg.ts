@@ -2,14 +2,9 @@ import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 
 import { assetPath } from '@/lib/paths'
-import { clips, ffmpegProgress, ffmpegReady } from '@/lib/store'
+import { ffmpegProgress, ffmpegReady, getClipById } from '@/lib/store'
 import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
-
-const MIME_TYPES: Record<ExportFormat, string> = {
-  mp4: 'video/mp4',
-  webm: 'video/webm',
-  mkv: 'video/x-matroska',
-}
+import { MIME_TYPES } from '@/lib/types'
 
 let instance: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null
@@ -35,7 +30,7 @@ function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
 
   for (const seg of segments) {
     if (seg.muted || seg.crop) return false
-    const clip = clips.value.find((c) => c.id === seg.clipId)
+    const clip = getClipById(seg.clipId)
     if (!clip) return false
     if (getFileExtension(clip.file.name) !== format) return false
   }
@@ -129,7 +124,7 @@ async function exportStreamCopy(
 
   try {
     for (const seg of segments) {
-      const clip = clips.value.find((c) => c.id === seg.clipId)
+      const clip = getClipById(seg.clipId)
       if (!clip) continue
 
       const ext = getFileExtension(clip.file.name) || 'mp4'
@@ -186,7 +181,7 @@ export async function exportVideo(
 
   try {
     for (const seg of segments) {
-      const clip = clips.value.find((c) => c.id === seg.clipId)
+      const clip = getClipById(seg.clipId)
       if (!clip) continue
 
       const ext = getFileExtension(clip.file.name) || 'mp4'
@@ -204,7 +199,7 @@ export async function exportVideo(
 
       const dur = seg.endTime - seg.startTime
       const audioFilter = seg.muted
-        ? `aevalsrc=0:channel_layout=stereo:sample_rate=44100:duration=${dur}[a${idx}]`
+        ? `anullsrc=channel_layout=stereo:sample_rate=44100:duration=${dur}[a${idx}]`
         : `[${idx}:a]atrim=${seg.startTime}:${seg.endTime},asetpts=PTS-STARTPTS[a${idx}]`
 
       filterParts.push(videoFilter, audioFilter)

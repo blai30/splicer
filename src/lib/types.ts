@@ -51,3 +51,10 @@ export type SegmentLayoutItem = {
 export type ExportFormat = 'mp4' | 'webm' | 'mkv'
 export type Quality = 'lossless' | 'high' | 'medium' | 'low'
 export type Framerate = 'original' | '60' | '30' | '24'
+
+// MIME type map for exported container formats
+export const MIME_TYPES: Record<ExportFormat, string> = {
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mkv: 'video/x-matroska',
+}

@@ -23,7 +23,6 @@ import {
   cutAtPlayhead,
   deleteSegment,
   dragState,
-  getSegmentStartX,
   playheadTime,
   pxPerSec,
   selectedSegmentId,
@@ -36,6 +35,7 @@ import {
 import {
   computeZoomScroll,
   createPlayheadDragHandler,
+  buildSegmentLayout,
   createTrackSeekHandler,
 } from '@/lib/timelineDomain'
 import { importAndAppend } from '@/lib/videoImport'
@@ -51,10 +51,12 @@ export function Timeline() {
   const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
 
   const activeSegId = selectedSegmentId.value ?? timeline.value[0]?.id
-  const activeSeg = timeline.value.find((s) => s.id === activeSegId)
-  // Playhead position: segment start pixel + time offset scaled by zoom level
-  const playheadLeft = activeSeg
-    ? getSegmentStartX(activeSeg.id) + (playheadTime.value - activeSeg.startTime) * pxPerSec.value
+  const segs = timeline.value
+  // Build layout once per render to avoid repeated O(n) scans.
+  const layout = buildSegmentLayout(segs, pxPerSec.value, GAP_PX, PADDING_PX)
+  const activeLayout = layout.find((l) => l.seg.id === activeSegId)
+  const playheadLeft = activeLayout
+    ? activeLayout.startX + (playheadTime.value - activeLayout.seg.startTime) * pxPerSec.value
     : PADDING_PX
 
   function onTrackPointerDown(e: PointerEvent) {
@@ -83,12 +85,12 @@ export function Timeline() {
   }
 
   function onPlayheadPointerDown(e: PointerEvent) {
-    if (!activeSeg || !trackRef.current) return
+    if (!activeLayout || !trackRef.current) return
 
-    // Create and cache handler for this drag session
+    // Create and cache handler for this drag session using precomputed layout
     playheadDragHandlerRef.current = createPlayheadDragHandler({
-      segment: activeSeg,
-      segmentStartX: getSegmentStartX(activeSeg.id),
+      segment: activeLayout.seg,
+      segmentStartX: activeLayout.startX,
       pxPerSec: pxPerSec.value,
       trackEl: trackRef.current,
       onUpdate(time) {
@@ -351,11 +353,14 @@ export function Timeline() {
                     />
                   )
                 }
+                const item = layout[i]
                 result.push(
                   <SegmentBlock
                     key={segs[i].id}
                     seg={segs[i]}
                     isDragging={ds?.segId === segs[i].id}
+                    startX={item.startX}
+                    width={item.endX - item.startX}
                   />
                 )
               }

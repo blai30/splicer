@@ -1,10 +1,16 @@
+import { useEffect } from 'preact/hooks'
+
 import { KeyboardLegend } from '@/components/KeyboardLegend'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
 import { assetPath } from '@/lib/paths'
+import { initKeyboardShortcuts } from '@/lib/shortcuts'
 
 const logoSrc = assetPath('brand/logo-mark.svg')
 
 export function AppHeader() {
+  useEffect(() => {
+    initKeyboardShortcuts()
+  }, [])
   return (
     <header class="flex min-h-14 shrink-0 items-center justify-between rounded-lg border border-slate-200/60 bg-slate-50/40 px-4 py-2 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       <div class="flex items-center gap-3">

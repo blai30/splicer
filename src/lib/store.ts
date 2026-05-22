@@ -49,6 +49,25 @@ export const ffmpegReady = signal<boolean>(false)
 export const ffmpegProgress = signal<number>(0)
 export const exportHistory = signal<ExportRecord[]>([])
 
+export const EXPORT_HISTORY_LIMIT = 50
+
+export function addExportRecord(rec: ExportRecord) {
+  const next = [rec, ...exportHistory.value]
+  if (next.length > EXPORT_HISTORY_LIMIT) next.length = EXPORT_HISTORY_LIMIT
+  exportHistory.value = next
+}
+
+// Internal map for O(1) clip lookups. Rebuilt whenever `clips` changes.
+const clipsMap: Map<string, Clip> = new Map()
+effect(() => {
+  clipsMap.clear()
+  for (const c of clips.value) clipsMap.set(c.id, c)
+})
+
+export function getClipById(id: string): Clip | undefined {
+  return clipsMap.get(id)
+}
+
 export const exportFormat = signal<ExportFormat>(loadFromStorage('exportFormat', 'mp4'))
 export const quality = signal<Quality>(loadFromStorage('quality', 'lossless'))
 export const framerate = signal<Framerate>(loadFromStorage('framerate', 'original'))
@@ -80,6 +99,7 @@ export const PADDING_PX = 12
 
 export const pxPerSec = signal(80)
 export const dragState = signal<DragState | null>(null)
+export const importing = signal(false)
 
 export function clipColor(clipId: string): string {
   const colors = ['bg-violet-700', 'bg-teal-700', 'bg-cyan-700', 'bg-emerald-700', 'bg-sky-700']
@@ -133,7 +153,67 @@ export function deleteSegment() {
   const segId = selectedSegmentId.value
   if (!segId) return
   const currentIdx = timeline.value.findIndex((s) => s.id === segId)
+  const removedSegs = timeline.value.filter((s) => s.id === segId)
   const next = timeline.value.filter((s) => s.id !== segId)
+  // push to undo stack
+  for (const rs of removedSegs) {
+    const relatedClips = clips.value.filter((c) => c.id === rs.clipId)
+    // store a shallow copy of clip(s) so undo can restore
+    const clipsCopy = relatedClips.map((c) => ({ ...c }))
+    _undoStack.unshift({ segment: rs, clips: clipsCopy, index: currentIdx })
+    if (_undoStack.length > UNDO_STACK_LIMIT) _undoStack.length = UNDO_STACK_LIMIT
+  }
+
   timeline.value = next
   selectedSegmentId.value = next[currentIdx]?.id ?? next[currentIdx - 1]?.id ?? null
+  // Remove orphaned clips: if the removed segment referenced a clip
+  // that is no longer used by any remaining segment, revoke its object URL
+  // and remove it from `clips`.
+  // Note: scan for clips referenced by remaining segments and remove unreferenced clips.
+  const referenced = new Set<string>(timeline.value.map((s) => s.clipId))
+  const remainingClips = clips.value.filter((c) => referenced.has(c.id))
+  const removedClips = clips.value.filter((c) => !referenced.has(c.id))
+  for (const rc of removedClips) {
+    try {
+      URL.revokeObjectURL(rc.objectUrl)
+    } catch {
+      // Best-effort
+    }
+  }
+  clips.value = remainingClips
+}
+
+// Undo support for recent deletions
+const UNDO_STACK_LIMIT = 5
+type UndoEntry = { segment: Segment; clips: Clip[]; index: number }
+const _undoStack: UndoEntry[] = []
+
+export function undoDelete(): void {
+  const entry = _undoStack.shift()
+  if (!entry) return
+  // restore segment at index
+  const segs = [...timeline.value]
+  const insertAt = Math.min(Math.max(0, entry.index), segs.length)
+  segs.splice(insertAt, 0, entry.segment)
+  timeline.value = segs
+  // restore clip(s)
+  for (const c of entry.clips) {
+    // if the clip already exists, skip
+    if (clips.value.find((x) => x.id === c.id)) continue
+    // recreate objectUrl if missing or revoked
+    const restored = { ...c }
+    try {
+      // Always recreate the object URL from the original File reference when possible.
+      // This avoids using a stale/revoked URL string which can lead to a non-playing video.
+      if (restored.file) {
+        restored.objectUrl = URL.createObjectURL(restored.file)
+      } else if (!restored.objectUrl) {
+        restored.objectUrl = ''
+      }
+    } catch {
+      // ignore
+    }
+    clips.value = [...clips.value, restored]
+  }
+  selectedSegmentId.value = entry.segment.id
 }

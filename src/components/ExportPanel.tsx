@@ -6,7 +6,7 @@ import { exportVideo, cancelExport, getFFmpeg } from '@/lib/ffmpeg'
 import {
   clips,
   exportFormat,
-  exportHistory,
+  addExportRecord,
   ffmpegProgress,
   ffmpegReady,
   framerate,
@@ -58,6 +58,29 @@ export function ExportPanel() {
   const exporting = useSignal(false)
   const error = useSignal<string | null>(null)
 
+  function estimateSize(): number {
+    // Estimate export size based on source bytes and quality preset heuristics.
+    const segs = timeline.value
+    let total = 0
+    for (const s of segs) {
+      const clip = clips.value.find((c) => c.id === s.clipId)
+      if (!clip) continue
+      const clipBytes = (clip.file as File).size ?? 0
+      const durRatio = (s.endTime - s.startTime) / Math.max(1, clip.duration)
+      total += clipBytes * durRatio
+    }
+
+    // Adjust by quality: lossless ~1x, high~0.5x, medium~0.25x, low~0.12x
+    const factorMap: Record<Quality, number> = {
+      lossless: 1,
+      high: 0.5,
+      medium: 0.25,
+      low: 0.12,
+    }
+
+    return Math.max(0, Math.round(total * factorMap[quality.value]))
+  }
+
   async function initFFmpeg() {
     if (ffmpegReady.value) return
     await getFFmpeg()
@@ -90,7 +113,7 @@ export function ExportPanel() {
         height: firstClip?.height ?? 0,
         format: exportFormat.value,
       }
-      exportHistory.value = [record, ...exportHistory.value]
+      addExportRecord(record)
     } catch (e) {
       if (exporting.value) error.value = e instanceof Error ? e.message : 'Export failed'
     } finally {
@@ -123,6 +146,7 @@ export function ExportPanel() {
 
   const hasSegments = timeline.value.length > 0
   const progressPct = Math.round(ffmpegProgress.value * 100)
+  const estimatedSize = estimateSize()
 
   if (!hasSegments) return null
 
@@ -163,6 +187,10 @@ export function ExportPanel() {
 
       <div class="flex flex-col gap-2 border-t border-slate-200/60 pt-2 sm:flex-row sm:items-center dark:border-slate-700/60">
         <div class="min-w-0 flex-1">
+          <div class="mb-1 text-sm text-slate-500 dark:text-slate-400">
+            Estimated export size:{' '}
+            {estimatedSize > 0 ? `${Math.round(estimatedSize / 1024 / 1024)} MB` : '—'}
+          </div>
           {exporting.value && !ffmpegReady.value && (
             <div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
               <div class="h-2 w-2 animate-pulse rounded-full bg-violet-500" />
