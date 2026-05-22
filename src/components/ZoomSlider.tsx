@@ -1,16 +1,20 @@
 import clsx from 'clsx/lite'
 
-type ZoomSliderProps = {
+const TICKS = [0, 0.25, 0.5, 0.75, 1]
+
+export function ZoomSlider({
+  value,
+  min,
+  max,
+  onChange,
+  class: className,
+}: {
   value: number
   min: number
   max: number
   onChange: (value: number) => void
   class?: string
-}
-
-const TICKS = [0, 0.25, 0.5, 0.75, 1]
-
-export function ZoomSlider({ value, min, max, onChange, class: className }: ZoomSliderProps) {
+}) {
   const pct = (value - min) / (max - min)
 
   function seekFromPointer(ev: PointerEvent, el: HTMLElement) {
