@@ -191,7 +191,7 @@ export function Timeline() {
   return (
     <div
       class={clsx(
-        'relative flex h-64 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur transition-colors md:h-48 dark:border-slate-700/60 dark:bg-slate-900/40',
+        'relative flex h-64 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur transition-colors hover:duration-0 md:h-48 dark:border-slate-700/60 dark:bg-slate-900/40',
         draggingOver.value && 'ring-2 ring-violet-400'
       )}
       onDragOver={onDragOver}
@@ -207,7 +207,7 @@ export function Timeline() {
         <div class="flex items-start gap-2.5 md:flex-1">
           <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             <button
-              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={disabled}
               onClick={setInPoint}
               title="Set in-point (I)"
@@ -218,7 +218,7 @@ export function Timeline() {
             </button>
 
             <button
-              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={disabled}
               onClick={setOutPoint}
               title="Set out-point (O)"
@@ -229,7 +229,7 @@ export function Timeline() {
             </button>
 
             <button
-              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={disabled}
               onClick={cutAtPlayhead}
               title="Split at playhead (C)"
@@ -240,7 +240,7 @@ export function Timeline() {
             </button>
 
             <button
-              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={disabled}
               onClick={toggleMute}
               title="Toggle mute"
@@ -252,7 +252,7 @@ export function Timeline() {
             </button>
 
             <button
-              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
               disabled={disabled}
               onClick={deleteSegment}
               title="Delete segment"
@@ -265,7 +265,7 @@ export function Timeline() {
           <div class="flex shrink-0 items-center gap-2 md:gap-3">
             <button
               onClick={() => zoomTo(pxPerSec.value - 10)}
-              class="text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom out"
             >
               <ZoomOut class="h-3.5 w-3.5" />
@@ -279,7 +279,7 @@ export function Timeline() {
             />
             <button
               onClick={() => zoomTo(pxPerSec.value + 10)}
-              class="text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom in"
             >
               <ZoomIn class="h-3.5 w-3.5" />
@@ -321,7 +321,7 @@ export function Timeline() {
           >
             <div
               class={clsx(
-                'flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-lg border-2 border-dashed px-5 py-4 text-center transition-colors',
+                'flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-lg border-2 border-dashed px-5 py-4 text-center transition-colors hover:duration-0',
                 draggingOver.value
                   ? 'border-violet-400 bg-violet-50/50 text-violet-600 dark:border-violet-500/50 dark:bg-violet-950/30 dark:text-violet-300'
                   : 'border-slate-300 bg-slate-50/50 text-slate-500 dark:border-slate-600 dark:bg-slate-800/20 dark:text-slate-400'

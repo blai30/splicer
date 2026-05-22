@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals'
+import clsx from 'clsx/lite'
 import { X } from 'lucide-preact'
 import { createPortal } from 'preact/compat'
 import { useEffect } from 'preact/hooks'
@@ -15,7 +16,7 @@ const SHORTCUTS = [
   { key: '← →', description: 'Frame Step' },
 ]
 
-export function KeyboardLegend() {
+export function KeyboardLegend({ class: className }: { class?: string }) {
   const isOpen = useSignal(false)
 
   useEffect(() => {
@@ -47,7 +48,7 @@ export function KeyboardLegend() {
             </h2>
             <button
               onClick={() => (isOpen.value = false)}
-              class="inline-flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+              class="inline-flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-slate-100 hover:duration-0 dark:hover:bg-slate-800"
               aria-label="Close"
             >
               <X class="h-4 w-4" />
@@ -77,8 +78,7 @@ export function KeyboardLegend() {
     <>
       <button
         onClick={() => (isOpen.value = !isOpen.value)}
-        class="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-        aria-label="Show keyboard shortcuts"
+        class={clsx(className, 'inline-flex items-center justify-center')}
         title="Keyboard shortcuts"
       >
         <svg

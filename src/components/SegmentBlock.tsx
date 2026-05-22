@@ -157,13 +157,13 @@ export function SegmentBlock({
       </span>
       <div
         ref={leftRef}
-        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70"
+        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('left')}
         onClick={(e) => e.stopPropagation()}
       />
       <div
         ref={rightRef}
-        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70"
+        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('right')}
         onClick={(e) => e.stopPropagation()}
       />

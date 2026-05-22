@@ -23,7 +23,7 @@ export function ExportHistory() {
             }
             exportHistory.value = []
           }}
-          class="ml-auto flex items-center gap-1 text-sm text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300"
+          class="ml-auto flex items-center gap-1 text-sm text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
         >
           <Trash2 class="h-3 w-3" />
           Clear
