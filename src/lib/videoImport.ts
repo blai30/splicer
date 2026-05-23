@@ -1,6 +1,6 @@
 import { fetchFile } from '@ffmpeg/util'
 
-import { getFFmpeg } from '@/lib/ffmpeg'
+import { getFfmpeg } from '@/lib/ffmpeg'
 import { clips, timeline, getClipById, importing } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
@@ -107,7 +107,7 @@ async function extractWaveformPeaksWithFfmpeg(file: File, peakCount = 2000): Pro
 
   let ffmpeg
   try {
-    ffmpeg = await getFFmpeg()
+    ffmpeg = await getFfmpeg()
     await ffmpeg.writeFile(inputName, await fetchFile(file))
     const ret = await ffmpeg.exec([
       '-i',

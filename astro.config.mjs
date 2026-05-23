@@ -12,16 +12,29 @@ const coopCoep = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 }
 
-const coreJs = resolve('node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js')
+const coreJs = resolve('node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.js')
+const coreWasm = resolve('node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.wasm')
+const coreWorkerJs = resolve('node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.worker.js')
 
 /** @type {import('vite').Plugin} */
 const ffmpegCorePlugin = {
   name: 'ffmpeg-core',
   configureServer(server) {
     server.middlewares.use((req, res, next) => {
-      if (req.url?.split('?')[0] === '/ffmpeg/ffmpeg-core.js') {
+      const url = req.url?.split('?')[0]
+      if (url === '/ffmpeg/ffmpeg-core.js') {
         res.setHeader('Content-Type', 'application/javascript')
         createReadStream(coreJs).pipe(res)
+        return
+      }
+      if (url === '/ffmpeg/ffmpeg-core.wasm') {
+        res.setHeader('Content-Type', 'application/wasm')
+        createReadStream(coreWasm).pipe(res)
+        return
+      }
+      if (url === '/ffmpeg/ffmpeg-core.worker.js') {
+        res.setHeader('Content-Type', 'application/javascript')
+        createReadStream(coreWorkerJs).pipe(res)
         return
       }
       next()
@@ -31,6 +44,8 @@ const ffmpegCorePlugin = {
     const outDir = resolve('dist/ffmpeg')
     mkdirSync(outDir, { recursive: true })
     copyFileSync(coreJs, join(outDir, 'ffmpeg-core.js'))
+    copyFileSync(coreWasm, join(outDir, 'ffmpeg-core.wasm'))
+    copyFileSync(coreWorkerJs, join(outDir, 'ffmpeg-core.worker.js'))
   },
 }
 

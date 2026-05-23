@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
-import { playheadTime, selectedSegmentId, timeline, videoEl, getClipById } from '@/lib/store'
+import { playheadTime, selectedSegmentId, timeline, videoEl, getClipById, clips } from '@/lib/store'
 import { GAP_PX, clipColor, dragState, pxPerSec } from '@/lib/store'
 import { createRafThrottler } from '@/lib/timelineDomain'
 import {
@@ -26,7 +26,7 @@ export function SegmentBlock({
   startX: number
   width: number
 }) {
-  const clip = getClipById(seg.clipId)
+  const clip = clips.value.find((c) => c.id === seg.clipId) ?? getClipById(seg.clipId)
   const dur = seg.endTime - seg.startTime
   const isSelected = selectedSegmentId.value === seg.id
   const leftRef = useRef<HTMLDivElement>(null)
@@ -157,13 +157,13 @@ export function SegmentBlock({
       </span>
       <div
         ref={leftRef}
-        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70"
+        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('left')}
         onClick={(e) => e.stopPropagation()}
       />
       <div
         ref={rightRef}
-        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70"
+        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('right')}
         onClick={(e) => e.stopPropagation()}
       />

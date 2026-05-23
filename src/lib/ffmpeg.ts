@@ -38,7 +38,7 @@ function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
   return true
 }
 
-export async function getFFmpeg(): Promise<FFmpeg> {
+export async function getFfmpeg(): Promise<FFmpeg> {
   if (instance) return instance
   if (!loadingPromise) {
     const ffmpeg = new FFmpeg()
@@ -49,6 +49,7 @@ export async function getFFmpeg(): Promise<FFmpeg> {
       .load({
         coreURL: assetPath('ffmpeg/ffmpeg-core.js'),
         wasmURL: assetPath('ffmpeg/ffmpeg-core.wasm'),
+        workerURL: assetPath('ffmpeg/ffmpeg-core.worker.js'),
       })
       .then(() => {
         instance = ffmpeg
@@ -112,7 +113,7 @@ async function exportStreamCopy(
   segments: Segment[],
   format: ExportFormat
 ): Promise<{ url: string; size: number }> {
-  const ffmpeg = await getFFmpeg()
+  const ffmpeg = await getFfmpeg()
   ffmpegProgress.value = 0
 
   const runId = crypto.randomUUID().replace(/-/g, '')
@@ -167,7 +168,7 @@ export async function exportVideo(
     return exportStreamCopy(segments, format)
   }
 
-  const ffmpeg = await getFFmpeg()
+  const ffmpeg = await getFfmpeg()
   ffmpegProgress.value = 0
 
   const runId = crypto.randomUUID().replace(/-/g, '')

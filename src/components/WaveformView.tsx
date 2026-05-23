@@ -1,20 +1,18 @@
 import { useEffect, useRef } from 'preact/hooks'
 
-type WaveformViewProps = {
-  peaks: number[]
-  clipDuration: number
-  segmentStart: number
-  segmentEnd: number
-  class?: string
-}
-
 export function WaveformView({
   peaks,
   clipDuration,
   segmentStart,
   segmentEnd,
   class: className,
-}: WaveformViewProps) {
+}: {
+  peaks: number[]
+  clipDuration: number
+  segmentStart: number
+  segmentEnd: number
+  class?: string
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const lastSizeRef = useRef<{ width: number; height: number; dpr: number } | null>(null)
 

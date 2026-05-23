@@ -21,7 +21,7 @@ export function VolumeControl() {
         onClick={() => {
           previewMuted.value = !previewMuted.value
         }}
-        class="flex h-7 w-7 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+        class="flex h-7 w-7 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
         title={previewMuted.value ? 'Unmute preview' : 'Mute preview'}
       >
         {previewMuted.value ? <VolumeX class="h-4 w-4" /> : <Volume2 class="h-4 w-4" />}
