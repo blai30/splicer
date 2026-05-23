@@ -1,8 +1,8 @@
 import { fetchFile } from '@ffmpeg/util'
 
 import { getFfmpeg } from '@/lib/ffmpeg'
-import { clips, timeline, getClipById, importing } from '@/lib/store'
 import { info, error as logError } from '@/lib/logger'
+import { clips, timeline, getClipById, importing } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
 export const ACCEPTED = [

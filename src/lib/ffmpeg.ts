@@ -1,9 +1,9 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 
+import { info, debug, warn, error as logError } from '@/lib/logger'
 import { assetPath } from '@/lib/paths'
 import { ffmpegProgress, ffmpegReady, getClipById } from '@/lib/store'
-import { info, debug, warn, error as logError } from '@/lib/logger'
 import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
 import { MIME_TYPES } from '@/lib/types'
 
@@ -62,7 +62,9 @@ export async function getFfmpeg(): Promise<FFmpeg> {
       })
       .catch((err) => {
         loadingPromise = null
-        logError('FFmpeg load failed', { message: err instanceof Error ? err.message : String(err) })
+        logError('FFmpeg load failed', {
+          message: err instanceof Error ? err.message : String(err),
+        })
         throw err
       })
   }
