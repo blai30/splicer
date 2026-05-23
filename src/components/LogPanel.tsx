@@ -108,7 +108,7 @@ export function LogPanel() {
                     <div class="text-slate-700 dark:text-slate-100">{e.message}</div>
                   </div>
                   {e.meta && (
-                    <pre class="mt-1 max-w-full overflow-auto rounded bg-slate-100 p-2 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    <pre class="mt-1 max-w-full overflow-auto rounded bg-slate-100 p-2 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                       {JSON.stringify(e.meta, null, 2)}
                     </pre>
                   )}
