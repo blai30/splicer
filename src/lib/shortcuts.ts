@@ -1,12 +1,4 @@
-import {
-  setInPoint,
-  setOutPoint,
-  cutAtPlayhead,
-  toggleMute,
-  deleteSegment,
-  undoDelete,
-  videoEl,
-} from './store'
+import { setInPoint, setOutPoint, cutAtPlayhead, deleteSegment, undoDelete, videoEl } from './store'
 
 let attached = false
 
@@ -48,9 +40,7 @@ export function initKeyboardShortcuts() {
       case 'c':
         cutAtPlayhead()
         return
-      case 'm':
-        toggleMute()
-        return
+      // per-segment mute removed
       case 'Delete':
       case 'Backspace':
         deleteSegment()

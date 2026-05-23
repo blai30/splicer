@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { VolumeControl } from '@/components/VolumeControl'
 import { formatTimecode } from '@/lib/format'
-import { deleteSegment, setInPoint, setOutPoint, toggleMute } from '@/lib/store'
+import { deleteSegment, setInPoint, setOutPoint } from '@/lib/store'
 import {
   clips,
   currentPlaybackTime,
@@ -109,7 +109,7 @@ export function VideoPreview() {
       return
     }
 
-    v.muted = info.seg.muted || previewMuted.value
+    v.muted = previewMuted.value
 
     const resume = resumeAfterSwitch.current
     resumeAfterSwitch.current = false
@@ -227,9 +227,6 @@ export function VideoPreview() {
           break
         case 'o':
           setOutPoint()
-          break
-        case 'm':
-          toggleMute()
           break
         case 'Delete':
         case 'Backspace':

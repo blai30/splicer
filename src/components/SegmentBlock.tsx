@@ -150,7 +150,7 @@ export function SegmentBlock({
       )}
       <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
         {clip?.name ?? 'Clip'}
-        {seg.muted && <span class="ml-1 opacity-70">🔇</span>}
+        {/* per-segment mute removed */}
       </span>
       <span class="relative z-10 ml-auto shrink-0 self-end pr-2 text-sm text-white/70">
         {formatTime(dur)}
