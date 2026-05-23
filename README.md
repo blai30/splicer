@@ -70,7 +70,7 @@ No upload pipeline is used. Processing happens client-side via FFmpeg WASM.
 - Astro
 - Preact + Signals
 - Tailwind CSS
-- FFmpeg WASM (`@ffmpeg/ffmpeg`, `@ffmpeg/core`, `@ffmpeg/util`)
+- FFmpeg WASM (`@ffmpeg/ffmpeg`, `@ffmpeg/core-mt`, `@ffmpeg/util`)
 
 ## Requirements
 
@@ -92,7 +92,7 @@ Open `http://localhost:4321`.
 
 This project serves `ffmpeg-core.js` from `node_modules` in development through a Vite plugin and copies it into `dist/ffmpeg` at build time.
 
-`ffmpeg-core.wasm` is expected at `public/ffmpeg/ffmpeg-core.wasm`.
+`ffmpeg` is expected at `public/ffmpeg/`.
 
 ### Cross-Origin Isolation
 
