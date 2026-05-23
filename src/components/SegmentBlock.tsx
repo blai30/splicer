@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
-import { playheadTime, selectedSegmentId, timeline, videoEl, getClipById } from '@/lib/store'
+import { playheadTime, selectedSegmentId, timeline, videoEl, getClipById, clips } from '@/lib/store'
 import { GAP_PX, clipColor, dragState, pxPerSec } from '@/lib/store'
 import { createRafThrottler } from '@/lib/timelineDomain'
 import {
@@ -26,7 +26,7 @@ export function SegmentBlock({
   startX: number
   width: number
 }) {
-  const clip = getClipById(seg.clipId)
+  const clip = clips.value.find((c) => c.id === seg.clipId) ?? getClipById(seg.clipId)
   const dur = seg.endTime - seg.startTime
   const isSelected = selectedSegmentId.value === seg.id
   const leftRef = useRef<HTMLDivElement>(null)
