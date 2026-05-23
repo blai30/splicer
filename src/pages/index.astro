@@ -6,6 +6,7 @@ import { VideoPreview } from '@/components/VideoPreview'
 import { Timeline } from '@/components/Timeline'
 import { ExportPanel } from '@/components/ExportPanel'
 import { ExportHistory } from '@/components/ExportHistory'
+import { LogPanel } from '@/components/LogPanel'
 import '@/styles/global.css'
 
 const pageTitle = 'Splicer | Fast Browser Video Trimmer'
@@ -35,6 +36,9 @@ const pageDescription =
     </section>
     <section aria-label="Export history and downloads">
       <ExportHistory client:load />
+    </section>
+    <section aria-label="Logs">
+      <LogPanel client:load />
     </section>
   </main>
 </Layout>

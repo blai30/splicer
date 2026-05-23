@@ -3,6 +3,7 @@ import clsx from 'clsx/lite'
 import { CirclePlay, X } from 'lucide-preact'
 
 import { exportVideo, cancelExport, getFfmpeg } from '@/lib/ffmpeg'
+import { info, error as logError } from '@/lib/logger'
 import {
   clips,
   exportFormat,
@@ -92,6 +93,12 @@ export function ExportPanel() {
     exporting.value = true
     error.value = null
     try {
+      info('Export initiated', {
+        format: exportFormat.value,
+        quality: quality.value,
+        fps: framerate.value,
+        segments: timeline.value.length,
+      })
       const segs = timeline.value
       const filename = makeFilename(exportFormat.value)
       const { url, size } = await exportVideo(
@@ -115,7 +122,9 @@ export function ExportPanel() {
         format: exportFormat.value,
       }
       addExportRecord(record)
+      info('Export finished', { filename, size })
     } catch (e) {
+      logError('Export failed', { message: e instanceof Error ? e.message : String(e) })
       if (exporting.value) error.value = e instanceof Error ? e.message : 'Export failed'
     } finally {
       exporting.value = false
@@ -125,6 +134,7 @@ export function ExportPanel() {
   function handleCancel() {
     exporting.value = false
     cancelExport()
+    info('Export cancelled by user')
   }
 
   const formats: { value: ExportFormat; label: string }[] = [

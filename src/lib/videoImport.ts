@@ -2,6 +2,7 @@ import { fetchFile } from '@ffmpeg/util'
 
 import { getFfmpeg } from '@/lib/ffmpeg'
 import { clips, timeline, getClipById, importing } from '@/lib/store'
+import { info, error as logError } from '@/lib/logger'
 import type { Clip, Segment } from '@/lib/types'
 
 export const ACCEPTED = [
@@ -107,6 +108,7 @@ async function extractWaveformPeaksWithFfmpeg(file: File, peakCount = 2000): Pro
 
   let ffmpeg
   try {
+    info('Extracting waveform via FFmpeg', { filename: file.name })
     ffmpeg = await getFfmpeg()
     await ffmpeg.writeFile(inputName, await fetchFile(file))
     const ret = await ffmpeg.exec([
@@ -130,8 +132,11 @@ async function extractWaveformPeaksWithFfmpeg(file: File, peakCount = 2000): Pro
     if (aligned === 0) return []
 
     const view = new Float32Array(pcm.buffer, pcm.byteOffset, aligned / 4)
-    return getPeaksFromSamples(view, peakCount)
+    const peaks = getPeaksFromSamples(view, peakCount)
+    info('Waveform extracted', { filename: file.name, peaks: peaks.length })
+    return peaks
   } catch {
+    logError('Waveform extraction failed', { filename: file.name })
     return []
   } finally {
     if (ffmpeg) {
@@ -186,6 +191,7 @@ export async function importAndAppend(file: File): Promise<void> {
   let imported = false
 
   try {
+    info('Importing file', { name: file.name })
     importing.value = true
     const { duration, width, height } = await getVideoMetadata(objectUrl)
     if (!Number.isFinite(duration) || duration <= 0) {
@@ -215,6 +221,7 @@ export async function importAndAppend(file: File): Promise<void> {
     }
     timeline.value = [...timeline.value, seg]
     imported = true
+    info('Import succeeded', { name: file.name, duration })
   } catch {
     // Ignore individual import failures so batch imports continue.
   } finally {
