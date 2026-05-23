@@ -8,7 +8,6 @@ It is designed for fast, local edits:
 
 - import clips by click or drag-and-drop
 - trim in/out points and split at the playhead
-- mute/unmute individual segments
 - preview edits with frame stepping and playback speed controls
 - export to MP4, WebM, or MKV directly in the browser
 
@@ -33,7 +32,6 @@ No upload pipeline is used. Processing happens client-side via FFmpeg WASM.
   - set in-point
   - set out-point
   - cut at playhead
-  - mute/unmute
   - delete
 - Drag segment trim handles for interactive left/right trimming.
 - Seek by clicking/dragging in the timeline.

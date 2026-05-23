@@ -30,7 +30,7 @@ function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
   if (segments.length === 0) return false
 
   for (const seg of segments) {
-    if (seg.muted || seg.crop) return false
+    if (seg.crop) return false
     const clip = getClipById(seg.clipId)
     if (!clip) return false
     if (getFileExtension(clip.file.name) !== format) return false
@@ -175,7 +175,7 @@ export async function exportVideo(
 ): Promise<{ url: string; size: number }> {
   if (segments.length === 0) throw new Error('No segments')
 
-  // Use stream copy when lossless + original fps + no muted segments
+  // Use stream copy when lossless + original fps + no per-segment muting
   if (quality === 'lossless' && fps === 'original' && canUseStreamCopy(segments, format)) {
     return exportStreamCopy(segments, format)
   }
@@ -210,10 +210,7 @@ export async function exportVideo(
       }
       videoFilter += `[v${idx}]`
 
-      const dur = seg.endTime - seg.startTime
-      const audioFilter = seg.muted
-        ? `anullsrc=channel_layout=stereo:sample_rate=44100:duration=${dur}[a${idx}]`
-        : `[${idx}:a]atrim=${seg.startTime}:${seg.endTime},asetpts=PTS-STARTPTS[a${idx}]`
+      const audioFilter = `[${idx}:a]atrim=${seg.startTime}:${seg.endTime},asetpts=PTS-STARTPTS[a${idx}]`
 
       filterParts.push(videoFilter, audioFilter)
       concatInputs.push(`[v${idx}][a${idx}]`)

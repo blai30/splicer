@@ -12,7 +12,6 @@ const SHORTCUTS = [
   { key: 'Delete', description: 'Delete Segment' },
   { key: 'Ctrl +', description: 'Zoom In' },
   { key: 'Ctrl -', description: 'Zoom Out' },
-  { key: 'M', description: 'Toggle Mute' },
   { key: '← →', description: 'Frame Step' },
 ]
 

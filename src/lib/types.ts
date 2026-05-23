@@ -38,7 +38,6 @@ export type Segment = {
   clipId: string
   startTime: number
   endTime: number
-  muted: boolean
   crop?: CropParams
 }
 

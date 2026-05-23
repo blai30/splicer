@@ -217,7 +217,6 @@ export async function importAndAppend(file: File): Promise<void> {
       clipId: clip.id,
       startTime: 0,
       endTime: duration,
-      muted: false,
     }
     timeline.value = [...timeline.value, seg]
     imported = true
