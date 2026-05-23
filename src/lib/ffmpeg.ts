@@ -49,6 +49,7 @@ export async function getFfmpeg(): Promise<FFmpeg> {
       .load({
         coreURL: assetPath('ffmpeg/ffmpeg-core.js'),
         wasmURL: assetPath('ffmpeg/ffmpeg-core.wasm'),
+        workerURL: assetPath('ffmpeg/ffmpeg-core.worker.js'),
       })
       .then(() => {
         instance = ffmpeg
