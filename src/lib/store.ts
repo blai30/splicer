@@ -49,6 +49,25 @@ export const ffmpegReady = signal<boolean>(false)
 export const ffmpegProgress = signal<number>(0)
 export const exportHistory = signal<ExportRecord[]>([])
 
+// Runtime logging signal (not persisted). Stores recent log entries for the UI.
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+export type LogEntry = { id: string; ts: string; level: LogLevel; message: string; meta?: any }
+export const logs = signal<LogEntry[]>([])
+export const LOG_LIMIT = 1000
+
+export function addLog(entry: LogEntry) {
+  const next = [entry, ...logs.value]
+  if (next.length > LOG_LIMIT) next.length = LOG_LIMIT
+  logs.value = next
+}
+
+export function clearLogs() {
+  logs.value = []
+}
+
+// UI visibility for the log panel. Persisted so user preference survives reloads.
+export const logPanelVisible = signal<boolean>(loadFromStorage('logPanelVisible', false))
+
 export const EXPORT_HISTORY_LIMIT = 50
 
 export function addExportRecord(rec: ExportRecord) {
@@ -91,6 +110,7 @@ persistSignal('quality', quality)
 persistSignal('framerate', framerate)
 persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
+persistSignal('logPanelVisible', logPanelVisible)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200

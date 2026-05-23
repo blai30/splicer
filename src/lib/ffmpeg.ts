@@ -1,6 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 
+import { info, debug, warn, error as logError } from '@/lib/logger'
 import { assetPath } from '@/lib/paths'
 import { ffmpegProgress, ffmpegReady, getClipById } from '@/lib/store'
 import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
@@ -42,8 +43,10 @@ export async function getFfmpeg(): Promise<FFmpeg> {
   if (instance) return instance
   if (!loadingPromise) {
     const ffmpeg = new FFmpeg()
+    info('Initializing FFmpeg')
     ffmpeg.on('progress', ({ progress }) => {
       ffmpegProgress.value = progress
+      debug('ffmpeg progress', { progress })
     })
     loadingPromise = ffmpeg
       .load({
@@ -54,10 +57,14 @@ export async function getFfmpeg(): Promise<FFmpeg> {
       .then(() => {
         instance = ffmpeg
         ffmpegReady.value = true
+        info('FFmpeg ready')
         return ffmpeg
       })
       .catch((err) => {
         loadingPromise = null
+        logError('FFmpeg load failed', {
+          message: err instanceof Error ? err.message : String(err),
+        })
         throw err
       })
   }
@@ -100,11 +107,16 @@ export function cancelExport(): void {
   }
   loadingPromise = null
   ffmpegProgress.value = 0
+  warn('Export cancelled / FFmpeg terminated')
 }
 
 async function exec(ffmpeg: FFmpeg, args: string[]): Promise<void> {
+  info('Running ffmpeg', { args })
   const ret = await ffmpeg.exec(args)
-  if (ret !== 0) throw new Error(`FFmpeg error (code ${ret})`)
+  if (ret !== 0) {
+    logError('FFmpeg error', { code: ret, args })
+    throw new Error(`FFmpeg error (code ${ret})`)
+  }
 }
 
 // Stream-copy path: remux without re-encoding using the concat demuxer.
