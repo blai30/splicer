@@ -82,7 +82,8 @@ export function VideoPreview() {
     const v = videoRef.current
     if (!v) return
     v.volume = previewVolume.value
-    v.muted = previewMuted.value
+    const segMuted = getActiveSegInfo()?.seg.muted ?? false
+    v.muted = previewMuted.value || segMuted
   })
 
   useSignalEffect(() => {
@@ -109,7 +110,8 @@ export function VideoPreview() {
       return
     }
 
-    v.muted = previewMuted.value
+    const segMuted = info?.seg.muted ?? false
+    v.muted = previewMuted.value || segMuted
 
     const resume = resumeAfterSwitch.current
     resumeAfterSwitch.current = false

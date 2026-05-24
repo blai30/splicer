@@ -51,6 +51,13 @@ No upload pipeline is used. Processing happens client-side via FFmpeg WASM.
 - Export progress + cancel support.
 - Export history table with one-click download and drag-to-desktop support.
 
+### Per-Segment Mute
+
+- Toggle mute on a selected segment via the timeline toolbar button or `M` key.
+- Muted segments show a 🔇 indicator on the segment block.
+- Preview playback respects per-segment mute immediately.
+- Exported video applies `volume=0` to muted segments in the ffmpeg filter chain.
+
 ## Keyboard Shortcuts
 
 - `Space`: Play/Pause

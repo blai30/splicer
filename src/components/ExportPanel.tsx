@@ -108,7 +108,10 @@ export function ExportPanel() {
         framerate.value
       )
 
-      const totalDuration = segs.reduce((acc, segment) => acc + (segment.endTime - segment.startTime), 0)
+      const totalDuration = segs.reduce(
+        (acc, segment) => acc + (segment.endTime - segment.startTime),
+        0
+      )
       const firstClip = clips.value.find((c) => c.id === segs[0].clipId)
       const record: ExportRecord = {
         id: crypto.randomUUID(),
