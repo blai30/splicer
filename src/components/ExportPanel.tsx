@@ -33,23 +33,23 @@ function OptionButtonGroup<T extends string>({
   label: string
   options: { value: T; label: string }[]
   selected: T
-  onSelect: (v: T) => void
+  onSelect: (value: T) => void
 }) {
   return (
     <div class="flex flex-wrap items-center gap-2">
       <span class="w-14 text-sm text-slate-500 dark:text-slate-400">{label}</span>
-      {options.map((o) => (
+      {options.map((option) => (
         <button
-          key={o.value}
+          key={option.value}
           class={clsx(
-            selected === o.value
+            selected === option.value
               ? 'bg-violet-500 text-white'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100',
             'rounded px-2.5 py-1 text-sm font-medium transition-colors hover:duration-0'
           )}
-          onClick={() => onSelect(o.value)}
+          onClick={() => onSelect(option.value)}
         >
-          {o.label}
+          {option.label}
         </button>
       ))}
     </div>
@@ -62,13 +62,13 @@ export function ExportPanel() {
 
   function estimateSize(): number {
     // Estimate export size based on source bytes and quality preset heuristics.
-    const segs = timeline.value
+    const segments = timeline.value
     let total = 0
-    for (const s of segs) {
-      const clip = clips.value.find((c) => c.id === s.clipId)
+    for (const segment of segments) {
+      const clip = clips.value.find((c) => c.id === segment.clipId)
       if (!clip) continue
       const clipBytes = (clip.file as File).size ?? 0
-      const durRatio = (s.endTime - s.startTime) / Math.max(1, clip.duration)
+      const durRatio = (segment.endTime - segment.startTime) / Math.max(1, clip.duration)
       total += clipBytes * durRatio
     }
 
@@ -108,7 +108,7 @@ export function ExportPanel() {
         framerate.value
       )
 
-      const totalDuration = segs.reduce((acc, s) => acc + (s.endTime - s.startTime), 0)
+      const totalDuration = segs.reduce((acc, segment) => acc + (segment.endTime - segment.startTime), 0)
       const firstClip = clips.value.find((c) => c.id === segs[0].clipId)
       const record: ExportRecord = {
         id: crypto.randomUUID(),
@@ -174,24 +174,24 @@ export function ExportPanel() {
           label="Format"
           options={formats}
           selected={exportFormat.value}
-          onSelect={(v) => {
-            exportFormat.value = v
+          onSelect={(value) => {
+            exportFormat.value = value
           }}
         />
         <OptionButtonGroup
           label="Quality"
           options={qualities}
           selected={quality.value}
-          onSelect={(v) => {
-            quality.value = v
+          onSelect={(value) => {
+            quality.value = value
           }}
         />
         <OptionButtonGroup
           label="FPS"
           options={framerates}
           selected={framerate.value}
-          onSelect={(v) => {
-            framerate.value = v
+          onSelect={(value) => {
+            framerate.value = value
           }}
         />
       </div>
