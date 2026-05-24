@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals'
+import { clsx } from 'clsx/lite'
 import { Trash, ChevronDown, ChevronUp } from 'lucide-preact'
 
 import { logs, logPanelVisible, clearLogs } from '@/lib/store'
@@ -27,17 +28,19 @@ export function LogPanel() {
     levelFilters.value = { ...levelFilters.value, [l]: !levelFilters.value[l] }
   }
 
-  function matchesSearch(e: any) {
+  function matchesSearch(entry: any) {
     const q = search.value.trim().toLowerCase()
     if (!q) return true
-    if (e.message.toLowerCase().includes(q)) return true
+    if (entry.message.toLowerCase().includes(q)) return true
     try {
-      if (e.meta && JSON.stringify(e.meta).toLowerCase().includes(q)) return true
+      if (entry.meta && JSON.stringify(entry.meta).toLowerCase().includes(q)) return true
     } catch {}
     return false
   }
 
-  const filtered = logs.value.filter((e) => levelFilters.value[e.level] && matchesSearch(e))
+  const filtered = logs.value.filter(
+    (entry) => levelFilters.value[entry.level] && matchesSearch(entry)
+  )
 
   return (
     <div class="flex shrink-0 flex-col gap-3 rounded-lg border border-slate-200/60 bg-slate-50/40 px-4 py-3 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
@@ -61,13 +64,18 @@ export function LogPanel() {
         <div class="grid gap-2">
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2">
-              {LEVELS.map((l) => (
+              {LEVELS.map((level) => (
                 <button
-                  key={l}
-                  onClick={() => toggleLevel(l)}
-                  class={`rounded px-2 py-1 text-xs font-medium ${levelFilters.value[l] ? 'bg-violet-500 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700/50'} transition-colors hover:duration-0`}
+                  key={level}
+                  onClick={() => toggleLevel(level)}
+                  class={clsx(
+                    levelFilters.value[level]
+                      ? 'bg-violet-500 text-white'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100',
+                    'rounded px-2.5 py-1 text-sm font-medium transition-colors hover:duration-0'
+                  )}
                 >
-                  {l}
+                  {level}
                 </button>
               ))}
             </div>
@@ -76,9 +84,9 @@ export function LogPanel() {
               <input
                 type="search"
                 value={search.value}
-                onInput={(e: any) => (search.value = e.target.value)}
+                onInput={(event) => (search.value = (event.target as HTMLInputElement).value)}
                 placeholder="Search logs..."
-                class="rounded border border-slate-200/60 px-2 py-1 text-sm text-slate-700 placeholder:text-slate-400 dark:border-slate-700/60 dark:bg-slate-900/40 dark:text-slate-200"
+                class="rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
               />
               <button
                 onClick={() => clearLogs()}
@@ -96,20 +104,25 @@ export function LogPanel() {
             {filtered.length === 0 ? (
               <div class="text-slate-500 dark:text-slate-400">No log entries</div>
             ) : (
-              filtered.map((e) => (
-                <div class="mb-2 wrap-break-word" key={e.id}>
+              filtered.map((entry) => (
+                <div class="mb-2 wrap-break-word" key={entry.id}>
                   <div class="flex items-baseline gap-2">
-                    <div class="text-xs text-slate-400">{new Date(e.ts).toLocaleTimeString()}</div>
-                    <div
-                      class={`${levelClass(e.level)} text-xs font-medium tracking-wide uppercase`}
-                    >
-                      {e.level}
+                    <div class="text-xs text-slate-400">
+                      {new Date(entry.ts).toLocaleTimeString()}
                     </div>
-                    <div class="text-slate-700 dark:text-slate-100">{e.message}</div>
+                    <div
+                      class={clsx(
+                        levelClass(entry.level),
+                        'text-xs font-medium tracking-wide uppercase'
+                      )}
+                    >
+                      {entry.level}
+                    </div>
+                    <div class="text-slate-700 dark:text-slate-100">{entry.message}</div>
                   </div>
-                  {e.meta && (
+                  {entry.meta && (
                     <pre class="mt-1 max-w-full overflow-auto rounded bg-slate-100 p-2 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                      {JSON.stringify(e.meta, null, 2)}
+                      {JSON.stringify(entry.meta, null, 2)}
                     </pre>
                   )}
                 </div>

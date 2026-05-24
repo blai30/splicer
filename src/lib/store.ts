@@ -163,7 +163,13 @@ export function cutAtPlayhead() {
   selectedSegmentId.value = split.newSegmentId
 }
 
-// Per-segment mute removed.
+export function toggleMute() {
+  const segmentId = selectedSegmentId.value
+  if (!segmentId) return
+  timeline.value = timeline.value.map((segment) =>
+    segment.id === segmentId ? { ...segment, muted: !segment.muted } : segment
+  )
+}
 
 export function deleteSegment() {
   const segId = selectedSegmentId.value

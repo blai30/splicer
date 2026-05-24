@@ -6,6 +6,7 @@ import {
   Scissors,
   Trash2,
   Upload,
+  VolumeX,
   ZoomIn,
   ZoomOut,
 } from 'lucide-preact'
@@ -27,6 +28,7 @@ import {
   setInPoint,
   setOutPoint,
   timeline,
+  toggleMute,
   videoEl,
 } from '@/lib/store'
 import {
@@ -236,7 +238,21 @@ export function Timeline() {
               Cut
             </button>
 
-            {/* Per-segment mute removed */}
+            <button
+              class={clsx(
+                'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold transition-colors hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40',
+                seg?.muted
+                  ? 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-900/30'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
+              )}
+              disabled={disabled}
+              onClick={toggleMute}
+              title="Toggle mute on selected segment (M)"
+              aria-label="Toggle mute on selected segment"
+            >
+              <VolumeX class="h-3.5 w-3.5" />
+              {seg?.muted ? 'Unmute' : 'Mute'}
+            </button>
 
             <button
               class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
