@@ -1,16 +1,16 @@
 import type { Framerate } from '@/lib/types'
 
-export function formatTime(s: number): string {
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
+export function formatTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const sec = Math.floor(seconds % 60)
+  return `${minutes}:${sec.toString().padStart(2, '0')}`
 }
 
-export function formatTimecode(s: number): string {
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  const ms = Math.floor((s % 1) * 10)
-  return `${m}:${sec.toString().padStart(2, '0')}.${ms}`
+export function formatTimecode(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const sec = Math.floor(seconds % 60)
+  const ms = Math.floor((seconds % 1) * 10)
+  return `${minutes}:${sec.toString().padStart(2, '0')}.${ms}`
 }
 
 export function formatSize(bytes: number): string {

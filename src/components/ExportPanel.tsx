@@ -65,7 +65,7 @@ export function ExportPanel() {
     const segments = timeline.value
     let total = 0
     for (const segment of segments) {
-      const clip = clips.value.find((c) => c.id === segment.clipId)
+      const clip = clips.value.find((clip) => clip.id === segment.clipId)
       if (!clip) continue
       const clipBytes = (clip.file as File).size ?? 0
       const durRatio = (segment.endTime - segment.startTime) / Math.max(1, clip.duration)
@@ -99,20 +99,20 @@ export function ExportPanel() {
         fps: framerate.value,
         segments: timeline.value.length,
       })
-      const segs = timeline.value
+      const segments = timeline.value
       const filename = makeFilename(exportFormat.value)
       const { url, size } = await exportVideo(
-        segs,
+        segments,
         exportFormat.value,
         quality.value,
         framerate.value
       )
 
-      const totalDuration = segs.reduce(
+      const totalDuration = segments.reduce(
         (acc, segment) => acc + (segment.endTime - segment.startTime),
         0
       )
-      const firstClip = clips.value.find((c) => c.id === segs[0].clipId)
+      const firstClip = clips.value.find((clip) => clip.id === segments[0].clipId)
       const record: ExportRecord = {
         id: crypto.randomUUID(),
         filename,

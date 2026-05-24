@@ -43,7 +43,7 @@ export type Segment = {
 }
 
 export type SegmentLayoutItem = {
-  seg: Segment
+  segment: Segment
   startX: number
   endX: number
 }

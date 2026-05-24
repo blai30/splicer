@@ -1,5 +1,5 @@
 import { useSignal } from '@preact/signals'
-import { clsx } from 'clsx/lite'
+import clsx from 'clsx/lite'
 import { Trash, ChevronDown, ChevronUp } from 'lucide-preact'
 
 import { logs, logPanelVisible, clearLogs } from '@/lib/store'

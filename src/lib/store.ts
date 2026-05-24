@@ -80,7 +80,7 @@ export function addExportRecord(rec: ExportRecord) {
 const clipsMap: Map<string, Clip> = new Map()
 effect(() => {
   clipsMap.clear()
-  for (const c of clips.value) clipsMap.set(c.id, c)
+  for (const clip of clips.value) clipsMap.set(clip.id, clip)
 })
 
 export function getClipById(id: string): Clip | undefined {
@@ -130,34 +130,35 @@ export function clipColor(clipId: string): string {
 
 export function getSegmentStartX(segId: string): number {
   let x = PADDING_PX
-  for (const seg of timeline.value) {
-    if (seg.id === segId) return x
-    x += (seg.endTime - seg.startTime) * pxPerSec.value + GAP_PX
+  for (const segment of timeline.value) {
+    if (segment.id === segId) return x
+    x += (segment.endTime - segment.startTime) * pxPerSec.value + GAP_PX
   }
   return PADDING_PX
 }
 
 function getSelectedSegment() {
-  return timeline.value.find((s) => s.id === selectedSegmentId.value)
+  return timeline.value.find((segment) => segment.id === selectedSegmentId.value)
 }
 
 export function setInPoint() {
-  const seg = getSelectedSegment()
-  if (!seg) return
-  timeline.value = updateSegmentStartTime(timeline.value, seg.id, playheadTime.value)
+  const segment = getSelectedSegment()
+  if (!segment) return
+  timeline.value = updateSegmentStartTime(timeline.value, segment.id, playheadTime.value)
 }
 
 export function setOutPoint() {
-  const seg = getSelectedSegment()
-  if (!seg) return
-  const clipDur = clips.value.find((c) => c.id === seg.clipId)?.duration ?? playheadTime.value
-  timeline.value = updateSegmentEndTime(timeline.value, seg.id, playheadTime.value, clipDur)
+  const segment = getSelectedSegment()
+  if (!segment) return
+  const clipDur =
+    clips.value.find((clip) => clip.id === segment.clipId)?.duration ?? playheadTime.value
+  timeline.value = updateSegmentEndTime(timeline.value, segment.id, playheadTime.value, clipDur)
 }
 
 export function cutAtPlayhead() {
-  const seg = getSelectedSegment()
-  if (!seg) return
-  const split = splitSegmentAtPlayhead(timeline.value, seg.id, playheadTime.value)
+  const segment = getSelectedSegment()
+  if (!segment) return
+  const split = splitSegmentAtPlayhead(timeline.value, segment.id, playheadTime.value)
   if (!split) return
   timeline.value = split.nextSegments
   selectedSegmentId.value = split.newSegmentId
@@ -174,15 +175,15 @@ export function toggleMute() {
 export function deleteSegment() {
   const segId = selectedSegmentId.value
   if (!segId) return
-  const currentIdx = timeline.value.findIndex((s) => s.id === segId)
-  const removedSegs = timeline.value.filter((s) => s.id === segId)
-  const next = timeline.value.filter((s) => s.id !== segId)
+  const currentIdx = timeline.value.findIndex((segment) => segment.id === segId)
+  const removedSegments = timeline.value.filter((segment) => segment.id === segId)
+  const next = timeline.value.filter((segment) => segment.id !== segId)
   // push to undo stack
-  for (const rs of removedSegs) {
-    const relatedClips = clips.value.filter((c) => c.id === rs.clipId)
+  for (const removedSegment of removedSegments) {
+    const relatedClips = clips.value.filter((clip) => clip.id === removedSegment.clipId)
     // store a shallow copy of clip(s) so undo can restore
-    const clipsCopy = relatedClips.map((c) => ({ ...c }))
-    _undoStack.unshift({ segment: rs, clips: clipsCopy, index: currentIdx })
+    const clipsCopy = relatedClips.map((clip) => ({ ...clip }))
+    _undoStack.unshift({ segment: removedSegment, clips: clipsCopy, index: currentIdx })
     if (_undoStack.length > UNDO_STACK_LIMIT) _undoStack.length = UNDO_STACK_LIMIT
   }
 
@@ -192,12 +193,12 @@ export function deleteSegment() {
   // that is no longer used by any remaining segment, revoke its object URL
   // and remove it from `clips`.
   // Note: scan for clips referenced by remaining segments and remove unreferenced clips.
-  const referenced = new Set<string>(timeline.value.map((s) => s.clipId))
-  const remainingClips = clips.value.filter((c) => referenced.has(c.id))
-  const removedClips = clips.value.filter((c) => !referenced.has(c.id))
-  for (const rc of removedClips) {
+  const referenced = new Set<string>(timeline.value.map((segment) => segment.clipId))
+  const remainingClips = clips.value.filter((clip) => referenced.has(clip.id))
+  const removedClips = clips.value.filter((clip) => !referenced.has(clip.id))
+  for (const clip of removedClips) {
     try {
-      URL.revokeObjectURL(rc.objectUrl)
+      URL.revokeObjectURL(clip.objectUrl)
     } catch {
       // Best-effort
     }
@@ -214,16 +215,16 @@ export function undoDelete(): void {
   const entry = _undoStack.shift()
   if (!entry) return
   // restore segment at index
-  const segs = [...timeline.value]
-  const insertAt = Math.min(Math.max(0, entry.index), segs.length)
-  segs.splice(insertAt, 0, entry.segment)
-  timeline.value = segs
+  const segments = [...timeline.value]
+  const insertAt = Math.min(Math.max(0, entry.index), segments.length)
+  segments.splice(insertAt, 0, entry.segment)
+  timeline.value = segments
   // restore clip(s)
-  for (const c of entry.clips) {
+  for (const clip of entry.clips) {
     // if the clip already exists, skip
-    if (clips.value.find((x) => x.id === c.id)) continue
+    if (clips.value.find(({ id }) => id === clip.id)) continue
     // recreate objectUrl if missing or revoked
-    const restored = { ...c }
+    const restored = { ...clip }
     try {
       // Always recreate the object URL from the original File reference when possible.
       // This avoids using a stale/revoked URL string which can lead to a non-playing video.

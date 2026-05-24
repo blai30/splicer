@@ -29,10 +29,10 @@ async function deleteFilesBestEffort(ffmpeg: FFmpeg, files: string[]): Promise<v
 function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
   if (segments.length === 0) return false
 
-  for (const seg of segments) {
-    if (seg.crop) return false
-    if (seg.muted) return false
-    const clip = getClipById(seg.clipId)
+  for (const segment of segments) {
+    if (segment.crop) return false
+    if (segment.muted) return false
+    const clip = getClipById(segment.clipId)
     if (!clip) return false
     if (getFileExtension(clip.file.name) !== format) return false
   }
@@ -129,8 +129,8 @@ async function buildConcatList(
   const inputFiles: string[] = []
   let concatList = ''
 
-  for (const seg of segments) {
-    const clip = getClipById(seg.clipId)
+  for (const segment of segments) {
+    const clip = getClipById(segment.clipId)
     if (!clip) continue
 
     const ext = getFileExtension(clip.file.name) || 'mp4'
@@ -139,8 +139,8 @@ async function buildConcatList(
     inputFiles.push(fname)
 
     concatList += `file '${fname}'\n`
-    concatList += `inpoint ${seg.startTime}\n`
-    concatList += `outpoint ${seg.endTime}\n`
+    concatList += `inpoint ${segment.startTime}\n`
+    concatList += `outpoint ${segment.endTime}\n`
   }
 
   return { inputFiles, concatList }
@@ -198,10 +198,10 @@ async function exportMuteStreamCopy(
   // Compute which output time ranges should be muted.
   let outputTime = 0
   const mutedRanges: Array<[number, number]> = []
-  for (const seg of segments) {
-    const dur = seg.endTime - seg.startTime
-    if (seg.muted) mutedRanges.push([outputTime, outputTime + dur])
-    outputTime += dur
+  for (const segment of segments) {
+    const segmentDuration = segment.endTime - segment.startTime
+    if (segment.muted) mutedRanges.push([outputTime, outputTime + segmentDuration])
+    outputTime += segmentDuration
   }
 
   try {
@@ -254,11 +254,11 @@ export async function exportVideo(
 
   // Muted stream copy: video stays lossless, only audio is re-encoded (fast).
   // Applies when lossless + original fps + at least one muted segment + no crop + matching format.
-  const hasMuted = segments.some((s) => s.muted)
+  const hasMuted = segments.some((segment) => segment.muted)
   if (quality === 'lossless' && fps === 'original' && hasMuted) {
-    const canMutedCopy = segments.every((seg) => {
-      if (seg.crop) return false
-      const clip = getClipById(seg.clipId)
+    const canMutedCopy = segments.every((segment) => {
+      if (segment.crop) return false
+      const clip = getClipById(segment.clipId)
       return clip != null && getFileExtension(clip.file.name) === format
     })
     if (canMutedCopy) return exportMuteStreamCopy(segments, format)
@@ -272,46 +272,47 @@ export async function exportVideo(
   const tempFiles: string[] = []
   const filterParts: string[] = []
   const concatInputs: string[] = []
-  let idx = 0
+  let streamIndex = 0
 
   const outputFile = `output_${runId}.${format}`
 
   try {
-    for (const seg of segments) {
-      const clip = getClipById(seg.clipId)
+    for (const segment of segments) {
+      const clip = getClipById(segment.clipId)
       if (!clip) continue
 
       const ext = getFileExtension(clip.file.name) || 'mp4'
-      const fname = `input_${runId}_${idx}.${ext}`
+      const fname = `input_${runId}_${streamIndex}.${ext}`
       await ffmpeg.writeFile(fname, await fetchFile(clip.file))
       inputFiles.push(fname)
       tempFiles.push(fname)
 
-      let videoFilter = `[${idx}:v]trim=${seg.startTime}:${seg.endTime},setpts=PTS-STARTPTS`
-      if (seg.crop) {
-        const { x, y, width, height } = seg.crop
+      let videoFilter = `[${streamIndex}:v]trim=${segment.startTime}:${segment.endTime},setpts=PTS-STARTPTS`
+      if (segment.crop) {
+        const { x, y, width, height } = segment.crop
         videoFilter += `,crop=${width}:${height}:${x}:${y}`
       }
-      videoFilter += `[v${idx}]`
+      videoFilter += `[v${streamIndex}]`
 
-      let audioFilter = `[${idx}:a]atrim=${seg.startTime}:${seg.endTime},asetpts=PTS-STARTPTS`
-      if (seg.muted) {
+      let audioFilter = `[${streamIndex}:a]atrim=${segment.startTime}:${segment.endTime},asetpts=PTS-STARTPTS`
+      if (segment.muted) {
         audioFilter += ',volume=0'
       }
-      audioFilter += `[a${idx}]`
+      audioFilter += `[a${streamIndex}]`
 
       filterParts.push(videoFilter, audioFilter)
-      concatInputs.push(`[v${idx}][a${idx}]`)
-      idx++
+      concatInputs.push(`[v${streamIndex}][a${streamIndex}]`)
+      streamIndex++
     }
 
-    if (idx === 0) throw new Error('No valid segments')
+    if (streamIndex === 0) throw new Error('No valid segments')
 
     // Skip the concat filter for a single segment — it's unnecessary and can hang in WASM.
     const filterComplex =
-      idx === 1
+      streamIndex === 1
         ? filterParts.join(';').replace('[v0]', '[outv]').replace('[a0]', '[outa]')
-        : filterParts.join(';') + `;${concatInputs.join('')}concat=n=${idx}:v=1:a=1[outv][outa]`
+        : filterParts.join(';') +
+          `;${concatInputs.join('')}concat=n=${streamIndex}:v=1:a=1[outv][outa]`
 
     const inputArgs = inputFiles.flatMap((f) => ['-i', f])
 

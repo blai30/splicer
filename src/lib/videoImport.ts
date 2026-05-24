@@ -212,13 +212,13 @@ export async function importAndAppend(file: File): Promise<void> {
     }
     clips.value = [...clips.value, clip]
 
-    const seg: Segment = {
+    const segment: Segment = {
       id: crypto.randomUUID(),
       clipId: clip.id,
       startTime: 0,
       endTime: duration,
     }
-    timeline.value = [...timeline.value, seg]
+    timeline.value = [...timeline.value, segment]
     imported = true
     info('Import succeeded', { name: file.name, duration })
   } catch {
