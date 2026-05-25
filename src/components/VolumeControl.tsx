@@ -1,13 +1,12 @@
 import { useSignal, useSignalEffect } from '@preact/signals'
 import { Volume2, VolumeX } from 'lucide-preact'
-import { useRef, useEffect, useState } from 'preact/hooks'
+import { useRef } from 'preact/hooks'
 
 import { previewMuted, previewVolume } from '@/lib/store'
 
 export function VolumeControl() {
   const localVolume = useSignal(previewVolume.value)
   const inputRef = useRef<HTMLInputElement>(null)
-  const [mounted, setMounted] = useState(false)
 
   useSignalEffect(() => {
     localVolume.value = previewVolume.value
@@ -15,12 +14,6 @@ export function VolumeControl() {
       inputRef.current.value = String(previewVolume.value)
     }
   })
-
-  useEffect(() => {
-    // Defer reading `previewMuted` for icon choice until client mount
-    // to avoid SSR vs hydration mismatches when localStorage differs.
-    setMounted(true)
-  }, [])
 
   return (
     <div class="flex items-center gap-2">
@@ -31,16 +24,7 @@ export function VolumeControl() {
         class="flex h-7 w-7 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
         title={previewMuted.value ? 'Unmute preview' : 'Mute preview'}
       >
-        {mounted ? (
-          previewMuted.value ? (
-            <VolumeX class="h-4 w-4" />
-          ) : (
-            <Volume2 class="h-4 w-4" />
-          )
-        ) : (
-          // Render the non-muted icon on the server and until hydration completes
-          <Volume2 class="h-4 w-4" />
-        )}
+        {previewMuted.value ? <VolumeX class="h-4 w-4" /> : <Volume2 class="h-4 w-4" />}
       </button>
       <input
         type="range"

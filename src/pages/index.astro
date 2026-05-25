@@ -24,21 +24,21 @@ const pageDescription =
     role="application"
     aria-label="Video timeline editor and exporter application"
   >
-    <AppHeader client:load />
+    <AppHeader client:only="preact" />
     <section aria-label="Video preview and playback controls">
-      <VideoPreview client:load />
+      <VideoPreview client:only="preact" />
     </section>
     <section aria-label="Timeline editor with segments">
-      <Timeline client:load />
+      <Timeline client:only="preact" />
     </section>
     <section aria-label="Export settings and controls">
-      <ExportPanel client:load />
+      <ExportPanel client:only="preact" />
     </section>
     <section aria-label="Export history and downloads">
-      <ExportHistory client:load />
+      <ExportHistory client:only="preact" />
     </section>
     <section aria-label="Logs">
-      <LogPanel client:load />
+      <LogPanel client:only="preact" />
     </section>
   </main>
 </Layout>
