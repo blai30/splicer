@@ -2,7 +2,7 @@ import { fetchFile } from '@ffmpeg/util'
 
 import { getFfmpeg } from '@/lib/ffmpeg'
 import { info, error as logError } from '@/lib/logger'
-import { clips, timeline, getClipById, importing } from '@/lib/store'
+import { clips, timeline, getClipById, importing, selectedSegmentId } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
 export const ACCEPTED = [
@@ -211,6 +211,7 @@ export async function importAndAppend(file: File): Promise<void> {
       waveformPeaks: [],
     }
     clips.value = [...clips.value, clip]
+    const wasEmpty = timeline.value.length === 0
 
     const segment: Segment = {
       id: crypto.randomUUID(),
@@ -219,6 +220,7 @@ export async function importAndAppend(file: File): Promise<void> {
       endTime: duration,
     }
     timeline.value = [...timeline.value, segment]
+    if (wasEmpty) selectedSegmentId.value = segment.id
     imported = true
     info('Import succeeded', { name: file.name, duration })
   } catch {
