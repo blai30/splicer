@@ -55,9 +55,9 @@ export function KeyboardLegend({ class: className }: { class?: string }) {
           </div>
 
           <div class="space-y-1 p-4">
-            {SHORTCUTS.map((shortcut, idx) => (
+            {SHORTCUTS.map((shortcut, index) => (
               <div
-                key={idx}
+                key={index}
                 class="flex items-center justify-between rounded-md px-3 py-2 transition-colors hover:bg-slate-100 hover:duration-0 dark:hover:bg-slate-800"
               >
                 <span class="text-sm text-slate-700 dark:text-slate-300">

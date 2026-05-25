@@ -153,8 +153,8 @@ export function VideoPreview() {
 
     if (video.currentTime >= segEnd) {
       const segments = timeline.value
-      const currentIdx = segments.findIndex((segment) => segment.id === info?.segment.id)
-      const nextSeg = segments[currentIdx + 1]
+      const currentIndex = segments.findIndex((segment) => segment.id === info?.segment.id)
+      const nextSeg = segments[currentIndex + 1]
       if (nextSeg && playing.value) {
         resumeAfterSwitch.current = true
         selectedSegmentId.value = nextSeg.id

@@ -345,7 +345,7 @@ export function Timeline() {
             {(() => {
               const dragStateValue = dragState.value
               const segments = timeline.value
-              const fromIdx = dragStateValue
+              const fromIndex = dragStateValue
                 ? segments.findIndex((segment) => segment.id === dragStateValue.segId)
                 : -1
               const result = []
@@ -353,8 +353,8 @@ export function Timeline() {
                 if (
                   dragStateValue &&
                   dragStateValue.dropIndex === i &&
-                  fromIdx !== i &&
-                  fromIdx + 1 !== i
+                  fromIndex !== i &&
+                  fromIndex + 1 !== i
                 ) {
                   result.push(
                     <div
@@ -377,7 +377,7 @@ export function Timeline() {
               if (
                 dragStateValue &&
                 dragStateValue.dropIndex === segments.length &&
-                fromIdx !== segments.length - 1
+                fromIndex !== segments.length - 1
               ) {
                 result.push(
                   <div

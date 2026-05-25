@@ -59,9 +59,9 @@ export function WaveformView({
 
       const startRatio = Math.min(1, Math.max(0, segmentStart / clipDuration))
       const endRatio = Math.min(1, Math.max(0, segmentEnd / clipDuration))
-      const startIdx = Math.floor(startRatio * (peaks.length - 1))
-      const endIdx = Math.max(startIdx + 1, Math.ceil(endRatio * (peaks.length - 1)))
-      const visibleLength = Math.max(1, endIdx - startIdx)
+      const startIndex = Math.floor(startRatio * (peaks.length - 1))
+      const endIndex = Math.max(startIndex + 1, Math.ceil(endRatio * (peaks.length - 1)))
+      const visibleLength = Math.max(1, endIndex - startIndex)
 
       const barStep = 2
       const barCount = Math.max(1, Math.floor(width / barStep))
@@ -70,8 +70,8 @@ export function WaveformView({
       ctx.fillStyle = 'rgba(255,255,255,0.78)'
 
       const bucketMax = new Float32Array(barCount)
-      for (let i = startIdx; i < endIdx && i < peaks.length; i++) {
-        const relative = (i - startIdx) / visibleLength
+      for (let i = startIndex; i < endIndex && i < peaks.length; i++) {
+        const relative = (i - startIndex) / visibleLength
         const bucket = Math.min(barCount - 1, Math.max(0, Math.floor(relative * barCount)))
         const value = peaks[i]
         if (value > bucketMax[bucket]) bucketMax[bucket] = value

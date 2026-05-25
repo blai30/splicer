@@ -102,12 +102,12 @@ export function SegmentBlock({
       el.removeEventListener('pointerup', onUp)
       if (moved && dragState.value) {
         const segmentId = segment.id
-        const fromIdx = timeline.value.findIndex((s) => s.id === segmentId)
-        const toIdx = dragState.value.dropIndex
-        if (fromIdx !== toIdx && fromIdx + 1 !== toIdx) {
+        const fromIndex = timeline.value.findIndex((s) => s.id === segmentId)
+        const toIndex = dragState.value.dropIndex
+        if (fromIndex !== toIndex && fromIndex + 1 !== toIndex) {
           const segments = [...timeline.value]
-          const [removed] = segments.splice(fromIdx, 1)
-          const adjusted = toIdx > fromIdx ? toIdx - 1 : toIdx
+          const [removed] = segments.splice(fromIndex, 1)
+          const adjusted = toIndex > fromIndex ? toIndex - 1 : toIndex
           segments.splice(adjusted, 0, removed)
           timeline.value = segments
         }

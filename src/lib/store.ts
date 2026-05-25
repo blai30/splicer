@@ -175,7 +175,7 @@ export function toggleMute() {
 export function deleteSegment() {
   const segId = selectedSegmentId.value
   if (!segId) return
-  const currentIdx = timeline.value.findIndex((segment) => segment.id === segId)
+  const currentIndex = timeline.value.findIndex((segment) => segment.id === segId)
   const removedSegments = timeline.value.filter((segment) => segment.id === segId)
   const next = timeline.value.filter((segment) => segment.id !== segId)
   // push to undo stack
@@ -183,12 +183,12 @@ export function deleteSegment() {
     const relatedClips = clips.value.filter((clip) => clip.id === removedSegment.clipId)
     // store a shallow copy of clip(s) so undo can restore
     const clipsCopy = relatedClips.map((clip) => ({ ...clip }))
-    _undoStack.unshift({ segment: removedSegment, clips: clipsCopy, index: currentIdx })
+    _undoStack.unshift({ segment: removedSegment, clips: clipsCopy, index: currentIndex })
     if (_undoStack.length > UNDO_STACK_LIMIT) _undoStack.length = UNDO_STACK_LIMIT
   }
 
   timeline.value = next
-  selectedSegmentId.value = next[currentIdx]?.id ?? next[currentIdx - 1]?.id ?? null
+  selectedSegmentId.value = next[currentIndex]?.id ?? next[currentIndex - 1]?.id ?? null
   // Remove orphaned clips: if the removed segment referenced a clip
   // that is no longer used by any remaining segment, revoke its object URL
   // and remove it from `clips`.
