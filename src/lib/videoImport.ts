@@ -5,12 +5,7 @@ import { info, error as logError } from '@/lib/logger'
 import { clips, timeline, getClipById, importing, selectedSegmentId } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
-export const ACCEPTED = [
-  'video/mp4',
-  'video/quicktime',
-  'video/x-msvideo',
-  'video/x-matroska',
-]
+export const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska']
 
 export function isVideoFile(file: File): boolean {
   return ACCEPTED.includes(file.type) || /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name)

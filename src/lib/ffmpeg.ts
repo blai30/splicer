@@ -56,7 +56,6 @@ export async function getFfmpeg(): Promise<FFmpeg> {
     info('Initializing FFmpeg')
     ffmpeg.on('log', ({ message }) => {
       debug('ffmpeg log', { message })
-      // eslint-disable-next-line no-console
       console.log('[FFMPEG]', message)
       if (message.toLowerCase().includes('error') || message.toLowerCase().includes('notfound')) {
         logError('ffmpeg log error', { message })
@@ -90,6 +89,30 @@ export async function getFfmpeg(): Promise<FFmpeg> {
 
 function getOutputArgs(format: ExportFormat, quality: Quality, fps: Framerate): string[] {
   const fpsArgs = fps !== 'original' ? ['-r', fps] : []
+
+  if (format === 'webm') {
+    const crf: Record<Quality, string> = { lossless: '0', high: '20', medium: '31', low: '41' }
+    const deadline: Record<Quality, string> = {
+      lossless: 'best',
+      high: 'good',
+      medium: 'good',
+      low: 'realtime',
+    }
+    return [
+      '-c:v',
+      'libvpx-vp9',
+      '-b:v',
+      '0',
+      '-crf',
+      crf[quality],
+      '-deadline',
+      deadline[quality],
+      '-c:a',
+      'libopus',
+      ...fpsArgs,
+    ]
+  }
+
   const crf: Record<Quality, string> = { lossless: '0', high: '18', medium: '23', low: '28' }
   const preset: Record<Quality, string> = {
     lossless: 'lossless',
@@ -123,7 +146,6 @@ export function cancelExport(): void {
 
 async function exec(ffmpeg: FFmpeg, args: string[]): Promise<void> {
   info('Running ffmpeg', { args })
-  // eslint-disable-next-line no-console
   console.log('[FFMPEG CMD]', args.join(' '))
   const ret = await ffmpeg.exec(args)
   if (ret !== 0) {
@@ -181,10 +203,17 @@ async function exportStreamCopy(
     tempFiles.push(concatFile)
 
     await exec(ffmpeg, ['-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', outputFile])
-    ffmpegProgress.value = 1
-
+    // Finalizing: reading output from WASM FS can take noticeable time.
+    // Keep progress near-complete but not 100% until readFile finishes.
+    ffmpegProgress.value = 0.95
+    // Instrumentation: log read start/finish and duration to help diagnose hangs.
+    console.log('[FFMPEG] readFile start', outputFile)
+    const t0 = performance.now()
     const data = await ffmpeg.readFile(outputFile)
+    const t1 = performance.now()
+    console.log('[FFMPEG] readFile finished', outputFile, 'duration_ms', Math.round(t1 - t0))
     const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
+    ffmpegProgress.value = 1
     return { url: URL.createObjectURL(blob), size: blob.size }
   } finally {
     await deleteFilesBestEffort(ffmpeg, [...tempFiles, outputFile])
@@ -230,7 +259,7 @@ async function exportMuteStreamCopy(
 
     // Pass 2: stream-copy video, re-encode audio with mute applied to the computed ranges.
     const muteExpr = mutedRanges.map(([s, e]) => `between(t,${s},${e})`).join('+')
-    const audioCodec = 'aac'
+    const audioCodec = format === 'webm' ? 'libopus' : 'aac'
     await exec(ffmpeg, [
       '-i',
       tempCopyFile,
@@ -242,10 +271,16 @@ async function exportMuteStreamCopy(
       audioCodec,
       outputFile,
     ])
-    ffmpegProgress.value = 1
-
+    // Finalizing: reading output from WASM FS can take noticeable time.
+    ffmpegProgress.value = 0.95
+    // Instrumentation: log read start/finish and duration to help diagnose hangs.
+    console.log('[FFMPEG] readFile start', outputFile)
+    const t0 = performance.now()
     const data = await ffmpeg.readFile(outputFile)
+    const t1 = performance.now()
+    console.log('[FFMPEG] readFile finished', outputFile, 'duration_ms', Math.round(t1 - t0))
     const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
+    ffmpegProgress.value = 1
     return { url: URL.createObjectURL(blob), size: blob.size }
   } finally {
     await deleteFilesBestEffort(ffmpeg, [...tempFiles, outputFile])
@@ -260,9 +295,38 @@ export async function exportVideo(
 ): Promise<{ url: string; size: number }> {
   if (segments.length === 0) throw new Error('No segments')
 
+  // Helper: attempt export and on WASM OOM restart ffmpeg and retry once.
+  async function attemptWithRestart<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn()
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg && msg.toLowerCase().includes('memory access out of bounds')) {
+        // Restart FFmpeg instance and retry once.
+        console.warn('[FFMPEG] memory OOB detected — restarting ffmpeg and retrying')
+        try {
+          if (instance) {
+            try {
+              instance.terminate()
+            } catch {}
+            instance = null
+          }
+          loadingPromise = null
+          ffmpegReady.value = false
+          // Ensure new instance is loaded before retrying
+          await getFfmpeg()
+        } catch (restartErr) {
+          console.error('[FFMPEG] failed to restart ffmpeg', restartErr)
+          throw err
+        }
+      }
+      throw err
+    }
+  }
+
   // Use stream copy when lossless + original fps + no per-segment muting
   if (quality === 'lossless' && fps === 'original' && canUseStreamCopy(segments, format)) {
-    return exportStreamCopy(segments, format)
+    return attemptWithRestart(() => exportStreamCopy(segments, format))
   }
 
   // Muted stream copy: video stays lossless, only audio is re-encoded (fast).
@@ -274,7 +338,7 @@ export async function exportVideo(
       const clip = getClipById(segment.clipId)
       return clip != null && getFileExtension(clip.file.name) === format
     })
-    if (canMutedCopy) return exportMuteStreamCopy(segments, format)
+    if (canMutedCopy) return attemptWithRestart(() => exportMuteStreamCopy(segments, format))
   }
 
   const ffmpeg = await getFfmpeg()
@@ -341,9 +405,19 @@ export async function exportVideo(
       outputFile,
     ])
 
-    const data = await ffmpeg.readFile(outputFile)
-    const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
-    return { url: URL.createObjectURL(blob), size: blob.size }
+    // Finalizing: reading output from WASM FS can take noticeable time.
+    return attemptWithRestart(async () => {
+      ffmpegProgress.value = 0.95
+      // Instrumentation: log read start/finish and duration to help diagnose hangs.
+      console.log('[FFMPEG] readFile start', outputFile)
+      const t0 = performance.now()
+      const data = await ffmpeg.readFile(outputFile)
+      const t1 = performance.now()
+      console.log('[FFMPEG] readFile finished', outputFile, 'duration_ms', Math.round(t1 - t0))
+      const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
+      ffmpegProgress.value = 1
+      return { url: URL.createObjectURL(blob), size: blob.size }
+    })
   } finally {
     await deleteFilesBestEffort(ffmpeg, [...tempFiles, outputFile])
   }
