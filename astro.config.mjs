@@ -12,9 +12,8 @@ const coopCoep = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 }
 
-const coreJs = resolve('node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.js')
-const coreWasm = resolve('node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.wasm')
-const coreWorkerJs = resolve('node_modules/@ffmpeg/core-mt/dist/esm/ffmpeg-core.worker.js')
+const coreJs = resolve('node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js')
+const coreWasm = resolve('node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.wasm')
 
 /** @type {import('vite').Plugin} */
 const ffmpegCorePlugin = {
@@ -32,11 +31,6 @@ const ffmpegCorePlugin = {
         createReadStream(coreWasm).pipe(res)
         return
       }
-      if (url === '/ffmpeg/ffmpeg-core.worker.js') {
-        res.setHeader('Content-Type', 'application/javascript')
-        createReadStream(coreWorkerJs).pipe(res)
-        return
-      }
       next()
     })
   },
@@ -45,7 +39,6 @@ const ffmpegCorePlugin = {
     mkdirSync(outDir, { recursive: true })
     copyFileSync(coreJs, join(outDir, 'ffmpeg-core.js'))
     copyFileSync(coreWasm, join(outDir, 'ffmpeg-core.wasm'))
-    copyFileSync(coreWorkerJs, join(outDir, 'ffmpeg-core.worker.js'))
   },
 }
 
