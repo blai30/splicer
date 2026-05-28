@@ -29,15 +29,24 @@ async function deleteFilesBestEffort(ffmpeg: FFmpeg, files: string[]): Promise<v
 function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
   if (segments.length === 0) return false
 
+  const sourceExtensions = new Set<string>()
+
   for (const segment of segments) {
     if (segment.crop) return false
     if (segment.muted) return false
     const clip = getClipById(segment.clipId)
     if (!clip) return false
-    if (getFileExtension(clip.file.name) !== format) return false
+    sourceExtensions.add(getFileExtension(clip.file.name))
   }
 
-  return true
+  // Same container -> stream copy
+  if (sourceExtensions.size === 1 && sourceExtensions.has(format)) return true
+
+  // MP4 -> MKV remux works (h264 + aac are valid MKV codecs)
+  // MP4 -> WEBM does NOT work (webm muxer rejects h264/aac, requires VP8/VP9)
+  if (sourceExtensions.size === 1 && sourceExtensions.has('mp4') && format === 'mkv') return true
+
+  return false
 }
 
 export async function getFfmpeg(): Promise<FFmpeg> {
@@ -45,6 +54,14 @@ export async function getFfmpeg(): Promise<FFmpeg> {
   if (!loadingPromise) {
     const ffmpeg = new FFmpeg()
     info('Initializing FFmpeg')
+    ffmpeg.on('log', ({ message }) => {
+      debug('ffmpeg log', { message })
+      // eslint-disable-next-line no-console
+      console.log('[FFMPEG]', message)
+      if (message.toLowerCase().includes('error') || message.toLowerCase().includes('notfound')) {
+        logError('ffmpeg log error', { message })
+      }
+    })
     ffmpeg.on('progress', ({ progress }) => {
       ffmpegProgress.value = progress
       debug('ffmpeg progress', { progress })
@@ -74,15 +91,9 @@ export async function getFfmpeg(): Promise<FFmpeg> {
 
 function getOutputArgs(format: ExportFormat, quality: Quality, fps: Framerate): string[] {
   const fpsArgs = fps !== 'original' ? ['-r', fps] : []
-
-  if (format === 'webm') {
-    const crf: Record<Quality, string> = { lossless: '18', high: '24', medium: '33', low: '48' }
-    return ['-c:v', 'libvpx-vp9', '-crf', crf[quality], '-b:v', '0', '-c:a', 'libopus', ...fpsArgs]
-  }
-
-  const crf: Record<Quality, string> = { lossless: '18', high: '22', medium: '28', low: '35' }
+  const crf: Record<Quality, string> = { lossless: '0', high: '18', medium: '23', low: '28' }
   const preset: Record<Quality, string> = {
-    lossless: 'slow',
+    lossless: 'lossless',
     high: 'medium',
     medium: 'fast',
     low: 'fast',
@@ -113,6 +124,8 @@ export function cancelExport(): void {
 
 async function exec(ffmpeg: FFmpeg, args: string[]): Promise<void> {
   info('Running ffmpeg', { args })
+  // eslint-disable-next-line no-console
+  console.log('[FFMPEG CMD]', args.join(' '))
   const ret = await ffmpeg.exec(args)
   if (ret !== 0) {
     logError('FFmpeg error', { code: ret, args })
@@ -218,6 +231,7 @@ async function exportMuteStreamCopy(
 
     // Pass 2: stream-copy video, re-encode audio with mute applied to the computed ranges.
     const muteExpr = mutedRanges.map(([s, e]) => `between(t,${s},${e})`).join('+')
+    const audioCodec = 'aac'
     await exec(ffmpeg, [
       '-i',
       tempCopyFile,
@@ -226,7 +240,7 @@ async function exportMuteStreamCopy(
       '-af',
       `volume=0:enable='${muteExpr}'`,
       '-c:a',
-      'aac',
+      audioCodec,
       outputFile,
     ])
     ffmpegProgress.value = 1

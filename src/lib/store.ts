@@ -47,6 +47,7 @@ export const playheadTime = signal<number>(0)
 export const selectedSegmentId = signal<string | null>(null)
 export const ffmpegReady = signal<boolean>(false)
 export const ffmpegProgress = signal<number>(0)
+
 export const exportHistory = signal<ExportRecord[]>([])
 
 // Runtime logging signal (not persisted). Stores recent log entries for the UI.

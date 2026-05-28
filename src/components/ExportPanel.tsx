@@ -101,12 +101,11 @@ export function ExportPanel() {
       })
       const segments = timeline.value
       const filename = makeFilename(exportFormat.value)
-      const { url, size } = await exportVideo(
-        segments,
-        exportFormat.value,
-        quality.value,
-        framerate.value
-      )
+      let url: string
+      let size: number
+      const out = await exportVideo(segments, exportFormat.value, quality.value, framerate.value)
+      url = out.url
+      size = out.size
 
       const totalDuration = segments.reduce(
         (acc, segment) => acc + (segment.endTime - segment.startTime),
@@ -142,7 +141,6 @@ export function ExportPanel() {
 
   const formats: { value: ExportFormat; label: string }[] = [
     { value: 'mp4', label: 'MP4' },
-    { value: 'webm', label: 'WEBM' },
     { value: 'mkv', label: 'MKV' },
   ]
   const qualities: { value: Quality; label: string }[] = [
@@ -159,7 +157,8 @@ export function ExportPanel() {
   ]
 
   const hasSegments = timeline.value.length > 0
-  const progressPct = Math.max(0, Math.min(100, Math.round(ffmpegProgress.value * 100)))
+  const currentProgress = ffmpegProgress.value
+  const progressPct = Math.max(0, Math.min(100, Math.round(currentProgress * 100)))
   const estimatedSize = estimateSize()
 
   if (!hasSegments) return null
@@ -213,7 +212,7 @@ export function ExportPanel() {
               </span>
             </div>
           )}
-          {exporting.value && ffmpegReady.value && (
+          {exporting.value && (
             <div
               class="flex items-center gap-2"
               role="status"

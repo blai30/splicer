@@ -7,7 +7,6 @@ import type { Clip, Segment } from '@/lib/types'
 
 export const ACCEPTED = [
   'video/mp4',
-  'video/webm',
   'video/quicktime',
   'video/x-msvideo',
   'video/x-matroska',
