@@ -142,6 +142,8 @@ export function ExportPanel() {
   const formats: { value: ExportFormat; label: string }[] = [
     { value: 'mp4', label: 'MP4' },
     { value: 'mkv', label: 'MKV' },
+    { value: 'mov', label: 'MOV' },
+    { value: 'avi', label: 'AVI' },
     { value: 'webm', label: 'WebM' },
   ]
   const qualities: { value: Quality; label: string }[] = [

@@ -42,9 +42,14 @@ function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
   // Same container -> stream copy
   if (sourceExtensions.size === 1 && sourceExtensions.has(format)) return true
 
-  // MP4 -> MKV remux works (h264 + aac are valid MKV codecs)
+  // MP4 -> MKV or MP4 -> MOV remux works (h264 + aac are valid MKV/MOV codecs)
   // MP4 -> WEBM does NOT work (webm muxer rejects h264/aac, requires VP8/VP9)
-  if (sourceExtensions.size === 1 && sourceExtensions.has('mp4') && format === 'mkv') return true
+  if (
+    sourceExtensions.size === 1 &&
+    sourceExtensions.has('mp4') &&
+    (format === 'mkv' || format === 'mov')
+  )
+    return true
 
   return false
 }
@@ -120,6 +125,28 @@ function getOutputArgs(format: ExportFormat, quality: Quality, fps: Framerate): 
     medium: 'fast',
     low: 'fast',
   }
+
+  // Format-specific codec choices for browser-forward WASM builds
+  if (format === 'avi') {
+    // AVI prefers MPEG-4 video and MP3 audio for broad compatibility
+    return ['-c:v', 'mpeg4', '-qscale:v', '3', '-c:a', 'libmp3lame', ...fpsArgs]
+  }
+
+  if (format === 'mov') {
+    // MOV: use H.264 + AAC (compatible with QuickTime)
+    return [
+      '-c:v',
+      'libx264',
+      '-crf',
+      crf[quality],
+      '-preset',
+      preset[quality],
+      '-c:a',
+      'aac',
+      ...fpsArgs,
+    ]
+  }
+
   return [
     '-c:v',
     'libx264',
@@ -259,7 +286,9 @@ async function exportMuteStreamCopy(
 
     // Pass 2: stream-copy video, re-encode audio with mute applied to the computed ranges.
     const muteExpr = mutedRanges.map(([s, e]) => `between(t,${s},${e})`).join('+')
-    const audioCodec = format === 'webm' ? 'libopus' : 'aac'
+    let audioCodec = 'aac'
+    if (format === 'webm') audioCodec = 'libopus'
+    else if (format === 'avi') audioCodec = 'libmp3lame'
     await exec(ffmpeg, [
       '-i',
       tempCopyFile,

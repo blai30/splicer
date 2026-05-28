@@ -8,7 +8,7 @@ import type { Clip, Segment } from '@/lib/types'
 export const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska']
 
 export function isVideoFile(file: File): boolean {
-  return ACCEPTED.includes(file.type) || /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name)
+  return ACCEPTED.includes(file.type) || /\.(mp4|mkv|mov|avi|webm)$/i.test(file.name)
 }
 
 export function getVideoMetadata(
