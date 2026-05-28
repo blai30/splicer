@@ -40,12 +40,12 @@ export function VideoPreview() {
 
   function getTimelineAspectRatio(): number {
     const ratios = timeline.value
-      .map((seg) => {
-        if (seg.crop && seg.crop.width > 0 && seg.crop.height > 0) {
-          return seg.crop.width / seg.crop.height
+      .map((segment) => {
+        if (segment.crop && segment.crop.width > 0 && segment.crop.height > 0) {
+          return segment.crop.width / segment.crop.height
         }
 
-        const clip = clips.value.find((c) => c.id === seg.clipId)
+        const clip = clips.value.find((clip) => clip.id === segment.clipId)
         if (clip && clip.width > 0 && clip.height > 0) {
           return clip.width / clip.height
         }
@@ -71,26 +71,26 @@ export function VideoPreview() {
   function getActiveSegInfo() {
     const segId = selectedSegmentId.value ?? timeline.value[0]?.id
     if (!segId) return null
-    const seg = timeline.value.find((s) => s.id === segId)
-    if (!seg) return null
-    const clip = getClipById(seg.clipId)
+    const segment = timeline.value.find((segment) => segment.id === segId)
+    if (!segment) return null
+    const clip = getClipById(segment.clipId)
     if (!clip) return null
-    return { url: clip.objectUrl, start: seg.startTime, end: seg.endTime, seg, clip }
+    return { url: clip.objectUrl, start: segment.startTime, end: segment.endTime, segment, clip }
   }
 
   useSignalEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-    v.volume = previewVolume.value
-    const segMuted = getActiveSegInfo()?.seg.muted ?? false
-    v.muted = previewMuted.value || segMuted
+    const video = videoRef.current
+    if (!video) return
+    video.volume = previewVolume.value
+    const segmentMuted = getActiveSegInfo()?.segment.muted ?? false
+    video.muted = previewMuted.value || segmentMuted
   })
 
   useSignalEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-    videoEl.current = v
-    v.playbackRate = playbackSpeed.value
+    const video = videoRef.current
+    if (!video) return
+    videoEl.current = video
+    video.playbackRate = playbackSpeed.value
     const nextAspectRatio = getTimelineAspectRatio()
     previewAspectRatio.value = nextAspectRatio
     if (!hasManualResize.current) {
@@ -102,104 +102,104 @@ export function VideoPreview() {
     }
     const info = getActiveSegInfo()
     if (!info) {
-      v.removeAttribute('src')
-      v.load()
+      video.removeAttribute('src')
+      video.load()
       currentSegmentDuration.value = 0
       currentPlaybackTime.value = 0
       playing.value = false
       return
     }
 
-    const segMuted = info?.seg.muted ?? false
-    v.muted = previewMuted.value || segMuted
+    const segmentMuted = info?.segment.muted ?? false
+    video.muted = previewMuted.value || segmentMuted
 
     const resume = resumeAfterSwitch.current
     resumeAfterSwitch.current = false
 
-    if (v.src !== info.url) {
-      v.src = info.url
-      v.load()
-      v.onloadedmetadata = () => {
-        v.currentTime = info.start
+    if (video.src !== info.url) {
+      video.src = info.url
+      video.load()
+      video.onloadedmetadata = () => {
+        video.currentTime = info.start
         currentSegmentDuration.value = info.end - info.start
         currentPlaybackTime.value = 0
-        if (resume) v.play()
+        if (resume) video.play()
       }
     } else {
       currentSegmentDuration.value = info.end - info.start
-      if (v.currentTime < info.start || v.currentTime >= info.end) {
-        v.currentTime = info.start
+      if (video.currentTime < info.start || video.currentTime >= info.end) {
+        video.currentTime = info.start
         currentPlaybackTime.value = 0
       }
-      if (resume && v.paused) v.play()
+      if (resume && video.paused) video.play()
     }
   })
 
   function tickPlayhead() {
-    const v = videoRef.current
-    if (!v) return
+    const video = videoRef.current
+    if (!video) return
     const info = getActiveSegInfo()
     const segStart = info?.start ?? 0
-    playheadTime.value = v.currentTime
-    currentPlaybackTime.value = Math.max(0, v.currentTime - segStart)
+    playheadTime.value = video.currentTime
+    currentPlaybackTime.value = Math.max(0, video.currentTime - segStart)
     rafId.current = requestAnimationFrame(tickPlayhead)
   }
 
   function onTimeUpdate() {
-    const v = videoRef.current
-    if (!v) return
+    const video = videoRef.current
+    if (!video) return
     const info = getActiveSegInfo()
-    const segEnd = info?.end ?? v.duration
+    const segEnd = info?.end ?? video.duration
 
-    if (v.currentTime >= segEnd) {
-      const segs = timeline.value
-      const currentIdx = segs.findIndex((s) => s.id === info?.seg.id)
-      const nextSeg = segs[currentIdx + 1]
+    if (video.currentTime >= segEnd) {
+      const segments = timeline.value
+      const currentIndex = segments.findIndex((segment) => segment.id === info?.segment.id)
+      const nextSeg = segments[currentIndex + 1]
       if (nextSeg && playing.value) {
         resumeAfterSwitch.current = true
         selectedSegmentId.value = nextSeg.id
       } else {
-        v.pause()
+        video.pause()
         playing.value = false
         currentPlaybackTime.value = 0
-        if (segs.length > 0) {
-          selectedSegmentId.value = segs[0].id
+        if (segments.length > 0) {
+          selectedSegmentId.value = segments[0].id
         }
       }
     }
   }
 
   function togglePlay() {
-    const v = videoRef.current
-    if (!v) return
+    const video = videoRef.current
+    if (!video) return
     const info = getActiveSegInfo()
-    if (v.paused) {
-      if (info && v.currentTime >= info.end) v.currentTime = info.start
-      v.play()
+    if (video.paused) {
+      if (info && video.currentTime >= info.end) video.currentTime = info.start
+      video.play()
     } else {
-      v.pause()
+      video.pause()
     }
   }
 
   function stepBack() {
-    const v = videoRef.current
-    if (!v) return
+    const video = videoRef.current
+    if (!video) return
     const info = getActiveSegInfo()
     const segStart = info?.start ?? 0
-    const t = Math.max(segStart, v.currentTime - FRAME_STEP)
-    v.currentTime = t
+    const t = Math.max(segStart, video.currentTime - FRAME_STEP)
+    video.currentTime = t
     playheadTime.value = t
     currentPlaybackTime.value = Math.max(0, t - segStart)
   }
 
   function stepForward() {
-    const v = videoRef.current
-    if (!v) return
+    const video = videoRef.current
+    if (!video) return
     const info = getActiveSegInfo()
-    const segEnd = info?.end ?? v.duration
+    const segEnd = info?.end ?? video.duration
     const segStart = info?.start ?? 0
-    const t = Math.min(segEnd, v.currentTime + FRAME_STEP)
-    v.currentTime = t
+    const t = Math.min(segEnd, video.currentTime + FRAME_STEP)
+    video.currentTime = t
     playheadTime.value = t
     currentPlaybackTime.value = Math.max(0, t - segStart)
   }
@@ -382,7 +382,10 @@ export function VideoPreview() {
             <span class="hidden text-sm text-slate-500 tabular-nums sm:inline dark:text-slate-400">
               {formatTimecode(currentPlaybackTime.value)} /{' '}
               {formatTimecode(
-                timeline.value.reduce((acc, seg) => acc + (seg.endTime - seg.startTime), 0)
+                timeline.value.reduce(
+                  (acc, segment) => acc + (segment.endTime - segment.startTime),
+                  0
+                )
               )}
             </span>
           </div>
@@ -390,7 +393,7 @@ export function VideoPreview() {
         <div class="pb-2 text-center text-sm text-slate-500 tabular-nums sm:hidden dark:text-slate-400">
           {formatTimecode(currentPlaybackTime.value)} /{' '}
           {formatTimecode(
-            timeline.value.reduce((acc, seg) => acc + (seg.endTime - seg.startTime), 0)
+            timeline.value.reduce((acc, segment) => acc + (segment.endTime - segment.startTime), 0)
           )}
         </div>
       </div>

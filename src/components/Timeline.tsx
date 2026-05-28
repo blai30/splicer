@@ -50,12 +50,12 @@ export function Timeline() {
   const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
 
   const activeSegId = selectedSegmentId.value ?? timeline.value[0]?.id
-  const segs = timeline.value
+  const segments = timeline.value
   // Build layout once per render to avoid repeated O(n) scans.
-  const layout = buildSegmentLayout(segs, pxPerSec.value, GAP_PX, PADDING_PX)
-  const activeLayout = layout.find((l) => l.seg.id === activeSegId)
+  const layout = buildSegmentLayout(segments, pxPerSec.value, GAP_PX, PADDING_PX)
+  const activeLayout = layout.find((layoutItem) => layoutItem.segment.id === activeSegId)
   const playheadLeft = activeLayout
-    ? activeLayout.startX + (playheadTime.value - activeLayout.seg.startTime) * pxPerSec.value
+    ? activeLayout.startX + (playheadTime.value - activeLayout.segment.startTime) * pxPerSec.value
     : PADDING_PX
 
   function onTrackPointerDown(e: PointerEvent) {
@@ -75,8 +75,8 @@ export function Timeline() {
       onSeek(segmentId, time) {
         selectedSegmentId.value = segmentId
         playheadTime.value = time
-        const v = videoEl.current
-        if (v) v.currentTime = time
+        const video = videoEl.current
+        if (video) video.currentTime = time
       },
     })
 
@@ -88,14 +88,14 @@ export function Timeline() {
 
     // Create and cache handler for this drag session using precomputed layout
     playheadDragHandlerRef.current = createPlayheadDragHandler({
-      segment: activeLayout.seg,
+      segment: activeLayout.segment,
       segmentStartX: activeLayout.startX,
       pxPerSec: pxPerSec.value,
       trackEl: trackRef.current,
       onUpdate(time) {
         playheadTime.value = time
-        const v = videoEl.current
-        if (v) v.currentTime = time
+        const video = videoEl.current
+        if (video) video.currentTime = time
       },
     })
 
@@ -184,8 +184,8 @@ export function Timeline() {
   }
 
   const isEmpty = timeline.value.length === 0
-  const seg = timeline.value.find((s) => s.id === selectedSegmentId.value)
-  const disabled = !seg
+  const selectedSegment = timeline.value.find((segment) => segment.id === selectedSegmentId.value)
+  const disabled = !selectedSegment
 
   return (
     <div
@@ -241,7 +241,7 @@ export function Timeline() {
             <button
               class={clsx(
                 'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold transition-colors hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40',
-                seg?.muted
+                selectedSegment?.muted
                   ? 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-900/30'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
               )}
@@ -251,7 +251,7 @@ export function Timeline() {
               aria-label="Toggle mute on selected segment"
             >
               <VolumeX class="h-3.5 w-3.5" />
-              {seg?.muted ? 'Unmute' : 'Mute'}
+              {selectedSegment?.muted ? 'Unmute' : 'Mute'}
             </button>
 
             <button
@@ -343,12 +343,19 @@ export function Timeline() {
         ) : (
           <div class="relative flex h-full items-start gap-1 px-4 pt-12">
             {(() => {
-              const ds = dragState.value
-              const segs = timeline.value
-              const fromIdx = ds ? segs.findIndex((s) => s.id === ds.segId) : -1
+              const dragStateValue = dragState.value
+              const segments = timeline.value
+              const fromIndex = dragStateValue
+                ? segments.findIndex((segment) => segment.id === dragStateValue.segId)
+                : -1
               const result = []
-              for (let i = 0; i < segs.length; i++) {
-                if (ds && ds.dropIndex === i && fromIdx !== i && fromIdx + 1 !== i) {
+              for (let i = 0; i < segments.length; i++) {
+                if (
+                  dragStateValue &&
+                  dragStateValue.dropIndex === i &&
+                  fromIndex !== i &&
+                  fromIndex + 1 !== i
+                ) {
                   result.push(
                     <div
                       key={`drop-${i}`}
@@ -359,15 +366,19 @@ export function Timeline() {
                 const item = layout[i]
                 result.push(
                   <SegmentBlock
-                    key={segs[i].id}
-                    seg={segs[i]}
-                    isDragging={ds?.segId === segs[i].id}
+                    key={segments[i].id}
+                    segment={segments[i]}
+                    isDragging={dragStateValue?.segId === segments[i].id}
                     startX={item.startX}
                     width={item.endX - item.startX}
                   />
                 )
               }
-              if (ds && ds.dropIndex === segs.length && fromIdx !== segs.length - 1) {
+              if (
+                dragStateValue &&
+                dragStateValue.dropIndex === segments.length &&
+                fromIndex !== segments.length - 1
+              ) {
                 result.push(
                   <div
                     key="drop-last"

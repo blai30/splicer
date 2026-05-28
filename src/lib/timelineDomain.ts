@@ -2,8 +2,8 @@ import type { Segment, SegmentLayoutItem } from '@/lib/types'
 
 export const MIN_SEGMENT_DURATION = 0.1
 
-export function clampPlayheadForSegment(seg: Segment, playhead: number): number {
-  return Math.min(seg.endTime, Math.max(seg.startTime, playhead))
+export function clampPlayheadForSegment(segment: Segment, playhead: number): number {
+  return Math.min(segment.endTime, Math.max(segment.startTime, playhead))
 }
 
 export function clampSegmentStartTime(nextStart: number, currentEnd: number, minStart = 0): number {
@@ -24,13 +24,13 @@ export function updateSegmentStartTime(
   nextStart: number,
   minStart = 0
 ): Segment[] {
-  return segments.map((s) =>
-    s.id === segId
+  return segments.map((segment) =>
+    segment.id === segId
       ? {
-          ...s,
-          startTime: clampSegmentStartTime(nextStart, s.endTime, minStart),
+          ...segment,
+          startTime: clampSegmentStartTime(nextStart, segment.endTime, minStart),
         }
-      : s
+      : segment
   )
 }
 
@@ -40,13 +40,13 @@ export function updateSegmentEndTime(
   nextEnd: number,
   clipDuration: number
 ): Segment[] {
-  return segments.map((s) =>
-    s.id === segId
+  return segments.map((segment) =>
+    segment.id === segId
       ? {
-          ...s,
-          endTime: clampSegmentEndTime(nextEnd, s.startTime, clipDuration),
+          ...segment,
+          endTime: clampSegmentEndTime(nextEnd, segment.startTime, clipDuration),
         }
-      : s
+      : segment
   )
 }
 
@@ -55,15 +55,17 @@ export function splitSegmentAtPlayhead(
   segId: string,
   splitTime: number
 ): { nextSegments: Segment[]; newSegmentId: string } | null {
-  const seg = segments.find((s) => s.id === segId)
-  if (!seg) return null
-  if (splitTime <= seg.startTime || splitTime >= seg.endTime) return null
+  const segment = segments.find((segment) => segment.id === segId)
+  if (!segment) return null
+  if (splitTime <= segment.startTime || splitTime >= segment.endTime) return null
 
-  const first = { ...seg, endTime: splitTime }
-  const second = { ...seg, id: crypto.randomUUID(), startTime: splitTime }
+  const first = { ...segment, endTime: splitTime }
+  const second = { ...segment, id: crypto.randomUUID(), startTime: splitTime }
 
   return {
-    nextSegments: segments.flatMap((s) => (s.id === seg.id ? [first, second] : [s])),
+    nextSegments: segments.flatMap((segment) =>
+      segment.id === segId ? [first, second] : [segment]
+    ),
     newSegmentId: second.id,
   }
 }
@@ -77,11 +79,11 @@ export function buildSegmentLayout(
   let cursorX = paddingPx
   const layout: SegmentLayoutItem[] = []
 
-  for (const seg of segments) {
-    const width = (seg.endTime - seg.startTime) * pxPerSec
+  for (const segment of segments) {
+    const width = (segment.endTime - segment.startTime) * pxPerSec
     const startX = cursorX
     const endX = startX + width
-    layout.push({ seg, startX, endX })
+    layout.push({ segment, startX, endX })
     cursorX = endX + gapPx
   }
 
@@ -92,12 +94,12 @@ export function findSegmentAtTrackX(
   layout: SegmentLayoutItem[],
   x: number,
   pxPerSec: number
-): { seg: Segment; time: number } | null {
+): { segment: Segment; time: number } | null {
   for (const item of layout) {
     if (x >= item.startX && x <= item.endX) {
       return {
-        seg: item.seg,
-        time: item.seg.startTime + (x - item.startX) / pxPerSec,
+        segment: item.segment,
+        time: item.segment.startTime + (x - item.startX) / pxPerSec,
       }
     }
   }
@@ -112,20 +114,20 @@ export function findDropIndexAtTrackX(
   gapPx: number
 ): number {
   let accX = 0
-  let dropIdx = 0
+  let dropIndex = 0
 
   for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i]
-    const width = (seg.endTime - seg.startTime) * pxPerSec
+    const segment = segments[i]
+    const width = (segment.endTime - segment.startTime) * pxPerSec
     if (x < accX + width / 2) {
-      dropIdx = i
+      dropIndex = i
       break
     }
     accX += width + gapPx
-    dropIdx = i + 1
+    dropIndex = i + 1
   }
 
-  return dropIdx
+  return dropIndex
 }
 
 export function createRafThrottler() {
@@ -185,7 +187,7 @@ export function createTrackSeekHandler(options: {
         const trackX = viewportToTrackX(ev.clientX, rect, trackEl.scrollLeft)
         const hit = findSegmentAtTrackX(layout, trackX, pxPerSec)
         if (!hit) return
-        onSeek(hit.seg.id, hit.time)
+        onSeek(hit.segment.id, hit.time)
       }
 
       seekFromPointer(e)

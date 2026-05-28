@@ -1,10 +1,11 @@
 import { logs, LOG_LIMIT } from '@/lib/store'
+import type { LogLevel } from '@/lib/store'
 
 function nowIso() {
   return new Date().toISOString()
 }
 
-function pushEntry(level: string, message: string, meta?: any) {
+function pushEntry(level: LogLevel, message: string, meta?: any) {
   try {
     const entry = { id: crypto.randomUUID(), ts: nowIso(), level, message, meta }
     const next = [entry, ...logs.value]
@@ -13,7 +14,6 @@ function pushEntry(level: string, message: string, meta?: any) {
     return entry
   } catch (e) {
     // Best effort: do not fail app if logging breaks
-    // eslint-disable-next-line no-console
     console.error('Logger push failed', e)
     return null
   }

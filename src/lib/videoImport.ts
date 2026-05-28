@@ -2,16 +2,10 @@ import { fetchFile } from '@ffmpeg/util'
 
 import { getFfmpeg } from '@/lib/ffmpeg'
 import { info, error as logError } from '@/lib/logger'
-import { clips, timeline, getClipById, importing } from '@/lib/store'
+import { clips, timeline, getClipById, importing, selectedSegmentId } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
-export const ACCEPTED = [
-  'video/mp4',
-  'video/webm',
-  'video/quicktime',
-  'video/x-msvideo',
-  'video/x-matroska',
-]
+export const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska']
 
 export function isVideoFile(file: File): boolean {
   return ACCEPTED.includes(file.type) || /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name)
@@ -211,14 +205,16 @@ export async function importAndAppend(file: File): Promise<void> {
       waveformPeaks: [],
     }
     clips.value = [...clips.value, clip]
+    const wasEmpty = timeline.value.length === 0
 
-    const seg: Segment = {
+    const segment: Segment = {
       id: crypto.randomUUID(),
       clipId: clip.id,
       startTime: 0,
       endTime: duration,
     }
-    timeline.value = [...timeline.value, seg]
+    timeline.value = [...timeline.value, segment]
+    if (wasEmpty) selectedSegmentId.value = segment.id
     imported = true
     info('Import succeeded', { name: file.name, duration })
   } catch {
