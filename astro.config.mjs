@@ -68,6 +68,10 @@ export default defineConfig({
   ],
   vite: {
     plugins: [tailwindcss(), ffmpegCorePlugin],
+    // The WebCodecs export worker is a module worker that code-splits its
+    // demuxers via dynamic import; ES output is required (the default 'iife'
+    // cannot code-split).
+    worker: { format: 'es' },
     optimizeDeps: { exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'] },
     server: { headers: coopCoep },
     preview: { headers: coopCoep },

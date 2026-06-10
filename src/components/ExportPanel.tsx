@@ -2,13 +2,15 @@ import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { CirclePlay, X, AlertTriangle } from 'lucide-preact'
 
+import { runExportEngine, cancelActiveExport } from '@/lib/exportEngine'
 import { assessFeasibility } from '@/lib/exportFeasibility'
-import { exportVideo, cancelExport, getFfmpeg } from '@/lib/ffmpeg'
+import { getFfmpeg } from '@/lib/ffmpeg'
 import { info, error as logError } from '@/lib/logger'
 import {
   clips,
   coreMode,
   coreModeReason,
+  exportEngineUsed,
   exportEtaSeconds,
   exportFormat,
   addExportRecord,
@@ -108,7 +110,12 @@ export function ExportPanel() {
       const filename = makeFilename(exportFormat.value)
       let url: string
       let size: number
-      const out = await exportVideo(segments, exportFormat.value, quality.value, framerate.value)
+      const out = await runExportEngine(
+        segments,
+        exportFormat.value,
+        quality.value,
+        framerate.value
+      )
       url = out.url
       size = out.size
 
@@ -140,7 +147,7 @@ export function ExportPanel() {
 
   function handleCancel() {
     exporting.value = false
-    cancelExport()
+    cancelActiveExport()
     info('Export canceled by user')
   }
 
@@ -217,6 +224,14 @@ export function ExportPanel() {
             title={coreModeReason.value || undefined}
           >
             {coreMode.value === 'multithread' ? 'multi-threaded' : 'single-threaded'}
+          </span>
+        )}
+        {exportEngineUsed.value === 'webcodecs' && (
+          <span
+            class="rounded bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+            title="Exported with the browser's native WebCodecs engine"
+          >
+            WebCodecs
           </span>
         )}
       </div>

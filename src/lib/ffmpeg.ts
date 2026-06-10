@@ -506,6 +506,13 @@ function planFullEncode(
 
   const outputFile = `output_${runId}.${format}`
 
+  // When no clip in the output has audio, produce a video-only file. Silence is
+  // only generated to keep stream layout uniform in mixed-audio timelines.
+  const anyAudio = segments.some((segment) => {
+    const clip = getClipById(segment.clipId)
+    return clip != null && clip.hasAudio !== false
+  })
+
   for (const segment of segments) {
     const clip = getClipById(segment.clipId)
     if (!clip) continue
@@ -527,33 +534,44 @@ function planFullEncode(
     }
     videoFilter += `[v${streamIndex}]`
 
-    // Clips without an audio stream get generated silence of the segment's
-    // duration; mapping [i:a] for them would make the whole command fail.
-    let audioFilter: string
-    if (clip.hasAudio === false) {
-      const segmentDuration = segment.endTime - segment.startTime
-      audioFilter = `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=0:${segmentDuration},asetpts=PTS-STARTPTS`
-    } else {
-      audioFilter = `[${streamIndex}:a]atrim=${segment.startTime}:${segment.endTime},asetpts=PTS-STARTPTS`
-      if (segment.muted) {
-        audioFilter += ',volume=0'
+    if (anyAudio) {
+      // Clips without an audio stream get generated silence of the segment's
+      // duration; mapping [i:a] for them would make the whole command fail.
+      let audioFilter: string
+      if (clip.hasAudio === false) {
+        const segmentDuration = segment.endTime - segment.startTime
+        audioFilter = `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=0:${segmentDuration},asetpts=PTS-STARTPTS`
+      } else {
+        audioFilter = `[${streamIndex}:a]atrim=${segment.startTime}:${segment.endTime},asetpts=PTS-STARTPTS`
+        if (segment.muted) {
+          audioFilter += ',volume=0'
+        }
       }
+      audioFilter += `[a${streamIndex}]`
+      filterParts.push(videoFilter, audioFilter)
+      concatInputs.push(`[v${streamIndex}][a${streamIndex}]`)
+    } else {
+      filterParts.push(videoFilter)
+      concatInputs.push(`[v${streamIndex}]`)
     }
-    audioFilter += `[a${streamIndex}]`
 
-    filterParts.push(videoFilter, audioFilter)
-    concatInputs.push(`[v${streamIndex}][a${streamIndex}]`)
     streamIndex++
   }
 
   // Skip the concat filter for a single segment - it's unnecessary and can hang in WASM.
-  const filterComplex =
-    streamIndex === 1
-      ? filterParts.join(';').replace('[v0]', '[outv]').replace('[a0]', '[outa]')
-      : filterParts.join(';') +
-        `;${concatInputs.join('')}concat=n=${streamIndex}:v=1:a=1[outv][outa]`
+  let filterComplex: string
+  if (streamIndex === 1) {
+    filterComplex = filterParts.join(';').replace('[v0]', '[outv]')
+    if (anyAudio) filterComplex = filterComplex.replace('[a0]', '[outa]')
+  } else {
+    const audioOut = anyAudio ? '[outa]' : ''
+    filterComplex =
+      filterParts.join(';') +
+      `;${concatInputs.join('')}concat=n=${streamIndex}:v=1:a=${anyAudio ? 1 : 0}[outv]${audioOut}`
+  }
 
   const inputArgs = inputFiles.flatMap((input) => ['-i', input.name])
+  const mapArgs = anyAudio ? ['-map', '[outv]', '-map', '[outa]'] : ['-map', '[outv]']
 
   return {
     format,
@@ -564,10 +582,7 @@ function planFullEncode(
         ...inputArgs,
         '-filter_complex',
         filterComplex,
-        '-map',
-        '[outv]',
-        '-map',
-        '[outa]',
+        ...mapArgs,
         ...getOutputArgs(format, quality, fps, options),
         outputFile,
       ],
