@@ -1,17 +1,18 @@
-import type { Quality } from '@/lib/types'
-
 export type RecoveryState = {
-  quality: Quality
+  maxDimension: number | null
 }
 
-const QUALITY_LADDER: Quality[] = ['lossless', 'high', 'medium', 'low']
+// An out-of-memory crash is driven by resolution (frame-buffer allocations in
+// the bounded WASM heap), not by quality/CRF. Recovery therefore downscales the
+// longest output side step by step until it fits, rather than lowering quality.
+const DIMENSION_LADDER = [1280, 854, 640]
 
-// Decide how to retry after an out-of-memory crash. Returns the next, cheaper
-// settings to try, or null when there is nothing cheaper left.
-export function nextRecoveryStep(state: RecoveryState, attempt: number): RecoveryState | null {
-  const currentIndex = QUALITY_LADDER.indexOf(state.quality)
-  const nextIndex = currentIndex + 1
-  if (attempt >= QUALITY_LADDER.length - 1) return null
-  if (nextIndex >= QUALITY_LADDER.length) return null
-  return { quality: QUALITY_LADDER[nextIndex] }
+// Decide how to retry after an out-of-memory crash. Returns the next, smaller
+// resolution cap to try, or null when there is nothing smaller left.
+export function nextRecoveryStep(state: RecoveryState): RecoveryState | null {
+  const current = state.maxDimension ?? Number.POSITIVE_INFINITY
+  for (const cap of DIMENSION_LADDER) {
+    if (cap < current) return { maxDimension: cap }
+  }
+  return null
 }

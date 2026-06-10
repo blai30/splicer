@@ -60,6 +60,26 @@ describe('planExport webm encode args', () => {
     expect(cmd).toContain('-c:v libvpx ')
     expect(cmd).toContain('-c:a libopus')
   })
+
+  it('injects a scale filter when maxDimension is set', () => {
+    const plan = planExport([segment()], 'webm', 'high', 'original', 'run1', {
+      threads: null,
+      webmCodec: 'vp8',
+      maxDimension: 1280,
+    })
+    const cmd = plan.commands.at(-1)!.join(' ')
+    expect(cmd).toContain('scale=w=1280:h=1280:force_original_aspect_ratio=decrease')
+  })
+
+  it('omits the scale filter when maxDimension is null', () => {
+    const plan = planExport([segment()], 'webm', 'high', 'original', 'run1', {
+      threads: null,
+      webmCodec: 'vp8',
+      maxDimension: null,
+    })
+    const cmd = plan.commands.at(-1)!.join(' ')
+    expect(cmd).not.toContain('scale=')
+  })
 })
 
 describe('planExport webm stream copy', () => {
