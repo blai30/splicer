@@ -14,12 +14,16 @@
     "typecheck": "astro check",
     "lint": "oxlint",
     "fmt": "oxfmt",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "check": "pnpm lint && pnpm fmt && pnpm typecheck && pnpm build"
   },
   "dependencies": {
     "@astrojs/preact": "^5.1.5",
     "@astrojs/sitemap": "^3.7.3",
     "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/core-mt": "^0.12.10",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@preact/signals": "^2.9.1",
@@ -32,11 +36,14 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
+    "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.2",
+    "happy-dom": "^20.10.2",
     "oxfmt": "^0.54.0",
     "oxlint": "^1.69.0",
     "playwright": "^1.60.0",
     "typescript": "^6.0.3",
-    "vite": "7.3.5"
+    "vite": "7.3.5",
+    "vitest": "^4.1.8"
   }
 }
