@@ -312,11 +312,6 @@ function getOutputArgs(
   }
 
   // Format-specific codec choices for browser-forward WASM builds
-  if (format === 'avi') {
-    // AVI prefers MPEG-4 video and MP3 audio for broad compatibility
-    return ['-c:v', 'mpeg4', '-qscale:v', '3', '-c:a', 'libmp3lame', ...fpsArgs]
-  }
-
   if (format === 'mov') {
     // MOV: use H.264 + AAC (compatible with QuickTime)
     return [
@@ -464,7 +459,6 @@ function planMuteStreamCopy(segments: Segment[], format: ExportFormat, runId: st
   const muteExpr = mutedRanges.map(([start, end]) => `between(t,${start},${end})`).join('+')
   let audioCodec = 'aac'
   if (format === 'webm') audioCodec = 'libopus'
-  else if (format === 'avi') audioCodec = 'libmp3lame'
 
   return {
     format,
@@ -592,6 +586,32 @@ function planFullEncode(
   }
 }
 
+// Muted stream copy is possible when every segment is uncropped, comes from a
+// source whose container already matches the target, and has an audio stream
+// (only the audio is re-encoded to apply the mute).
+function canMutedStreamCopy(segments: Segment[], format: ExportFormat): boolean {
+  return segments.every((segment) => {
+    if (segment.crop) return false
+    const clip = getClipById(segment.clipId)
+    return clip != null && getFileExtension(clip.file.name) === format && clip.hasAudio !== false
+  })
+}
+
+// Whether this export resolves to one of the ffmpeg stream-copy plans (plain or
+// muted). Stream copy is lossless and near-instant, so the engine router keeps
+// these on ffmpeg instead of re-encoding through WebCodecs.
+export function willStreamCopy(
+  segments: Segment[],
+  format: ExportFormat,
+  quality: Quality,
+  fps: Framerate
+): boolean {
+  if (quality !== 'lossless' || fps !== 'original') return false
+  if (canUseStreamCopy(segments, format)) return true
+  const hasMuted = segments.some((segment) => segment.muted)
+  return hasMuted && canMutedStreamCopy(segments, format)
+}
+
 export function planExport(
   segments: Segment[],
   format: ExportFormat,
@@ -609,12 +629,7 @@ export function planExport(
   // Applies when lossless + original fps + at least one muted segment + no crop + matching format.
   const hasMuted = segments.some((segment) => segment.muted)
   if (quality === 'lossless' && fps === 'original' && hasMuted) {
-    const canMutedCopy = segments.every((segment) => {
-      if (segment.crop) return false
-      const clip = getClipById(segment.clipId)
-      return clip != null && getFileExtension(clip.file.name) === format && clip.hasAudio !== false
-    })
-    if (canMutedCopy) return planMuteStreamCopy(segments, format, runId)
+    if (canMutedStreamCopy(segments, format)) return planMuteStreamCopy(segments, format, runId)
   }
 
   return planFullEncode(segments, format, quality, fps, runId, options)

@@ -9,7 +9,7 @@ It is designed for fast, local edits:
 - import clips by click or drag-and-drop
 - trim in/out points and split at the playhead
 - preview edits with frame stepping and playback speed controls
-- export to MP4, MKV, MOV, AVI, or WebM directly in the browser
+- export to MP4, MKV, MOV, or WebM directly in the browser
 
 No upload pipeline is used. Processing happens entirely client-side via WebCodecs and FFmpeg WASM.
 
@@ -45,7 +45,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 
 ### Export
 
-- Formats: `mp4`, `mkv`, `mov`, `avi`, `webm`
+- Formats: `mp4`, `mkv`, `mov`, `webm`
 - Quality presets: `lossless`, `high`, `medium`, `low`
 - Framerate options: `original`, `60`, `30`, `24`
 - WebM codec choice: `VP9` (recommended, smaller files) or `VP8` (faster to encode).

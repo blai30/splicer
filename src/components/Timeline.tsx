@@ -405,7 +405,7 @@ export function Timeline() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="video/*,.mp4,.mkv,.mov,.avi,.webm"
+        accept="video/*,.mp4,.mkv,.mov,.webm"
         multiple
         class="hidden"
         onChange={onFileInputChange}

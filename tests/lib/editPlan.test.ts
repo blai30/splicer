@@ -23,7 +23,10 @@ function job(overrides: Partial<ExportJob> = {}): ExportJob {
     slices: [slice()],
     quality: 'high',
     fps: 'original',
-    webmCodec: 'vp8',
+    format: 'webm',
+    container: 'webm',
+    videoCodec: 'vp9',
+    audioCodec: 'opus',
     ...overrides,
   }
 }
@@ -115,9 +118,9 @@ describe('buildEditPlan presets', () => {
     )
   })
 
-  it('maps webmCodec through to videoCodec', () => {
-    expect(buildEditPlan(job({ webmCodec: 'vp9' })).videoCodec).toBe('vp9')
-    expect(buildEditPlan(job({ webmCodec: 'vp8' })).videoCodec).toBe('vp8')
+  it('maps the chosen codecs through to the plan', () => {
+    expect(buildEditPlan(job({ videoCodec: 'vp8' })).videoCodec).toBe('vp8')
+    expect(buildEditPlan(job({ videoCodec: 'avc', audioCodec: 'aac' })).audioCodec).toBe('aac')
   })
 
   it('uses a 2 second keyframe interval', () => {

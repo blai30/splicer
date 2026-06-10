@@ -1,4 +1,5 @@
-import type { CropParams, Framerate, Quality, WebmCodec } from '../types'
+import type { MbAudioCodec, MbContainer, MbVideoCodec } from '../exportCodecs'
+import type { CropParams, ExportFormat, Framerate, Quality } from '../types'
 
 // One distinct source file referenced by the timeline.
 export type JobSource = {
@@ -24,7 +25,10 @@ export type ExportJob = {
   slices: JobSlice[]
   quality: Quality
   fps: Framerate
-  webmCodec: WebmCodec
+  format: ExportFormat
+  container: MbContainer
+  videoCodec: MbVideoCodec
+  audioCodec: MbAudioCodec
 }
 
 export type WorkerRequest = { type: 'export'; job: ExportJob } | { type: 'cancel' }
