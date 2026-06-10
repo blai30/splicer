@@ -181,13 +181,27 @@ async function exec(ffmpeg: FFmpeg, args: string[]): Promise<void> {
   }
 }
 
-// Shared helper: write all segment files and build a concat demuxer list.
-async function buildConcatList(
-  ffmpeg: FFmpeg,
+// ---------------------------------------------------------------------------
+// Export planning (pure): decide the strategy and build the full command
+// list up front. No WASM, no file I/O - everything here is testable data.
+// ---------------------------------------------------------------------------
+
+type ExportPlan = {
+  format: ExportFormat
+  inputFiles: { name: string; file: File }[]
+  textFiles: { name: string; contents: string }[]
+  commands: string[][]
+  // Files produced by intermediate commands, deleted alongside inputs.
+  intermediateFiles: string[]
+  outputFile: string
+}
+
+// Shared helper: name the segment input files and build a concat demuxer list.
+function buildConcatInputs(
   segments: Segment[],
   runId: string
-): Promise<{ inputFiles: string[]; concatList: string }> {
-  const inputFiles: string[] = []
+): { inputFiles: ExportPlan['inputFiles']; concatList: string } {
+  const inputFiles: ExportPlan['inputFiles'] = []
   let concatList = ''
 
   for (const segment of segments) {
@@ -196,8 +210,7 @@ async function buildConcatList(
 
     const ext = getFileExtension(clip.file.name) || 'mp4'
     const fname = `input_${runId}_${inputFiles.length}.${ext}`
-    await ffmpeg.writeFile(fname, await fetchFile(clip.file))
-    inputFiles.push(fname)
+    inputFiles.push({ name: fname, file: clip.file })
 
     concatList += `file '${fname}'\n`
     concatList += `inpoint ${segment.startTime}\n`
@@ -207,58 +220,29 @@ async function buildConcatList(
   return { inputFiles, concatList }
 }
 
-// Stream-copy path: remux without re-encoding using the concat demuxer.
+// Stream-copy plan: remux without re-encoding using the concat demuxer.
 // Near-instant, no quality loss, output size matches source.
-async function exportStreamCopy(
-  segments: Segment[],
-  format: ExportFormat
-): Promise<{ url: string; size: number }> {
-  const ffmpeg = await getFfmpeg()
-  ffmpegProgress.value = 0
-
-  const runId = crypto.randomUUID().replace(/-/g, '')
-  const tempFiles: string[] = []
+function planStreamCopy(segments: Segment[], format: ExportFormat, runId: string): ExportPlan {
+  const { inputFiles, concatList } = buildConcatInputs(segments, runId)
   const concatFile = `concat_${runId}.txt`
   const outputFile = `output_${runId}.${format}`
 
-  try {
-    const { inputFiles, concatList } = await buildConcatList(ffmpeg, segments, runId)
-    if (inputFiles.length === 0) throw new Error('No valid segments')
-    tempFiles.push(...inputFiles)
-
-    await ffmpeg.writeFile(concatFile, concatList)
-    tempFiles.push(concatFile)
-
-    await exec(ffmpeg, ['-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', outputFile])
-    // Finalizing: reading output from WASM FS can take noticeable time.
-    // Keep progress near-complete but not 100% until readFile finishes.
-    ffmpegProgress.value = 0.95
-    // Instrumentation: log read start/finish and duration to help diagnose hangs.
-    console.log('[FFMPEG] readFile start', outputFile)
-    const t0 = performance.now()
-    const data = await ffmpeg.readFile(outputFile)
-    const t1 = performance.now()
-    console.log('[FFMPEG] readFile finished', outputFile, 'duration_ms', Math.round(t1 - t0))
-    const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
-    ffmpegProgress.value = 1
-    return { url: URL.createObjectURL(blob), size: blob.size }
-  } finally {
-    await deleteFilesBestEffort(ffmpeg, [...tempFiles, outputFile])
+  return {
+    format,
+    inputFiles,
+    textFiles: [{ name: concatFile, contents: concatList }],
+    commands: [['-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', outputFile]],
+    intermediateFiles: [],
+    outputFile,
   }
 }
 
-// Muted stream-copy path: stream-copies video (no re-encode) and re-encodes only
-// audio with volume=0 applied to the muted segment time ranges.
+// Muted stream-copy plan: pass 1 stream-copies all segments into a single temp
+// file, pass 2 stream-copies video and re-encodes only audio with volume=0
+// applied to the muted segment time ranges.
 // Much faster than full video re-encode for the common mute use case.
-async function exportMuteStreamCopy(
-  segments: Segment[],
-  format: ExportFormat
-): Promise<{ url: string; size: number }> {
-  const ffmpeg = await getFfmpeg()
-  ffmpegProgress.value = 0
-
-  const runId = crypto.randomUUID().replace(/-/g, '')
-  const tempFiles: string[] = []
+function planMuteStreamCopy(segments: Segment[], format: ExportFormat, runId: string): ExportPlan {
+  const { inputFiles, concatList } = buildConcatInputs(segments, runId)
   const concatFile = `concat_${runId}.txt`
   const tempCopyFile = `temp_${runId}.${format}`
   const outputFile = `output_${runId}.${format}`
@@ -272,90 +256,117 @@ async function exportMuteStreamCopy(
     outputTime += segmentDuration
   }
 
-  try {
-    const { inputFiles, concatList } = await buildConcatList(ffmpeg, segments, runId)
-    if (inputFiles.length === 0) throw new Error('No valid segments')
-    tempFiles.push(...inputFiles)
+  const muteExpr = mutedRanges.map(([start, end]) => `between(t,${start},${end})`).join('+')
+  let audioCodec = 'aac'
+  if (format === 'webm') audioCodec = 'libopus'
+  else if (format === 'avi') audioCodec = 'libmp3lame'
 
-    // Pass 1: stream copy all segments into a single temp file.
-    await ffmpeg.writeFile(concatFile, concatList)
-    tempFiles.push(concatFile)
-    await exec(ffmpeg, ['-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', tempCopyFile])
-    tempFiles.push(tempCopyFile)
-    ffmpegProgress.value = 0.5
-
-    // Pass 2: stream-copy video, re-encode audio with mute applied to the computed ranges.
-    const muteExpr = mutedRanges.map(([s, e]) => `between(t,${s},${e})`).join('+')
-    let audioCodec = 'aac'
-    if (format === 'webm') audioCodec = 'libopus'
-    else if (format === 'avi') audioCodec = 'libmp3lame'
-    await exec(ffmpeg, [
-      '-i',
-      tempCopyFile,
-      '-c:v',
-      'copy',
-      '-af',
-      `volume=0:enable='${muteExpr}'`,
-      '-c:a',
-      audioCodec,
-      outputFile,
-    ])
-    // Finalizing: reading output from WASM FS can take noticeable time.
-    ffmpegProgress.value = 0.95
-    // Instrumentation: log read start/finish and duration to help diagnose hangs.
-    console.log('[FFMPEG] readFile start', outputFile)
-    const t0 = performance.now()
-    const data = await ffmpeg.readFile(outputFile)
-    const t1 = performance.now()
-    console.log('[FFMPEG] readFile finished', outputFile, 'duration_ms', Math.round(t1 - t0))
-    const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
-    ffmpegProgress.value = 1
-    return { url: URL.createObjectURL(blob), size: blob.size }
-  } finally {
-    await deleteFilesBestEffort(ffmpeg, [...tempFiles, outputFile])
+  return {
+    format,
+    inputFiles,
+    textFiles: [{ name: concatFile, contents: concatList }],
+    commands: [
+      ['-f', 'concat', '-safe', '0', '-i', concatFile, '-c', 'copy', tempCopyFile],
+      [
+        '-i',
+        tempCopyFile,
+        '-c:v',
+        'copy',
+        '-af',
+        `volume=0:enable='${muteExpr}'`,
+        '-c:a',
+        audioCodec,
+        outputFile,
+      ],
+    ],
+    intermediateFiles: [tempCopyFile],
+    outputFile,
   }
 }
 
-export async function exportVideo(
+// Full re-encode plan: per-segment trimming + optional crop + mute handling in
+// a filter graph, concatenated and encoded with format-specific codecs.
+function planFullEncode(
   segments: Segment[],
   format: ExportFormat,
   quality: Quality,
-  fps: Framerate
-): Promise<{ url: string; size: number }> {
-  if (segments.length === 0) throw new Error('No segments')
+  fps: Framerate,
+  runId: string
+): ExportPlan {
+  const inputFiles: ExportPlan['inputFiles'] = []
+  const filterParts: string[] = []
+  const concatInputs: string[] = []
+  let streamIndex = 0
 
-  // Helper: attempt export and on WASM OOM restart ffmpeg and retry once.
-  async function attemptWithRestart<T>(fn: () => Promise<T>): Promise<T> {
-    try {
-      return await fn()
-    } catch (err: any) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (msg && msg.toLowerCase().includes('memory access out of bounds')) {
-        // Restart FFmpeg instance and retry once.
-        console.warn('[FFMPEG] memory OOB detected — restarting ffmpeg and retrying')
-        try {
-          if (instance) {
-            try {
-              instance.terminate()
-            } catch {}
-            instance = null
-          }
-          loadingPromise = null
-          ffmpegReady.value = false
-          // Ensure new instance is loaded before retrying
-          await getFfmpeg()
-        } catch (restartErr) {
-          console.error('[FFMPEG] failed to restart ffmpeg', restartErr)
-          throw err
-        }
-      }
-      throw err
+  const outputFile = `output_${runId}.${format}`
+
+  for (const segment of segments) {
+    const clip = getClipById(segment.clipId)
+    if (!clip) continue
+
+    const ext = getFileExtension(clip.file.name) || 'mp4'
+    const fname = `input_${runId}_${streamIndex}.${ext}`
+    inputFiles.push({ name: fname, file: clip.file })
+
+    let videoFilter = `[${streamIndex}:v]trim=${segment.startTime}:${segment.endTime},setpts=PTS-STARTPTS`
+    if (segment.crop) {
+      const { x, y, width, height } = segment.crop
+      videoFilter += `,crop=${width}:${height}:${x}:${y}`
     }
+    videoFilter += `[v${streamIndex}]`
+
+    let audioFilter = `[${streamIndex}:a]atrim=${segment.startTime}:${segment.endTime},asetpts=PTS-STARTPTS`
+    if (segment.muted) {
+      audioFilter += ',volume=0'
+    }
+    audioFilter += `[a${streamIndex}]`
+
+    filterParts.push(videoFilter, audioFilter)
+    concatInputs.push(`[v${streamIndex}][a${streamIndex}]`)
+    streamIndex++
   }
 
+  // Skip the concat filter for a single segment - it's unnecessary and can hang in WASM.
+  const filterComplex =
+    streamIndex === 1
+      ? filterParts.join(';').replace('[v0]', '[outv]').replace('[a0]', '[outa]')
+      : filterParts.join(';') +
+        `;${concatInputs.join('')}concat=n=${streamIndex}:v=1:a=1[outv][outa]`
+
+  const inputArgs = inputFiles.flatMap((input) => ['-i', input.name])
+
+  return {
+    format,
+    inputFiles,
+    textFiles: [],
+    commands: [
+      [
+        ...inputArgs,
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[outv]',
+        '-map',
+        '[outa]',
+        ...getOutputArgs(format, quality, fps),
+        outputFile,
+      ],
+    ],
+    intermediateFiles: [],
+    outputFile,
+  }
+}
+
+export function planExport(
+  segments: Segment[],
+  format: ExportFormat,
+  quality: Quality,
+  fps: Framerate,
+  runId: string
+): ExportPlan {
   // Use stream copy when lossless + original fps + no per-segment muting
   if (quality === 'lossless' && fps === 'original' && canUseStreamCopy(segments, format)) {
-    return attemptWithRestart(() => exportStreamCopy(segments, format))
+    return planStreamCopy(segments, format, runId)
   }
 
   // Muted stream copy: video stays lossless, only audio is re-encoded (fast).
@@ -367,87 +378,101 @@ export async function exportVideo(
       const clip = getClipById(segment.clipId)
       return clip != null && getFileExtension(clip.file.name) === format
     })
-    if (canMutedCopy) return attemptWithRestart(() => exportMuteStreamCopy(segments, format))
+    if (canMutedCopy) return planMuteStreamCopy(segments, format, runId)
   }
+
+  return planFullEncode(segments, format, quality, fps, runId)
+}
+
+// ---------------------------------------------------------------------------
+// Export execution: one run lifecycle for every plan - write files, run the
+// commands, finalize the output, clean up the WASM FS.
+// ---------------------------------------------------------------------------
+
+async function runExport(plan: ExportPlan): Promise<{ url: string; size: number }> {
+  if (plan.inputFiles.length === 0) throw new Error('No valid segments')
 
   const ffmpeg = await getFfmpeg()
   ffmpegProgress.value = 0
 
-  const runId = crypto.randomUUID().replace(/-/g, '')
-  const inputFiles: string[] = []
   const tempFiles: string[] = []
-  const filterParts: string[] = []
-  const concatInputs: string[] = []
-  let streamIndex = 0
-
-  const outputFile = `output_${runId}.${format}`
 
   try {
-    for (const segment of segments) {
-      const clip = getClipById(segment.clipId)
-      if (!clip) continue
-
-      const ext = getFileExtension(clip.file.name) || 'mp4'
-      const fname = `input_${runId}_${streamIndex}.${ext}`
-      await ffmpeg.writeFile(fname, await fetchFile(clip.file))
-      inputFiles.push(fname)
-      tempFiles.push(fname)
-
-      let videoFilter = `[${streamIndex}:v]trim=${segment.startTime}:${segment.endTime},setpts=PTS-STARTPTS`
-      if (segment.crop) {
-        const { x, y, width, height } = segment.crop
-        videoFilter += `,crop=${width}:${height}:${x}:${y}`
-      }
-      videoFilter += `[v${streamIndex}]`
-
-      let audioFilter = `[${streamIndex}:a]atrim=${segment.startTime}:${segment.endTime},asetpts=PTS-STARTPTS`
-      if (segment.muted) {
-        audioFilter += ',volume=0'
-      }
-      audioFilter += `[a${streamIndex}]`
-
-      filterParts.push(videoFilter, audioFilter)
-      concatInputs.push(`[v${streamIndex}][a${streamIndex}]`)
-      streamIndex++
+    for (const input of plan.inputFiles) {
+      await ffmpeg.writeFile(input.name, await fetchFile(input.file))
+      tempFiles.push(input.name)
+    }
+    for (const textFile of plan.textFiles) {
+      await ffmpeg.writeFile(textFile.name, textFile.contents)
+      tempFiles.push(textFile.name)
     }
 
-    if (streamIndex === 0) throw new Error('No valid segments')
-
-    // Skip the concat filter for a single segment — it's unnecessary and can hang in WASM.
-    const filterComplex =
-      streamIndex === 1
-        ? filterParts.join(';').replace('[v0]', '[outv]').replace('[a0]', '[outa]')
-        : filterParts.join(';') +
-          `;${concatInputs.join('')}concat=n=${streamIndex}:v=1:a=1[outv][outa]`
-
-    const inputArgs = inputFiles.flatMap((f) => ['-i', f])
-
-    await exec(ffmpeg, [
-      ...inputArgs,
-      '-filter_complex',
-      filterComplex,
-      '-map',
-      '[outv]',
-      '-map',
-      '[outa]',
-      ...getOutputArgs(format, quality, fps),
-      outputFile,
-    ])
+    for (let i = 0; i < plan.commands.length; i++) {
+      await exec(ffmpeg, plan.commands[i])
+      // Show coarse progress between passes of a multi-command plan.
+      if (i < plan.commands.length - 1) {
+        ffmpegProgress.value = (i + 1) / plan.commands.length
+      }
+    }
 
     // Finalizing: reading output from WASM FS can take noticeable time.
-    return attemptWithRestart(async () => {
-      ffmpegProgress.value = 0.95
-      // Instrumentation: log read start/finish and duration to help diagnose hangs.
-      console.log('[FFMPEG] readFile start', outputFile)
-      const t0 = performance.now()
-      const data = await ffmpeg.readFile(outputFile)
-      const t1 = performance.now()
-      console.log('[FFMPEG] readFile finished', outputFile, 'duration_ms', Math.round(t1 - t0))
-      const blob = new Blob([data as BlobPart], { type: MIME_TYPES[format] })
-      ffmpegProgress.value = 1
-      return { url: URL.createObjectURL(blob), size: blob.size }
-    })
+    // Keep progress near-complete but not 100% until readFile finishes.
+    ffmpegProgress.value = 0.95
+    // Instrumentation: log read start/finish and duration to help diagnose hangs.
+    console.log('[FFMPEG] readFile start', plan.outputFile)
+    const t0 = performance.now()
+    const data = await ffmpeg.readFile(plan.outputFile)
+    const t1 = performance.now()
+    console.log('[FFMPEG] readFile finished', plan.outputFile, 'duration_ms', Math.round(t1 - t0))
+    const blob = new Blob([data as BlobPart], { type: MIME_TYPES[plan.format] })
+    ffmpegProgress.value = 1
+    return { url: URL.createObjectURL(blob), size: blob.size }
   } finally {
-    await deleteFilesBestEffort(ffmpeg, [...tempFiles, outputFile])
+    await deleteFilesBestEffort(ffmpeg, [...tempFiles, ...plan.intermediateFiles, plan.outputFile])
+  }
+}
+
+function isWasmOomError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.toLowerCase().includes('memory access out of bounds')
+}
+
+async function restartFfmpeg(): Promise<void> {
+  if (instance) {
+    try {
+      instance.terminate()
+    } catch {}
+    instance = null
+  }
+  loadingPromise = null
+  ffmpegReady.value = false
+  // Ensure the new instance is loaded before retrying
+  await getFfmpeg()
+}
+
+export async function exportVideo(
+  segments: Segment[],
+  format: ExportFormat,
+  quality: Quality,
+  fps: Framerate
+): Promise<{ url: string; size: number }> {
+  if (segments.length === 0) throw new Error('No segments')
+
+  const runId = crypto.randomUUID().replace(/-/g, '')
+  const plan = planExport(segments, format, quality, fps, runId)
+
+  try {
+    return await runExport(plan)
+  } catch (err) {
+    if (!isWasmOomError(err)) throw err
+    // WASM OOM crash: restart the FFmpeg instance and retry the run once.
+    console.warn('[FFMPEG] memory OOB detected - restarting ffmpeg and retrying')
+    try {
+      await restartFfmpeg()
+    } catch (restartErr) {
+      console.error('[FFMPEG] failed to restart ffmpeg', restartErr)
+      throw err
+    }
+    return runExport(plan)
   }
 }
