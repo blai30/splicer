@@ -1,15 +1,13 @@
 import { stepFrame, togglePlay } from '@/lib/playback'
+import { ZOOM_MAX, ZOOM_MIN, pxPerSec } from '@/lib/store'
 import {
-  ZOOM_MAX,
-  ZOOM_MIN,
   cutAtPlayhead,
   deleteSegment,
-  pxPerSec,
   setInPoint,
   setOutPoint,
   toggleMute,
-  undoDelete,
-} from '@/lib/store'
+  undo,
+} from '@/lib/timelineEditing'
 
 const ZOOM_KEYBOARD_STEP = 10
 
@@ -51,7 +49,7 @@ export const SHORTCUTS: Shortcut[] = [
     description: 'Delete Segment',
     run: deleteSegment,
   },
-  { keys: ['z'], ctrl: true, display: 'Ctrl Z', description: 'Undo Delete', run: undoDelete },
+  { keys: ['z'], ctrl: true, display: 'Ctrl Z', description: 'Undo', run: undo },
   {
     keys: ['=', '+'],
     display: '+',

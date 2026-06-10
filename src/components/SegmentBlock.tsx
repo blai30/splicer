@@ -7,12 +7,13 @@ import { seek } from '@/lib/playback'
 import { selectedSegmentId, timeline, getClipById, clips } from '@/lib/store'
 import { GAP_PX, clipColor, dragState, pxPerSec } from '@/lib/store'
 import { createRafThrottler } from '@/lib/timelineDomain'
+import { clampPlayheadForSegment, findDropIndexAtTrackX } from '@/lib/timelineDomain'
 import {
-  clampPlayheadForSegment,
-  findDropIndexAtTrackX,
-  updateSegmentEndTime,
-  updateSegmentStartTime,
-} from '@/lib/timelineDomain'
+  beginGesture,
+  reorderSegment,
+  trimSegmentEnd,
+  trimSegmentStart,
+} from '@/lib/timelineEditing'
 import type { Segment } from '@/lib/types'
 import { ensureClipWaveform } from '@/lib/videoImport'
 
@@ -47,21 +48,17 @@ export function SegmentBlock({
       const startClientX = e.clientX
       const startTime = side === 'left' ? segment.startTime : segment.endTime
 
+      // One undo history entry per trim gesture, not per pointer move.
+      beginGesture()
       const throttler = createRafThrottler()
 
       function onMove(mv: PointerEvent) {
         const dt = (mv.clientX - startClientX) / pxPerSec.value
-        const clipDur = getClipById(segment.clipId)?.duration ?? segment.endTime
         throttler.queue(() => {
           if (side === 'left') {
-            timeline.value = updateSegmentStartTime(timeline.value, segment.id, startTime + dt)
+            trimSegmentStart(segment.id, startTime + dt)
           } else {
-            timeline.value = updateSegmentEndTime(
-              timeline.value,
-              segment.id,
-              startTime + dt,
-              clipDur
-            )
+            trimSegmentEnd(segment.id, startTime + dt)
           }
         })
       }
@@ -102,16 +99,7 @@ export function SegmentBlock({
       el.removeEventListener('pointermove', onMove)
       el.removeEventListener('pointerup', onUp)
       if (moved && dragState.value) {
-        const segmentId = segment.id
-        const fromIndex = timeline.value.findIndex((s) => s.id === segmentId)
-        const toIndex = dragState.value.dropIndex
-        if (fromIndex !== toIndex && fromIndex + 1 !== toIndex) {
-          const segments = [...timeline.value]
-          const [removed] = segments.splice(fromIndex, 1)
-          const adjusted = toIndex > fromIndex ? toIndex - 1 : toIndex
-          segments.splice(adjusted, 0, removed)
-          timeline.value = segments
-        }
+        reorderSegment(segment.id, dragState.value.dropIndex)
         dragState.value = null
       } else if (!moved) {
         selectedSegmentId.value = segment.id

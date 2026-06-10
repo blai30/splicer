@@ -20,16 +20,11 @@ import {
   PADDING_PX,
   ZOOM_MAX,
   ZOOM_MIN,
-  cutAtPlayhead,
-  deleteSegment,
   dragState,
   playheadTime,
   pxPerSec,
   selectedSegmentId,
-  setInPoint,
-  setOutPoint,
   timeline,
-  toggleMute,
 } from '@/lib/store'
 import {
   computeZoomScroll,
@@ -37,6 +32,13 @@ import {
   buildSegmentLayout,
   createTrackSeekHandler,
 } from '@/lib/timelineDomain'
+import {
+  cutAtPlayhead,
+  deleteSegment,
+  setInPoint,
+  setOutPoint,
+  toggleMute,
+} from '@/lib/timelineEditing'
 import { importAndAppend } from '@/lib/videoImport'
 
 const ZOOM_SCALE_FACTOR = 1.25

@@ -2,8 +2,9 @@ import { fetchFile } from '@ffmpeg/util'
 
 import { getFfmpeg } from '@/lib/ffmpeg'
 import { info, error as logError } from '@/lib/logger'
-import { clips, timeline, getClipById, importing, selectedSegmentId } from '@/lib/store'
-import type { Clip, Segment } from '@/lib/types'
+import { clips, getClipById, importing } from '@/lib/store'
+import { appendClipToTimeline } from '@/lib/timelineEditing'
+import type { Clip } from '@/lib/types'
 
 export const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska']
 
@@ -204,17 +205,7 @@ export async function importAndAppend(file: File): Promise<void> {
       objectUrl,
       waveformPeaks: [],
     }
-    clips.value = [...clips.value, clip]
-    const wasEmpty = timeline.value.length === 0
-
-    const segment: Segment = {
-      id: crypto.randomUUID(),
-      clipId: clip.id,
-      startTime: 0,
-      endTime: duration,
-    }
-    timeline.value = [...timeline.value, segment]
-    if (wasEmpty) selectedSegmentId.value = segment.id
+    appendClipToTimeline(clip)
     imported = true
     info('Import succeeded', { name: file.name, duration })
   } catch {
