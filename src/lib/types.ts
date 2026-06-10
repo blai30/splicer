@@ -17,7 +17,7 @@ export type CropParams = {
 }
 
 export type DragState = {
-  segId: string
+  segmentId: string
   dropIndex: number
 }
 

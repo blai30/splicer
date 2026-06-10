@@ -34,10 +34,10 @@ export function VolumeControl() {
         ref={inputRef}
         value={localVolume.value}
         disabled={previewMuted.value}
-        onInput={(e) => {
-          const val = Number((e.currentTarget as HTMLInputElement).value)
-          localVolume.value = val
-          previewVolume.value = val
+        onInput={(event) => {
+          const volume = Number((event.currentTarget as HTMLInputElement).value)
+          localVolume.value = volume
+          previewVolume.value = volume
         }}
         class="w-20 accent-violet-500 disabled:opacity-40"
         title="Preview volume"

@@ -72,19 +72,19 @@ export function VideoPreview() {
     }
   })
 
-  function onResizePointerDown(e: PointerEvent) {
-    e.stopPropagation()
-    const el = e.currentTarget as HTMLElement
-    el.setPointerCapture(e.pointerId)
-    const startX = e.clientX
-    const startY = e.clientY
-    const startW = playerRef.current?.offsetWidth ?? previewMaxWidth.value ?? 400
+  function onResizePointerDown(event: PointerEvent) {
+    event.stopPropagation()
+    const element = event.currentTarget as HTMLElement
+    element.setPointerCapture(event.pointerId)
+    const startX = event.clientX
+    const startY = event.clientY
+    const startWidth = playerRef.current?.offsetWidth ?? previewMaxWidth.value ?? 400
 
-    function onMove(mv: PointerEvent) {
-      const deltaX = mv.clientX - startX
-      const deltaY = mv.clientY - startY
+    function onMove(moveEvent: PointerEvent) {
+      const deltaX = moveEvent.clientX - startX
+      const deltaY = moveEvent.clientY - startY
       const delta = deltaX + deltaY
-      const newWidth = Math.max(320, startW + delta)
+      const newWidth = Math.max(320, startWidth + delta)
       if (playerRef.current) {
         playerRef.current.style.width = `${newWidth}px`
       }
@@ -96,12 +96,12 @@ export function VideoPreview() {
         hasManualResize.current = true
         previewMaxWidth.value = finalWidth
       }
-      el.removeEventListener('pointermove', onMove)
-      el.removeEventListener('pointerup', onUp)
+      element.removeEventListener('pointermove', onMove)
+      element.removeEventListener('pointerup', onUp)
     }
 
-    el.addEventListener('pointermove', onMove)
-    el.addEventListener('pointerup', onUp)
+    element.addEventListener('pointermove', onMove)
+    element.addEventListener('pointerup', onUp)
   }
 
   const hasContent = timeline.value.length > 0
@@ -184,8 +184,8 @@ export function VideoPreview() {
             <select
               id="playback-speed"
               value={playbackSpeed.value}
-              onChange={(e) => {
-                const nextSpeed = Number((e.currentTarget as HTMLSelectElement).value)
+              onChange={(event) => {
+                const nextSpeed = Number((event.currentTarget as HTMLSelectElement).value)
                 playbackSpeed.value = nextSpeed
                 setPlaybackRate(nextSpeed)
               }}

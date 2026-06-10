@@ -24,16 +24,16 @@ export function LogPanel() {
   const levelFilters = useSignal({ debug: true, info: true, warn: true, error: true })
   const LEVELS: Array<'debug' | 'info' | 'warn' | 'error'> = ['debug', 'info', 'warn', 'error']
 
-  function toggleLevel(l: keyof typeof levelFilters.value) {
-    levelFilters.value = { ...levelFilters.value, [l]: !levelFilters.value[l] }
+  function toggleLevel(level: keyof typeof levelFilters.value) {
+    levelFilters.value = { ...levelFilters.value, [level]: !levelFilters.value[level] }
   }
 
   function matchesSearch(entry: any) {
-    const q = search.value.trim().toLowerCase()
-    if (!q) return true
-    if (entry.message.toLowerCase().includes(q)) return true
+    const query = search.value.trim().toLowerCase()
+    if (!query) return true
+    if (entry.message.toLowerCase().includes(query)) return true
     try {
-      if (entry.meta && JSON.stringify(entry.meta).toLowerCase().includes(q)) return true
+      if (entry.meta && JSON.stringify(entry.meta).toLowerCase().includes(query)) return true
     } catch {}
     return false
   }

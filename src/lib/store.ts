@@ -32,8 +32,8 @@ function saveToStorage<T>(key: string, value: T) {
   }
 }
 
-function persistSignal<T>(key: string, sig: Signal<T>) {
-  effect(() => saveToStorage(key, sig.value))
+function persistSignal<T>(key: string, targetSignal: Signal<T>) {
+  effect(() => saveToStorage(key, targetSignal.value))
 }
 
 export const clips = signal<Clip[]>([])
@@ -66,8 +66,8 @@ export const logPanelVisible = signal<boolean>(loadFromStorage('logPanelVisible'
 
 export const EXPORT_HISTORY_LIMIT = 50
 
-export function addExportRecord(rec: ExportRecord) {
-  const next = [rec, ...exportHistory.value]
+export function addExportRecord(record: ExportRecord) {
+  const next = [record, ...exportHistory.value]
   if (next.length > EXPORT_HISTORY_LIMIT) next.length = EXPORT_HISTORY_LIMIT
   exportHistory.value = next
 }
@@ -124,10 +124,10 @@ export function clipColor(clipId: string): string {
   return colors[Math.abs(hash) % colors.length]
 }
 
-export function getSegmentStartX(segId: string): number {
+export function getSegmentStartX(segmentId: string): number {
   let x = PADDING_PX
   for (const segment of timeline.value) {
-    if (segment.id === segId) return x
+    if (segment.id === segmentId) return x
     x += (segment.endTime - segment.startTime) * pxPerSec.value + GAP_PX
   }
   return PADDING_PX

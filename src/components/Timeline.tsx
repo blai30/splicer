@@ -50,21 +50,21 @@ export function Timeline() {
   const trackSeekHandlerRef = useRef<ReturnType<typeof createTrackSeekHandler> | null>(null)
   const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
 
-  const activeSegId = selectedSegmentId.value ?? timeline.value[0]?.id
+  const activeSegmentId = selectedSegmentId.value ?? timeline.value[0]?.id
   const segments = timeline.value
   // Build layout once per render to avoid repeated O(n) scans.
   const layout = buildSegmentLayout(segments, pxPerSec.value, GAP_PX, PADDING_PX)
-  const activeLayout = layout.find((layoutItem) => layoutItem.segment.id === activeSegId)
+  const activeLayout = layout.find((layoutItem) => layoutItem.segment.id === activeSegmentId)
   const playheadLeft = activeLayout
     ? activeLayout.startX + (playheadTime.value - activeLayout.segment.startTime) * pxPerSec.value
     : PADDING_PX
 
-  function onTrackPointerDown(e: PointerEvent) {
+  function onTrackPointerDown(event: PointerEvent) {
     if (!trackRef.current) return
     if (timeline.value.length === 0) return
     // Ignore clicks on playhead and segment containers
-    if ((e.target as HTMLElement).closest('[data-playhead]')) return
-    if ((e.target as HTMLElement).closest('[data-segment]')) return
+    if ((event.target as HTMLElement).closest('[data-playhead]')) return
+    if ((event.target as HTMLElement).closest('[data-segment]')) return
 
     // Create and cache handler for this drag session
     trackSeekHandlerRef.current = createTrackSeekHandler({
@@ -72,17 +72,17 @@ export function Timeline() {
       pxPerSec: pxPerSec.value,
       padding: PADDING_PX,
       gap: GAP_PX,
-      trackEl: trackRef.current,
+      trackElement: trackRef.current,
       onSeek(segmentId, time) {
         selectedSegmentId.value = segmentId
         seek(time)
       },
     })
 
-    trackSeekHandlerRef.current.onPointerDown(e)
+    trackSeekHandlerRef.current.onPointerDown(event)
   }
 
-  function onPlayheadPointerDown(e: PointerEvent) {
+  function onPlayheadPointerDown(event: PointerEvent) {
     if (!activeLayout || !trackRef.current) return
 
     // Create and cache handler for this drag session using precomputed layout
@@ -90,13 +90,13 @@ export function Timeline() {
       segment: activeLayout.segment,
       segmentStartX: activeLayout.startX,
       pxPerSec: pxPerSec.value,
-      trackEl: trackRef.current,
+      trackElement: trackRef.current,
       onUpdate(time) {
         seek(time)
       },
     })
 
-    playheadDragHandlerRef.current.onPointerDown(e)
+    playheadDragHandlerRef.current.onPointerDown(event)
   }
 
   function zoomTo(newPx: number, anchorX?: number) {
@@ -122,43 +122,43 @@ export function Timeline() {
     []
   )
 
-  function onWheel(e: WheelEvent) {
+  function onWheel(event: WheelEvent) {
     if (!trackRef.current) return
-    if (e.ctrlKey) {
-      e.preventDefault()
+    if (event.ctrlKey) {
+      event.preventDefault()
       const rect = trackRef.current.getBoundingClientRect()
-      const anchorX = e.clientX - rect.left
-      const factor = e.deltaY > 0 ? 1 / ZOOM_SCALE_FACTOR : ZOOM_SCALE_FACTOR
+      const anchorX = event.clientX - rect.left
+      const factor = event.deltaY > 0 ? 1 / ZOOM_SCALE_FACTOR : ZOOM_SCALE_FACTOR
       zoomTo(pxPerSec.value * factor, anchorX)
-    } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-      e.preventDefault()
-      trackRef.current.scrollLeft += e.deltaY
+    } else if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+      event.preventDefault()
+      trackRef.current.scrollLeft += event.deltaY
     }
   }
 
-  function onDragOver(e: DragEvent) {
-    if ([...(e.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) {
-      e.preventDefault()
+  function onDragOver(event: DragEvent) {
+    if ([...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) {
+      event.preventDefault()
       draggingOver.value = true
     }
   }
 
-  function onDragLeave(e: DragEvent) {
-    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+  function onDragLeave(event: DragEvent) {
+    if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node)) {
       draggingOver.value = false
     }
   }
 
-  async function onDrop(e: DragEvent) {
-    e.preventDefault()
+  async function onDrop(event: DragEvent) {
+    event.preventDefault()
     draggingOver.value = false
-    const files = Array.from(e.dataTransfer?.files ?? [])
-    for (const f of files) await importAndAppend(f)
+    const files = Array.from(event.dataTransfer?.files ?? [])
+    for (const file of files) await importAndAppend(file)
   }
 
-  async function onFileInputChange(e: Event) {
-    const files = Array.from((e.target as HTMLInputElement).files ?? [])
-    for (const f of files) await importAndAppend(f)
+  async function onFileInputChange(event: Event) {
+    const files = Array.from((event.target as HTMLInputElement).files ?? [])
+    for (const file of files) await importAndAppend(file)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -272,9 +272,10 @@ export function Timeline() {
                 min={ZOOM_MIN}
                 max={ZOOM_MAX}
                 value={Math.round(pxPerSec.value)}
-                onBlur={(e) => zoomTo(Number((e.currentTarget as HTMLInputElement).value))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') zoomTo(Number((e.currentTarget as HTMLInputElement).value))
+                onBlur={(event) => zoomTo(Number((event.currentTarget as HTMLInputElement).value))}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter')
+                    zoomTo(Number((event.currentTarget as HTMLInputElement).value))
                 }}
                 class="w-14 rounded border border-slate-300 bg-white px-1.5 py-0.5 pr-5 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 title="Zoom level (px/sec)"
@@ -325,7 +326,7 @@ export function Timeline() {
               const dragStateValue = dragState.value
               const segments = timeline.value
               const fromIndex = dragStateValue
-                ? segments.findIndex((segment) => segment.id === dragStateValue.segId)
+                ? segments.findIndex((segment) => segment.id === dragStateValue.segmentId)
                 : -1
               const result = []
               for (let i = 0; i < segments.length; i++) {
@@ -347,7 +348,7 @@ export function Timeline() {
                   <SegmentBlock
                     key={segments[i].id}
                     segment={segments[i]}
-                    isDragging={dragStateValue?.segId === segments[i].id}
+                    isDragging={dragStateValue?.segmentId === segments[i].id}
                     startX={item.startX}
                     width={item.endX - item.startX}
                   />

@@ -87,10 +87,15 @@ export function setInPoint() {
 export function setOutPoint() {
   const segment = getSelectedSegment()
   if (!segment) return
-  const clipDur =
+  const clipDuration =
     clips.value.find((clip) => clip.id === segment.clipId)?.duration ?? playheadTime.value
   recordHistory()
-  timeline.value = updateSegmentEndTime(timeline.value, segment.id, playheadTime.value, clipDur)
+  timeline.value = updateSegmentEndTime(
+    timeline.value,
+    segment.id,
+    playheadTime.value,
+    clipDuration
+  )
 }
 
 export function cutAtPlayhead() {
@@ -138,12 +143,12 @@ export function reorderSegment(segmentId: string, dropIndex: number) {
 }
 
 export function deleteSegment() {
-  const segId = selectedSegmentId.value
-  if (!segId) return
-  const currentIndex = timeline.value.findIndex((segment) => segment.id === segId)
+  const segmentId = selectedSegmentId.value
+  if (!segmentId) return
+  const currentIndex = timeline.value.findIndex((segment) => segment.id === segmentId)
   if (currentIndex === -1) return
   recordHistory()
-  const next = timeline.value.filter((segment) => segment.id !== segId)
+  const next = timeline.value.filter((segment) => segment.id !== segmentId)
   timeline.value = next
   selectedSegmentId.value = next[currentIndex]?.id ?? next[currentIndex - 1]?.id ?? null
   removeOrphanedClips()

@@ -18,8 +18,8 @@ export function ExportHistory() {
         </span>
         <button
           onClick={() => {
-            for (const rec of exportHistory.value) {
-              URL.revokeObjectURL(rec.url)
+            for (const record of exportHistory.value) {
+              URL.revokeObjectURL(record.url)
             }
             exportHistory.value = []
           }}
@@ -51,36 +51,39 @@ export function ExportHistory() {
             </tr>
           </thead>
           <tbody>
-            {exportHistory.value.map((rec, i) => (
-              <tr key={rec.id} class={clsx(i % 2 !== 0 && 'bg-slate-50/80 dark:bg-slate-800/50')}>
+            {exportHistory.value.map((record, i) => (
+              <tr
+                key={record.id}
+                class={clsx(i % 2 !== 0 && 'bg-slate-50/80 dark:bg-slate-800/50')}
+              >
                 <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
                   <a
-                    href={rec.url}
-                    download={rec.filename}
+                    href={record.url}
+                    download={record.filename}
                     draggable
-                    onDragStart={(e: DragEvent) => {
-                      e.dataTransfer?.setData(
+                    onDragStart={(event: DragEvent) => {
+                      event.dataTransfer?.setData(
                         'DownloadURL',
-                        `${MIME_TYPES[rec.format]}:${rec.filename}:${rec.url}`
+                        `${MIME_TYPES[record.format]}:${record.filename}:${record.url}`
                       )
                     }}
                     class="cursor-pointer text-violet-600 underline underline-offset-2 hover:text-violet-400 active:cursor-grabbing dark:text-violet-400 dark:hover:text-violet-300"
                     title="Click to download or drag to desktop"
                   >
-                    {rec.filename}
+                    {record.filename}
                   </a>
                 </td>
                 <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
-                  {formatTime(rec.duration)}
+                  {formatTime(record.duration)}
                 </td>
                 <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
-                  {formatSize(rec.size)}
+                  {formatSize(record.size)}
                 </td>
                 <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
-                  {formatFps(rec.fps)}
+                  {formatFps(record.fps)}
                 </td>
                 <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
-                  {rec.width && rec.height ? `${rec.width}×${rec.height}` : '—'}
+                  {record.width && record.height ? `${record.width}×${record.height}` : '–'}
                 </td>
               </tr>
             ))}

@@ -64,16 +64,16 @@ export const SHORTCUTS: Shortcut[] = [
   },
 ]
 
-function handler(e: KeyboardEvent) {
-  const tag = (e.target as HTMLElement).tagName
+function handler(event: KeyboardEvent) {
+  const tag = (event.target as HTMLElement).tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
-  const hasCtrl = e.ctrlKey || e.metaKey
+  const hasCtrl = event.ctrlKey || event.metaKey
   for (const shortcut of SHORTCUTS) {
     if ((shortcut.ctrl ?? false) !== hasCtrl) continue
-    const key = shortcut.ctrl ? e.key.toLowerCase() : e.key
+    const key = shortcut.ctrl ? event.key.toLowerCase() : event.key
     if (!shortcut.keys.includes(key)) continue
-    e.preventDefault()
+    event.preventDefault()
     shortcut.run()
     return
   }

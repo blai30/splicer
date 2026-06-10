@@ -168,16 +168,16 @@ export function cancelExport(): void {
   }
   loadingPromise = null
   ffmpegProgress.value = 0
-  warn('Export cancelled / FFmpeg terminated')
+  warn('Export canceled / FFmpeg terminated')
 }
 
 async function exec(ffmpeg: FFmpeg, args: string[]): Promise<void> {
   info('Running ffmpeg', { args })
   console.log('[FFMPEG CMD]', args.join(' '))
-  const ret = await ffmpeg.exec(args)
-  if (ret !== 0) {
-    logError('FFmpeg error', { code: ret, args })
-    throw new Error(`FFmpeg error (code ${ret})`)
+  const exitCode = await ffmpeg.exec(args)
+  if (exitCode !== 0) {
+    logError('FFmpeg error', { code: exitCode, args })
+    throw new Error(`FFmpeg error (code ${exitCode})`)
   }
 }
 
@@ -209,10 +209,10 @@ function buildConcatInputs(
     if (!clip) continue
 
     const ext = getFileExtension(clip.file.name) || 'mp4'
-    const fname = `input_${runId}_${inputFiles.length}.${ext}`
-    inputFiles.push({ name: fname, file: clip.file })
+    const fileName = `input_${runId}_${inputFiles.length}.${ext}`
+    inputFiles.push({ name: fileName, file: clip.file })
 
-    concatList += `file '${fname}'\n`
+    concatList += `file '${fileName}'\n`
     concatList += `inpoint ${segment.startTime}\n`
     concatList += `outpoint ${segment.endTime}\n`
   }
@@ -305,8 +305,8 @@ function planFullEncode(
     if (!clip) continue
 
     const ext = getFileExtension(clip.file.name) || 'mp4'
-    const fname = `input_${runId}_${streamIndex}.${ext}`
-    inputFiles.push({ name: fname, file: clip.file })
+    const fileName = `input_${runId}_${streamIndex}.${ext}`
+    inputFiles.push({ name: fileName, file: clip.file })
 
     let videoFilter = `[${streamIndex}:v]trim=${segment.startTime}:${segment.endTime},setpts=PTS-STARTPTS`
     if (segment.crop) {
@@ -433,8 +433,8 @@ async function runExport(plan: ExportPlan): Promise<{ url: string; size: number 
 }
 
 function isWasmOomError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err)
-  return msg.toLowerCase().includes('memory access out of bounds')
+  const message = err instanceof Error ? err.message : String(err)
+  return message.toLowerCase().includes('memory access out of bounds')
 }
 
 async function restartFfmpeg(): Promise<void> {

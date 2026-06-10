@@ -31,9 +31,9 @@ let resumeAfterSwitch = false
 let disposeEffects: (() => void) | null = null
 
 export function getActiveSegmentInfo(): ActiveSegmentInfo | null {
-  const segId = selectedSegmentId.value ?? timeline.value[0]?.id
-  if (!segId) return null
-  const segment = timeline.value.find((segment) => segment.id === segId)
+  const segmentId = selectedSegmentId.value ?? timeline.value[0]?.id
+  if (!segmentId) return null
+  const segment = timeline.value.find((segment) => segment.id === segmentId)
   if (!segment) return null
   const clip = getClipById(segment.clipId)
   if (!clip) return null
@@ -43,9 +43,9 @@ export function getActiveSegmentInfo(): ActiveSegmentInfo | null {
 function tickPlayhead() {
   if (!video) return
   const info = getActiveSegmentInfo()
-  const segStart = info?.start ?? 0
+  const segmentStart = info?.start ?? 0
   playheadTime.value = video.currentTime
-  currentPlaybackTime.value = Math.max(0, video.currentTime - segStart)
+  currentPlaybackTime.value = Math.max(0, video.currentTime - segmentStart)
   rafId = requestAnimationFrame(tickPlayhead)
 }
 
@@ -64,15 +64,15 @@ function onPause() {
 function onTimeUpdate() {
   if (!video) return
   const info = getActiveSegmentInfo()
-  const segEnd = info?.end ?? video.duration
+  const segmentEnd = info?.end ?? video.duration
 
-  if (video.currentTime >= segEnd) {
+  if (video.currentTime >= segmentEnd) {
     const segments = timeline.value
     const currentIndex = segments.findIndex((segment) => segment.id === info?.segment.id)
-    const nextSeg = segments[currentIndex + 1]
-    if (nextSeg && playing.value) {
+    const nextSegment = segments[currentIndex + 1]
+    if (nextSegment && playing.value) {
       resumeAfterSwitch = true
-      selectedSegmentId.value = nextSeg.id
+      selectedSegmentId.value = nextSegment.id
     } else {
       video.pause()
       playing.value = false
@@ -172,15 +172,15 @@ export function togglePlay() {
 export function stepFrame(direction: 1 | -1) {
   if (!video) return
   const info = getActiveSegmentInfo()
-  const segStart = info?.start ?? 0
-  const segEnd = info?.end ?? video.duration
+  const segmentStart = info?.start ?? 0
+  const segmentEnd = info?.end ?? video.duration
   const nextTime =
     direction === 1
-      ? Math.min(segEnd, video.currentTime + FRAME_STEP)
-      : Math.max(segStart, video.currentTime - FRAME_STEP)
+      ? Math.min(segmentEnd, video.currentTime + FRAME_STEP)
+      : Math.max(segmentStart, video.currentTime - FRAME_STEP)
   video.currentTime = nextTime
   playheadTime.value = nextTime
-  currentPlaybackTime.value = Math.max(0, nextTime - segStart)
+  currentPlaybackTime.value = Math.max(0, nextTime - segmentStart)
 }
 
 export function seek(time: number) {
