@@ -47,6 +47,7 @@ export function Timeline() {
   const trackRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const draggingOver = useSignal(false)
+  const dragDepthRef = useRef(0)
   const trackSeekHandlerRef = useRef<ReturnType<typeof createTrackSeekHandler> | null>(null)
   const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
 
@@ -136,25 +137,51 @@ export function Timeline() {
     }
   }
 
-  function onDragOver(event: DragEvent) {
-    if ([...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) {
-      event.preventDefault()
+  // Make the whole window a drop target for video import. A depth counter
+  // tracks nested dragenter/dragleave pairs so the overlay does not flicker
+  // when the cursor moves between child elements.
+  useEffect(() => {
+    function hasFiles(event: DragEvent) {
+      return [...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')
+    }
+
+    function onDragEnter(event: DragEvent) {
+      if (!hasFiles(event)) return
+      dragDepthRef.current += 1
       draggingOver.value = true
     }
-  }
 
-  function onDragLeave(event: DragEvent) {
-    if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node)) {
-      draggingOver.value = false
+    function onDragOver(event: DragEvent) {
+      if (!hasFiles(event)) return
+      // Allow drop by cancelling the default handling of the dragover event.
+      event.preventDefault()
     }
-  }
 
-  async function onDrop(event: DragEvent) {
-    event.preventDefault()
-    draggingOver.value = false
-    const files = Array.from(event.dataTransfer?.files ?? [])
-    for (const file of files) await importAndAppend(file)
-  }
+    function onDragLeave() {
+      if (dragDepthRef.current === 0) return
+      dragDepthRef.current -= 1
+      if (dragDepthRef.current === 0) draggingOver.value = false
+    }
+
+    async function onDrop(event: DragEvent) {
+      event.preventDefault()
+      dragDepthRef.current = 0
+      draggingOver.value = false
+      const files = Array.from(event.dataTransfer?.files ?? [])
+      for (const file of files) await importAndAppend(file)
+    }
+
+    window.addEventListener('dragenter', onDragEnter)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [])
 
   async function onFileInputChange(event: Event) {
     const files = Array.from((event.target as HTMLInputElement).files ?? [])
@@ -168,13 +195,7 @@ export function Timeline() {
 
   return (
     <div
-      class={clsx(
-        'relative flex h-64 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur transition-colors hover:duration-0 md:h-48 dark:border-slate-700/60 dark:bg-slate-900/40',
-        draggingOver.value && 'ring-2 ring-violet-400'
-      )}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      class="relative flex h-64 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur transition-colors hover:duration-0 md:h-48 dark:border-slate-700/60 dark:bg-slate-900/40"
       onWheel={onWheel}
     >
       {/* Header */}
@@ -302,22 +323,9 @@ export function Timeline() {
             class="flex h-full cursor-pointer items-center justify-center gap-2 px-4 md:pb-5"
             onClick={() => fileInputRef.current?.click()}
           >
-            <div
-              class={clsx(
-                'flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-lg border-2 border-dashed px-5 py-4 text-center transition-colors hover:duration-0',
-                draggingOver.value
-                  ? 'border-violet-400 bg-violet-50/50 text-violet-600 dark:border-violet-500/50 dark:bg-violet-950/30 dark:text-violet-300'
-                  : 'border-slate-300 bg-slate-50/50 text-slate-500 dark:border-slate-600 dark:bg-slate-800/20 dark:text-slate-400'
-              )}
-            >
-              {draggingOver.value ? (
-                <p class="text-base font-semibold">Drop to import</p>
-              ) : (
-                <>
-                  <Upload class="h-4 w-4" />
-                  <p class="text-base">Click or drop video files to import</p>
-                </>
-              )}
+            <div class="flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50/50 px-5 py-4 text-center text-slate-500 transition-colors hover:duration-0 dark:border-slate-600 dark:bg-slate-800/20 dark:text-slate-400">
+              <Upload class="h-4 w-4" />
+              <p class="text-base">Click or drop video files to import</p>
             </div>
           </div>
         ) : (
@@ -383,10 +391,15 @@ export function Timeline() {
         )}
       </div>
 
-      {/* Drop overlay when timeline has content */}
-      {draggingOver.value && !isEmpty && (
-        <div class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-violet-400 bg-violet-50/30 dark:bg-violet-950/20">
-          <p class="text-base font-medium text-violet-500">Drop to append</p>
+      {/* Full-window drop overlay: the entire window is a drop target for import */}
+      {draggingOver.value && (
+        <div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
+          <div class="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-violet-400 bg-white/80 px-10 py-8 text-center shadow-xl dark:bg-slate-900/80">
+            <Upload class="h-7 w-7 text-violet-500" />
+            <p class="text-lg font-semibold text-violet-600 dark:text-violet-300">
+              Drop video files to import
+            </p>
+          </div>
         </div>
       )}
       <input
