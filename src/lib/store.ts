@@ -105,9 +105,11 @@ export function getClipById(id: string): Clip | undefined {
 export const exportFormat = signal<ExportFormat>(loadFromStorage('exportFormat', 'mp4'))
 export const quality = signal<Quality>(loadFromStorage('quality', 'lossless'))
 export const framerate = signal<Framerate>(loadFromStorage('framerate', 'original'))
-// VP8 is the default: in-browser VP9 (single-thread core) reliably OOMs, while
-// VP8 encodes quickly and successfully. VP9 stays available as an opt-in.
-export const webmCodec = signal<WebmCodec>(loadFromStorage('webmCodec', 'vp8'))
+// VP9 is the default: the WebCodecs engine (primary path for WebM) encodes VP9
+// natively without the OOM problems of the old ffmpeg.wasm path, and it produces
+// smaller files at similar quality. VP8 stays available for faster encoding or
+// browsers that lack WebCodecs.
+export const webmCodec = signal<WebmCodec>(loadFromStorage('webmCodec', 'vp9'))
 
 export const previewVolume = signal(loadFromStorage('previewVolume', 0.5))
 export const previewMuted = signal(loadFromStorage('previewMuted', false))

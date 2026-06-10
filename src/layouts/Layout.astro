@@ -1,4 +1,5 @@
 ---
+import SiteHeader from '@/components/SiteHeader.astro'
 import { assetPath } from '@/lib/paths'
 
 const {
@@ -84,6 +85,9 @@ const webAppJsonLd = {
   <body
     class="min-h-screen bg-slate-300 text-slate-900 dark:bg-slate-950 dark:text-slate-50"
   >
+    <div class="px-3 pt-3 md:px-4 md:pt-4">
+      <SiteHeader />
+    </div>
     <slot />
   </body>
 </html>

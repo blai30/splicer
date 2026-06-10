@@ -2,6 +2,7 @@ import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { CirclePlay, X, AlertTriangle } from 'lucide-preact'
 
+import { ExportFaq } from '@/components/ExportFaq'
 import { runExportEngine, cancelActiveExport } from '@/lib/exportEngine'
 import { assessFeasibility } from '@/lib/exportFeasibility'
 import { getFfmpeg } from '@/lib/ffmpeg'
@@ -171,11 +172,14 @@ export function ExportPanel() {
     { value: '24', label: '24 fps' },
   ]
   const webmCodecs: { value: WebmCodec; label: string }[] = [
-    { value: 'vp8', label: 'VP8 (recommended)' },
-    { value: 'vp9', label: 'VP9 (slower, may fail)' },
+    { value: 'vp9', label: 'VP9 (recommended)' },
+    { value: 'vp8', label: 'VP8 (faster)' },
   ]
 
   const hasSegments = timeline.value.length > 0
+  // When WebCodecs is present, WebM (including VP9) encodes natively without the
+  // OOM problems of the ffmpeg.wasm path. Only without it does VP9 risk failing.
+  const webcodecsAvailable = typeof VideoEncoder !== 'undefined'
   const currentProgress = ffmpegProgress.value
   const progressPct = Math.max(0, Math.min(100, Math.round(currentProgress * 100)))
   const estimatedSize = estimateSize()
@@ -205,14 +209,13 @@ export function ExportPanel() {
     threads: coreMode.value === 'multithread' ? 8 : null,
   })
 
-  if (!hasSegments) return null
-
   return (
-    <div class="flex shrink-0 flex-col gap-3 rounded-lg border border-slate-200/60 bg-slate-50/40 px-4 py-3 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
+    <div class="flex shrink-0 flex-col gap-4 rounded-lg border border-slate-200/60 bg-slate-50/40 px-4 py-3 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Export
         </span>
+        <ExportFaq />
         {coreMode.value && (
           <span
             class={clsx(
@@ -273,11 +276,36 @@ export function ExportPanel() {
         )}
       </div>
 
-      <div class="flex flex-col gap-4 border-t border-slate-200/60 pt-2 sm:flex-row sm:items-center dark:border-slate-700/60">
+      <div class="mt-4 flex flex-col gap-4 border-t border-slate-200/60 pt-6 sm:flex-row sm:items-center dark:border-slate-700/60">
+        {exporting.value ? (
+          <button
+            onClick={handleCancel}
+            class="inline-flex h-10 w-42 items-center justify-center gap-1.5 rounded bg-slate-100 px-4 text-base font-semibold text-slate-600 transition-colors hover:bg-red-100 hover:text-red-600 hover:duration-0 dark:bg-slate-800/50 dark:text-slate-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+          >
+            <X class="h-4 w-4" />
+            Cancel Export
+          </button>
+        ) : (
+          <button
+            onClick={handleExport}
+            onMouseEnter={initFFmpeg}
+            disabled={!hasSegments}
+            class="inline-flex h-10 w-42 items-center justify-center gap-2 rounded bg-violet-500 px-4 text-base font-semibold text-white transition-colors hover:bg-violet-600 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <CirclePlay class="h-4 w-4" />
+            Export Video
+          </button>
+        )}
         <div class="flex min-h-13 min-w-0 flex-1 flex-col gap-1">
           <div class="mb-1 text-sm text-slate-500 dark:text-slate-400">
-            Estimated export size:{' '}
-            {estimatedSize > 0 ? `${Math.round(estimatedSize / 1024 / 1024)} MB` : '–'}
+            {hasSegments ? (
+              <>
+                Estimated export size:{' '}
+                {estimatedSize > 0 ? `${Math.round(estimatedSize / 1024 / 1024)} MB` : '–'}
+              </>
+            ) : (
+              'Add a clip to the timeline to export.'
+            )}
           </div>
           {feasibility.band !== 'green' && (
             <div
@@ -302,9 +330,10 @@ export function ExportPanel() {
               </div>
             </div>
           )}
-          {exportFormat.value === 'webm' &&
+          {hasSegments &&
+            exportFormat.value === 'webm' &&
             webmCodec.value === 'vp9' &&
-            coreMode.value !== 'multithread' && (
+            !webcodecsAvailable && (
               <div
                 class="rounded-md bg-yellow-50 p-2 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300"
                 role="alert"
@@ -314,9 +343,10 @@ export function ExportPanel() {
                     <AlertTriangle class="m-0.5 size-4.5 flex-none shrink-0" />
                   </span>
                   <div>
-                    <div class="font-medium">VP9 may fail without multi-threading</div>
+                    <div class="font-medium">VP9 may be slow or fail in this browser</div>
                     <div class="text-sm text-current/90">
-                      VP9 encoding often runs out of memory in this browser. VP8 is recommended.
+                      This browser has no native video encoder, so VP9 falls back to in-browser
+                      encoding that can run out of memory. Try VP8 or a smaller resolution.
                     </div>
                   </div>
                 </div>
@@ -362,26 +392,6 @@ export function ExportPanel() {
             </div>
           )}
         </div>
-
-        {exporting.value ? (
-          <button
-            onClick={handleCancel}
-            class="inline-flex h-10 w-42 items-center justify-center gap-1.5 rounded bg-slate-100 px-4 text-base font-semibold text-slate-600 transition-colors hover:bg-red-100 hover:text-red-600 hover:duration-0 dark:bg-slate-800/50 dark:text-slate-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-          >
-            <X class="h-4 w-4" />
-            Cancel Export
-          </button>
-        ) : (
-          <button
-            onClick={handleExport}
-            onMouseEnter={initFFmpeg}
-            disabled={!hasSegments}
-            class="inline-flex h-10 w-42 items-center justify-center gap-2 rounded bg-violet-500 px-4 text-base font-semibold text-white transition-colors hover:bg-violet-600 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <CirclePlay class="h-4 w-4" />
-            Export Video
-          </button>
-        )}
       </div>
     </div>
   )

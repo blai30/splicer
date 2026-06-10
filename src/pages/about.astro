@@ -1,0 +1,167 @@
+---
+import Layout from '@/layouts/Layout.astro'
+import '@/styles/global.css'
+
+const pageTitle = 'Export & Quality Guide | Splicer'
+const pageDescription =
+  'How Splicer exports video: why exporting re-encodes, what WebM and the quality presets actually do, and how to avoid quality loss.'
+---
+
+<Layout title={pageTitle} description={pageDescription}>
+  <main class="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-8 md:py-12">
+    <article class="flex flex-col gap-6">
+      <div class="flex flex-col gap-2">
+        <h1 class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+          Export &amp; quality guide
+        </h1>
+        <p class="text-base leading-relaxed text-slate-600 dark:text-slate-400">
+          A quick guide to what happens when you export, why a WebM file is not automatically
+          smaller or higher quality, and how to keep as much quality as possible.
+        </p>
+      </div>
+
+      <div class="flex flex-col gap-2 rounded-lg border border-slate-200/70 bg-slate-50/60 p-4 dark:border-slate-700/60 dark:bg-slate-900/40">
+        <p class="font-medium text-slate-900 dark:text-slate-50">
+          Exporting to WebM always re-encodes your video, which loses a little quality:
+        </p>
+        <ul class="flex flex-col gap-1.5 pl-5 text-slate-700 dark:text-slate-300">
+          <li class="list-disc leading-relaxed">
+            Your source is already lossy. Its original codec (for example the H.264 in an MP4)
+            discarded data when the video was first encoded.
+          </li>
+          <li class="list-disc leading-relaxed">
+            Exporting to WebM decodes the video back to raw pixels, then re-encodes them with VP8 or
+            VP9. That second encode is also lossy. This is called generation loss, like photocopying
+            a photocopy.
+          </li>
+          <li class="list-disc leading-relaxed">
+            The only way to lose zero quality is to not re-encode at all (stream-copy). But H.264
+            cannot live in a WebM container, so WebM export always re-encodes. There is no zero-loss
+            path from an MP4 to WebM.
+          </li>
+        </ul>
+      </div>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
+          Exporting usually re-encodes your video
+        </h2>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          When you export to a different format than your source, Splicer decodes your video back
+          to raw frames and encodes them again from scratch. Your source file is already
+          compressed (and that first compression already discarded some detail), so this second
+          encode is a fresh round of compression on top of it. That is the key thing to keep in
+          mind: most exports are a re-encode, not a copy.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
+          WebM is a container, not a codec
+        </h2>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          A &ldquo;.webm&rdquo; file is just a box. The efficiency comes from the codec inside it,
+          which for WebM is VP8 or VP9. Choosing WebM does not by itself make a file smaller or
+          better. What matters is which codec you use and how it is configured.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
+          Why &ldquo;smaller and lossless&rdquo; is not possible when re-encoding
+        </h2>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          Re-encoding an already-compressed video is like photocopying a photocopy: each pass
+          loses a little, an effect called generation loss. You cannot add back detail that was
+          already thrown away, so a re-encode can never increase quality. Getting a smaller file
+          with truly zero quality loss is not achievable by re-encoding. The only way to lose
+          nothing is to not re-encode at all (see below).
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
+          Is WebM actually more efficient?
+        </h2>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          It depends entirely on the codec, not the container:
+        </p>
+        <ul class="flex flex-col gap-1.5 pl-5 text-slate-700 dark:text-slate-300">
+          <li class="list-disc leading-relaxed">
+            <span class="font-medium">VP8</span> is roughly the same generation as the H.264 found
+            in most MP4s, so it is often no smaller (and can be larger) than your source.
+          </li>
+          <li class="list-disc leading-relaxed">
+            <span class="font-medium">VP9</span> is meaningfully more efficient, comparable to
+            H.265 / HEVC, and can produce smaller files at similar visual quality.
+          </li>
+          <li class="list-disc leading-relaxed">
+            <span class="font-medium">AV1</span> is more efficient still, but is out of scope for
+            this app.
+          </li>
+        </ul>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          So a smaller file generally means VP9, applied to a source that was not already encoded
+          very efficiently, and accepting a small amount of generation loss.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
+          What the quality presets do
+        </h2>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          The Lossless, High, Medium, and Low presets set the target bitrate for the re-encode,
+          from highest to lowest. More bitrate means better quality and a larger file. One
+          important caveat: &ldquo;Lossless&rdquo; targets a very high bitrate for near-transparent
+          quality, but it is not mathematically lossless. If your goal is to keep every pixel
+          identical, a re-encode is not the way to do it.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
+          How to export with no quality loss
+        </h2>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          Export to the <span class="font-medium">same format as your source</span>, at
+          <span class="font-medium">Lossless</span> quality, with FPS left on
+          <span class="font-medium">Original</span> and without cropping or muting. Under those
+          conditions Splicer copies the video stream directly instead of re-encoding it, so there
+          is no quality loss and the export finishes almost instantly. Trimming is still allowed in
+          this mode. Changing the format, changing the FPS, cropping, or muting a segment all force
+          a re-encode and therefore some quality loss.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
+          Will exporting make my file smaller?
+        </h2>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          Only sometimes. If your source was encoded inefficiently (a high bitrate for its
+          content) and you re-encode it with an efficient codec like VP9, you can get a smaller
+          file that looks nearly identical. If your source is already well compressed, re-encoding
+          it may make it larger, not smaller.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2 rounded-lg border border-slate-200/70 bg-slate-50/60 p-4 dark:border-slate-700/60 dark:bg-slate-900/40">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">Recommendations</h2>
+        <ul class="flex flex-col gap-1.5 pl-5 text-slate-700 dark:text-slate-300">
+          <li class="list-disc leading-relaxed">
+            Want zero quality loss? Export to the same format as your source at Lossless quality
+            with Original FPS and no crop or mute.
+          </li>
+          <li class="list-disc leading-relaxed">
+            Want a smaller file that looks the same? Use WebM with VP9 and accept a small,
+            usually invisible, amount of generation loss.
+          </li>
+          <li class="list-disc leading-relaxed">
+            Avoid VP8 if your goal is a smaller file; it rarely beats the H.264 in a typical MP4.
+          </li>
+        </ul>
+      </section>
+    </article>
+  </main>
+</Layout>
