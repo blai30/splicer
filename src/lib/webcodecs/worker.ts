@@ -1,19 +1,30 @@
-import { probeAudioFormat, runAudioPipeline, type AudioFormat } from './audioPipeline'
-import { createDemuxer, probeContainer } from './demux'
+import { registerAacEncoder } from '@mediabunny/aac-encoder'
+import { canEncodeAudio } from 'mediabunny'
+
+import { encodeAudioSlice } from './audioEncode'
 import { buildEditPlan } from './editPlan'
-import { createWebmMuxer } from './muxWebm'
+import { openSource } from './mediabunnyInput'
+import { createOutput } from './mediabunnyOutput'
 import {
   UnsupportedSourceError,
   type ExportJob,
   type WorkerRequest,
   type WorkerResponse,
 } from './protocol'
-import { runVideoPipeline } from './videoPipeline'
+import { encodeVideoSlice } from './videoEncode'
 
 let canceled = false
 
 function post(message: WorkerResponse, transfer?: Transferable[]): void {
   ;(self as unknown as Worker).postMessage(message, transfer ?? [])
+}
+
+// AAC encode is not native in every browser (notably Firefox). Register the
+// mediabunny AAC encoder extension only when the browser lacks native support.
+async function ensureAacEncoder(job: ExportJob): Promise<void> {
+  if (job.audioCodec === 'aac' && !(await canEncodeAudio('aac'))) {
+    registerAacEncoder()
+  }
 }
 
 // Total output frames estimated from slice durations times target fps, used to
@@ -27,76 +38,36 @@ function estimateTotalFrames(job: ExportJob): number {
 
 async function runExport(job: ExportJob): Promise<void> {
   const plan = buildEditPlan(job)
+  await ensureAacEncoder(job)
+
+  const out = createOutput(plan, job.container)
+  await out.start()
+
   const totalFrames = estimateTotalFrames(job)
   let framesEncoded = 0
   let lastReported = 0
-
   const onFrameEncoded = () => {
     framesEncoded++
     const progress = Math.min(0.99, framesEncoded / totalFrames)
-    // Throttle progress posts to whole-percent changes.
     if (progress - lastReported >= 0.01) {
       lastReported = progress
       post({ type: 'progress', progress })
     }
   }
 
-  // Initialize one demuxer per source.
-  const demuxers = await Promise.all(
-    job.sources.map(async (source) => {
-      const container = await probeContainer(source.file)
-      if (container === 'unsupported') {
-        throw new UnsupportedSourceError('Source container is not demuxable')
-      }
-      const demuxer = await createDemuxer(container)
-      const info = await demuxer.init(source.file)
-      return { demuxer, info }
-    })
-  )
+  const shouldCancel = () => canceled
 
-  // Determine the real audio output format from the decoder (container metadata
-  // can disagree) before configuring the muxer and encoder.
-  let audioFormat: AudioFormat = { sampleRate: 48000, numberOfChannels: 2 }
-  if (plan.hasAudioOutput) {
-    for (const { demuxer, info } of demuxers) {
-      if (!info.audio) continue
-      const probed = await probeAudioFormat(demuxer, info.audio)
-      if (probed) {
-        audioFormat = probed
-        break
-      }
-    }
-  }
-
-  const muxer = createWebmMuxer(plan, audioFormat.sampleRate, audioFormat.numberOfChannels)
-
-  for (let sourceIndex = 0; sourceIndex < job.sources.length; sourceIndex++) {
+  // Slices are in output-timeline order with cumulative timestamps, so feeding
+  // them sequentially produces the concatenated output.
+  for (const slice of plan.slices) {
     if (canceled) {
       post({ type: 'canceled' })
       return
     }
-    const { demuxer, info } = demuxers[sourceIndex]
-
-    await runVideoPipeline({
-      demuxer,
-      videoInfo: info.video,
-      plan,
-      sourceIndex,
-      muxer,
-      onFrameEncoded,
-      shouldCancel: () => canceled,
-    })
-
-    if (plan.hasAudioOutput && info.audio) {
-      await runAudioPipeline({
-        demuxer,
-        audioInfo: info.audio,
-        format: audioFormat,
-        plan,
-        sourceIndex,
-        muxer,
-        shouldCancel: () => canceled,
-      })
+    const reader = await openSource(job.sources[slice.sourceIndex].file)
+    await encodeVideoSlice({ reader, slice, plan, out, onFrameEncoded, shouldCancel })
+    if (plan.hasAudioOutput) {
+      await encodeAudioSlice({ reader, slice, out, shouldCancel })
     }
   }
 
@@ -105,7 +76,7 @@ async function runExport(job: ExportJob): Promise<void> {
     return
   }
 
-  const buffer = muxer.finalize()
+  const buffer = await out.finalize()
   post({ type: 'progress', progress: 1 })
   post({ type: 'done', buffer }, [buffer])
 }
@@ -120,16 +91,14 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     canceled = false
     runExport(message.job).catch((err: unknown) => {
       const unsupported = err instanceof UnsupportedSourceError
-      const text =
-        err instanceof Error && err.message === 'canceled'
-          ? null
-          : err instanceof Error
-            ? err.message
-            : String(err)
-      if (text === null) {
+      if (err instanceof Error && err.message === 'canceled') {
         post({ type: 'canceled' })
       } else {
-        post({ type: 'error', message: text, unsupported })
+        post({
+          type: 'error',
+          message: err instanceof Error ? err.message : String(err),
+          unsupported,
+        })
       }
     })
   }

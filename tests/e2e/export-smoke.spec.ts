@@ -21,4 +21,8 @@ test('imports a clip and exports MP4', async ({ page }) => {
   await expect(page.getByRole('link', { name: /\.mp4/i }).first()).toBeVisible({
     timeout: 60_000,
   })
+
+  // Default quality is lossless on a same-container trim, so this must route to
+  // the ffmpeg stream-copy fast path, not a WebCodecs re-encode.
+  await expect(page.getByText('WebCodecs')).toHaveCount(0)
 })

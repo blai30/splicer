@@ -50,16 +50,16 @@ export type SegmentLayoutItem = {
   endX: number
 }
 
-export type ExportFormat = 'mp4' | 'mkv' | 'mov' | 'avi' | 'webm'
+export type ExportFormat = 'mp4' | 'mkv' | 'mov' | 'webm'
 export type Quality = 'lossless' | 'high' | 'medium' | 'low'
 export type Framerate = 'original' | '60' | '30' | '24'
 export type WebmCodec = 'vp9' | 'vp8'
+export type MkvCodec = 'h264' | 'vp9'
 
 // MIME type map for exported container formats
 export const MIME_TYPES: Record<ExportFormat, string> = {
   mp4: 'video/mp4',
   mkv: 'video/x-matroska',
   mov: 'video/quicktime',
-  avi: 'video/x-msvideo',
   webm: 'video/webm',
 }

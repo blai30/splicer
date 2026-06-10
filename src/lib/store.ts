@@ -8,6 +8,7 @@ import type {
   ExportFormat,
   ExportRecord,
   Framerate,
+  MkvCodec,
   Quality,
   Segment,
   WebmCodec,
@@ -110,6 +111,9 @@ export const framerate = signal<Framerate>(loadFromStorage('framerate', 'origina
 // smaller files at similar quality. VP8 stays available for faster encoding or
 // browsers that lack WebCodecs.
 export const webmCodec = signal<WebmCodec>(loadFromStorage('webmCodec', 'vp9'))
+// MKV can carry H.264/AAC (broadest compatibility) or VP9/Opus (reuses the WebM
+// encoder path). H.264 is the default.
+export const mkvCodec = signal<MkvCodec>(loadFromStorage('mkvCodec', 'h264'))
 
 export const previewVolume = signal(loadFromStorage('previewVolume', 0.5))
 export const previewMuted = signal(loadFromStorage('previewMuted', false))
@@ -129,6 +133,7 @@ persistSignal('exportFormat', exportFormat)
 persistSignal('quality', quality)
 persistSignal('framerate', framerate)
 persistSignal('webmCodec', webmCodec)
+persistSignal('mkvCodec', mkvCodec)
 persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
 persistSignal('logPanelVisible', logPanelVisible)

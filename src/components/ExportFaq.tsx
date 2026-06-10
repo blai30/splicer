@@ -77,6 +77,16 @@ export function ExportFaq({ class: className }: { class?: string }) {
           </div>
 
           <div class="flex flex-col gap-1 p-4">
+            <div class="mb-2 rounded-md border border-violet-200/80 bg-violet-50 p-3 text-sm leading-relaxed text-slate-700 dark:border-violet-800/50 dark:bg-violet-900/20 dark:text-slate-200">
+              <p>
+                <span class="font-semibold text-violet-700 dark:text-violet-300">TL;DR:</span> For
+                the fastest, lossless export, keep the format the same as your source video and leave
+                quality on Lossless and FPS on Original (no crop or mute). Splicer then copies the
+                video stream directly instead of re-encoding, so it finishes almost instantly with no
+                quality loss. Changing the format forces a slower re-encode.
+              </p>
+            </div>
+
             <div class="mb-2 rounded-md border border-slate-200/70 bg-slate-50 p-3 text-sm leading-relaxed text-slate-600 dark:border-slate-700/60 dark:bg-slate-800/40 dark:text-slate-300">
               <p class="mb-2 font-medium text-slate-800 dark:text-slate-100">
                 Exporting to WebM always re-encodes your video, which loses a little quality:

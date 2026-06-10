@@ -1,4 +1,5 @@
-import type { Framerate, Quality, WebmCodec } from '../types'
+import type { MbAudioCodec, MbVideoCodec } from '../exportCodecs'
+import type { Framerate, Quality } from '../types'
 import type { ExportJob, JobSlice } from './protocol'
 
 export type EditSlice = JobSlice & {
@@ -15,7 +16,8 @@ export type EditPlan = {
   videoBitrate: number
   audioBitrate: number
   keyFrameIntervalUs: number
-  videoCodec: WebmCodec
+  videoCodec: MbVideoCodec
+  audioCodec: MbAudioCodec
   hasAudioOutput: boolean
 }
 
@@ -110,7 +112,8 @@ export function buildEditPlan(job: ExportJob): EditPlan {
     videoBitrate,
     audioBitrate: AUDIO_BITRATE[job.quality],
     keyFrameIntervalUs: KEYFRAME_INTERVAL_US,
-    videoCodec: job.webmCodec,
+    videoCodec: job.videoCodec,
+    audioCodec: job.audioCodec,
     hasAudioOutput,
   }
 }

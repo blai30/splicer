@@ -21,7 +21,6 @@ const FORMAT_WEIGHT: Record<ExportFormat, number> = {
   mp4: 1,
   mkv: 1,
   mov: 1,
-  avi: 1.2,
   webm: 4,
 }
 
