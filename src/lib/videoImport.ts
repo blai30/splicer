@@ -6,7 +6,13 @@ import { clips, getClipById, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
 import type { Clip } from '@/lib/types'
 
-export const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska']
+export const ACCEPTED = [
+  'video/mp4',
+  'video/quicktime',
+  'video/x-msvideo',
+  'video/x-matroska',
+  'video/webm',
+]
 
 export function isVideoFile(file: File): boolean {
   return ACCEPTED.includes(file.type) || /\.(mp4|mkv|mov|avi|webm)$/i.test(file.name)
@@ -237,10 +243,11 @@ export async function importAndAppend(file: File): Promise<void> {
     info('Import succeeded', { name: file.name, duration })
   } catch (err) {
     // Log but keep going so batch imports continue with the remaining files.
-    logError('Import failed', {
-      name: file.name,
-      message: err instanceof Error ? err.message : String(err),
-    })
+    const rawMessage = err instanceof Error ? err.message : String(err)
+    const friendly = /metadata/i.test(rawMessage)
+      ? `Could not read "${file.name}". The codec (e.g. AV1) may not be supported by this browser.`
+      : rawMessage
+    logError('Import failed', { name: file.name, message: friendly })
   } finally {
     if (!imported) URL.revokeObjectURL(objectUrl)
     importing.value = false

@@ -2,10 +2,14 @@ import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { CirclePlay, X, AlertTriangle } from 'lucide-preact'
 
+import { assessFeasibility } from '@/lib/exportFeasibility'
 import { exportVideo, cancelExport, getFfmpeg } from '@/lib/ffmpeg'
 import { info, error as logError } from '@/lib/logger'
 import {
   clips,
+  coreMode,
+  coreModeReason,
+  exportEtaSeconds,
   exportFormat,
   addExportRecord,
   ffmpegProgress,
@@ -13,8 +17,9 @@ import {
   framerate,
   quality,
   timeline,
+  webmCodec,
 } from '@/lib/store'
-import type { ExportFormat, ExportRecord, Framerate, Quality } from '@/lib/types'
+import type { ExportFormat, ExportRecord, Framerate, Quality, WebmCodec } from '@/lib/types'
 
 function makeFilename(format: ExportFormat): string {
   const timestamp = new Date()
@@ -158,12 +163,15 @@ export function ExportPanel() {
     { value: '30', label: '30 fps' },
     { value: '24', label: '24 fps' },
   ]
+  const webmCodecs: { value: WebmCodec; label: string }[] = [
+    { value: 'vp8', label: 'VP8 (recommended)' },
+    { value: 'vp9', label: 'VP9 (slower, may fail)' },
+  ]
 
   const hasSegments = timeline.value.length > 0
   const currentProgress = ffmpegProgress.value
   const progressPct = Math.max(0, Math.min(100, Math.round(currentProgress * 100)))
   const estimatedSize = estimateSize()
-  const estimatedSizeMB = Math.round((estimatedSize / 1024 / 1024) * 10) / 10
 
   const totalDuration = timeline.value.reduce(
     (acc, segment) => acc + (segment.endTime - segment.startTime),
@@ -182,16 +190,13 @@ export function ExportPanel() {
     return { width, height }
   })()
 
-  // Heuristics for WebM/VP9 in-browser limits. Tunable thresholds.
-  const webmWarnMB = 50
-  const webmDangerMB = 150
-  let warnSeverity: 'none' | 'warn' | 'danger' = 'none'
-  if (exportFormat.value === 'webm') {
-    if (estimatedSizeMB > webmDangerMB || maxClip.width >= 2160 || totalDuration > 120)
-      warnSeverity = 'danger'
-    else if (estimatedSizeMB > webmWarnMB || maxClip.width >= 1280 || totalDuration > 30)
-      warnSeverity = 'warn'
-  }
+  const feasibility = assessFeasibility({
+    width: maxClip.width,
+    height: maxClip.height,
+    durationSec: totalDuration,
+    format: exportFormat.value,
+    threads: coreMode.value === 'multithread' ? 8 : null,
+  })
 
   if (!hasSegments) return null
 
@@ -201,6 +206,19 @@ export function ExportPanel() {
         <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Export
         </span>
+        {coreMode.value && (
+          <span
+            class={clsx(
+              'rounded px-2 py-0.5 text-xs font-medium',
+              coreMode.value === 'multithread'
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+            )}
+            title={coreModeReason.value || undefined}
+          >
+            {coreMode.value === 'multithread' ? 'multi-threaded' : 'single-threaded'}
+          </span>
+        )}
       </div>
 
       <div class="grid gap-2">
@@ -228,6 +246,16 @@ export function ExportPanel() {
             framerate.value = value
           }}
         />
+        {exportFormat.value === 'webm' && (
+          <OptionButtonGroup
+            label="Codec"
+            options={webmCodecs}
+            selected={webmCodec.value}
+            onSelect={(value) => {
+              webmCodec.value = value
+            }}
+          />
+        )}
       </div>
 
       <div class="flex flex-col gap-4 border-t border-slate-200/60 pt-2 sm:flex-row sm:items-center dark:border-slate-700/60">
@@ -236,11 +264,11 @@ export function ExportPanel() {
             Estimated export size:{' '}
             {estimatedSize > 0 ? `${Math.round(estimatedSize / 1024 / 1024)} MB` : '–'}
           </div>
-          {exportFormat.value === 'webm' && warnSeverity !== 'none' && (
+          {feasibility.band !== 'green' && (
             <div
               class={clsx(
                 'rounded-md p-2 text-sm',
-                warnSeverity === 'danger'
+                feasibility.band === 'red'
                   ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300'
                   : 'bg-yellow-50 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300'
               )}
@@ -252,17 +280,33 @@ export function ExportPanel() {
                 </span>
                 <div>
                   <div class="font-medium">
-                    {warnSeverity === 'danger'
-                      ? 'Export likely to fail'
-                      : 'Export may be slow or fail'}
+                    {feasibility.band === 'red' ? 'Export likely to fail' : 'Export may be slow'}
                   </div>
-                  <div class="text-sm text-current/90">
-                    WebM (VP9) encoding in the browser is CPU- and memory-intensive.
-                  </div>
+                  <div class="text-sm text-current/90">{feasibility.reason}</div>
                 </div>
               </div>
             </div>
           )}
+          {exportFormat.value === 'webm' &&
+            webmCodec.value === 'vp9' &&
+            coreMode.value !== 'multithread' && (
+              <div
+                class="rounded-md bg-yellow-50 p-2 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300"
+                role="alert"
+              >
+                <div class="flex items-start gap-2">
+                  <span class="flex h-lh items-center">
+                    <AlertTriangle class="m-0.5 size-4.5 flex-none shrink-0" />
+                  </span>
+                  <div>
+                    <div class="font-medium">VP9 may fail without multi-threading</div>
+                    <div class="text-sm text-current/90">
+                      VP9 encoding often runs out of memory in this browser. VP8 is recommended.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           {exporting.value && !ffmpegReady.value && (
             <div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
               <div class="h-2 w-2 animate-pulse rounded-full bg-violet-500" />
@@ -290,6 +334,11 @@ export function ExportPanel() {
               <span class="w-8 shrink-0 text-right text-sm text-slate-500 dark:text-slate-400">
                 {progressPct}%
               </span>
+              {exportEtaSeconds.value !== null && (
+                <span class="shrink-0 text-sm text-slate-500 tabular-nums dark:text-slate-400">
+                  ~{Math.max(1, Math.round(exportEtaSeconds.value))}s left
+                </span>
+              )}
             </div>
           )}
           {error.value && (

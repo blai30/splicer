@@ -1,9 +1,21 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 
+import { EtaTracker } from '@/lib/exportEta'
+import { nextRecoveryStep } from '@/lib/exportRecovery'
+import { encodeOptionsFor, isolationAvailable, computeThreadCount } from '@/lib/ffmpegCapabilities'
+import type { CoreMode, EncodeOptions } from '@/lib/ffmpegCapabilities'
 import { info, debug, warn, error as logError } from '@/lib/logger'
 import { assetPath } from '@/lib/paths'
-import { ffmpegProgress, ffmpegReady, getClipById } from '@/lib/store'
+import {
+  coreMode,
+  coreModeReason,
+  exportEtaSeconds,
+  ffmpegProgress,
+  ffmpegReady,
+  getClipById,
+  webmCodec,
+} from '@/lib/store'
 import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
 import { MIME_TYPES } from '@/lib/types'
 
@@ -60,51 +72,215 @@ function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
   return false
 }
 
+// Sticky for the rest of the session once a runtime MT failure forces a
+// downgrade; survives restartFfmpeg so we do not re-probe back into MT.
+let forceSingleThread = false
+
+// A wedged MT worker may never resolve OR reject load()/exec(); bound the probe
+// so a hang falls back to single-thread instead of bricking the whole app.
+const MT_PROBE_TIMEOUT_MS = 10_000
+
+// Remember a failed MT probe so users do not pay the 10s timeout every session.
+// Tagged with the core version so upgrading @ffmpeg/core-mt triggers a re-probe.
+const MT_PROBE_VERSION = '0.12.10'
+const MT_PROBE_KEY = 'splicer_mt_probe'
+
+function isMtKnownUnsupported(): boolean {
+  try {
+    return localStorage.getItem(MT_PROBE_KEY) === `unsupported:${MT_PROBE_VERSION}`
+  } catch {
+    return false
+  }
+}
+
+function rememberMtUnsupported(): void {
+  try {
+    localStorage.setItem(MT_PROBE_KEY, `unsupported:${MT_PROBE_VERSION}`)
+  } catch {}
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      }
+    )
+  })
+}
+
+function createInstance(): FFmpeg {
+  const ffmpeg = new FFmpeg()
+  ffmpeg.on('log', ({ message }) => {
+    debug('ffmpeg log', { message })
+    console.log('[FFMPEG]', message)
+    if (message.toLowerCase().includes('error') || message.toLowerCase().includes('notfound')) {
+      logError('ffmpeg log error', { message })
+    }
+  })
+  ffmpeg.on('progress', ({ progress }) => {
+    ffmpegProgress.value = progress
+    debug('ffmpeg progress', { progress })
+  })
+  return ffmpeg
+}
+
+// Probe MT viability on its own instance: load + a sub-second threaded smoke
+// encode, all under a timeout. Returns the ready instance, or null to fall back
+// (the throwaway instance is terminated so a partial load cannot leak).
+async function tryLoadMultithread(): Promise<FFmpeg | null> {
+  const ffmpeg = createInstance()
+  try {
+    await withTimeout(
+      (async () => {
+        await ffmpeg.load({
+          coreURL: assetPath('ffmpeg/mt/ffmpeg-core.js'),
+          wasmURL: assetPath('ffmpeg/mt/ffmpeg-core.wasm'),
+          workerURL: assetPath('ffmpeg/mt/ffmpeg-core.worker.js'),
+        })
+        // Use a realistic frame size and a modest thread count: row-mt across
+        // too few pixel rows (e.g. 16x16 with 8 threads) deadlocks libvpx and
+        // would reject a perfectly working MT core.
+        const threads = String(Math.min(4, Math.max(2, computeThreadCount())))
+        const exitCode = await ffmpeg.exec([
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=black:s=256x144:d=0.2',
+          '-frames:v',
+          '3',
+          '-c:v',
+          'libvpx-vp9',
+          '-row-mt',
+          '1',
+          '-cpu-used',
+          '5',
+          '-threads',
+          threads,
+          'smoke.webm',
+        ])
+        await deleteFilesBestEffort(ffmpeg, ['smoke.webm'])
+        if (exitCode !== 0) throw new Error(`smoke exit ${exitCode}`)
+      })(),
+      MT_PROBE_TIMEOUT_MS,
+      'MT core probe'
+    )
+    return ffmpeg
+  } catch (err) {
+    warn('MT core probe failed, falling back to single-thread', {
+      message: err instanceof Error ? err.message : String(err),
+    })
+    try {
+      ffmpeg.terminate()
+    } catch {}
+    return null
+  }
+}
+
 export async function getFfmpeg(): Promise<FFmpeg> {
   if (instance) return instance
   if (!loadingPromise) {
-    const ffmpeg = new FFmpeg()
-    info('Initializing FFmpeg')
-    ffmpeg.on('log', ({ message }) => {
-      debug('ffmpeg log', { message })
-      console.log('[FFMPEG]', message)
-      if (message.toLowerCase().includes('error') || message.toLowerCase().includes('notfound')) {
-        logError('ffmpeg log error', { message })
+    loadingPromise = (async () => {
+      info('Initializing FFmpeg')
+      let chosen: FFmpeg | null = null
+      let mode: CoreMode = 'singlethread'
+
+      if (!forceSingleThread && !isMtKnownUnsupported() && isolationAvailable()) {
+        chosen = await tryLoadMultithread()
+        if (chosen) {
+          mode = 'multithread'
+          coreModeReason.value = ''
+        } else {
+          // Cache the failure so the next session skips the slow probe entirely.
+          rememberMtUnsupported()
+          coreModeReason.value = 'Multi-threaded core unavailable in this browser'
+        }
+      } else if (forceSingleThread) {
+        coreModeReason.value = 'Multi-threaded export failed at runtime'
+      } else if (isMtKnownUnsupported()) {
+        coreModeReason.value = 'Multi-threaded core unavailable in this browser'
+      } else {
+        coreModeReason.value = 'Cross-origin isolation unavailable'
       }
-    })
-    ffmpeg.on('progress', ({ progress }) => {
-      ffmpegProgress.value = progress
-      debug('ffmpeg progress', { progress })
-    })
-    loadingPromise = ffmpeg
-      .load({
-        coreURL: assetPath('ffmpeg/ffmpeg-core.js'),
-        wasmURL: assetPath('ffmpeg/ffmpeg-core.wasm'),
-      })
-      .then(() => {
-        instance = ffmpeg
-        ffmpegReady.value = true
-        info('FFmpeg ready')
-        return ffmpeg
-      })
-      .catch((err) => {
-        loadingPromise = null
-        logError('FFmpeg load failed', {
-          message: err instanceof Error ? err.message : String(err),
+
+      if (!chosen) {
+        const ffmpeg = createInstance()
+        await ffmpeg.load({
+          coreURL: assetPath('ffmpeg/ffmpeg-core.js'),
+          wasmURL: assetPath('ffmpeg/ffmpeg-core.wasm'),
         })
-        throw err
+        chosen = ffmpeg
+        mode = 'singlethread'
+      }
+
+      instance = chosen
+      coreMode.value = mode
+      ffmpegReady.value = true
+      info('FFmpeg ready', { mode })
+      return chosen
+    })().catch((err) => {
+      loadingPromise = null
+      logError('FFmpeg load failed', {
+        message: err instanceof Error ? err.message : String(err),
       })
+      throw err
+    })
   }
   return loadingPromise
 }
 
-function getOutputArgs(format: ExportFormat, quality: Quality, fps: Framerate): string[] {
+function getOutputArgs(
+  format: ExportFormat,
+  quality: Quality,
+  fps: Framerate,
+  options: EncodeOptions
+): string[] {
   const fpsArgs = fps !== 'original' ? ['-r', fps] : []
+  const threadArgs =
+    options.threads && options.threads > 1
+      ? ['-row-mt', '1', '-threads', String(options.threads)]
+      : []
 
   if (format === 'webm') {
+    // VP8: markedly faster to encode than VP9 at a size cost.
+    if (options.webmCodec === 'vp8') {
+      const vp8Crf: Record<Quality, string> = {
+        lossless: '4',
+        high: '10',
+        medium: '20',
+        low: '30',
+      }
+      return [
+        '-c:v',
+        'libvpx',
+        '-b:v',
+        '0',
+        '-crf',
+        vp8Crf[quality],
+        ...threadArgs,
+        '-c:a',
+        'libopus',
+        ...fpsArgs,
+      ]
+    }
+
     const crf: Record<Quality, string> = { lossless: '0', high: '20', medium: '31', low: '41' }
+    // cpu-used is the real speed/quality dial for libvpx; deadline best is
+    // dropped entirely because it does not finish in WASM.
+    const cpuUsed: Record<Quality, string> = {
+      lossless: '2',
+      high: '2',
+      medium: '3',
+      low: '5',
+    }
     const deadline: Record<Quality, string> = {
-      lossless: 'best',
+      lossless: 'good',
       high: 'good',
       medium: 'good',
       low: 'realtime',
@@ -118,6 +294,9 @@ function getOutputArgs(format: ExportFormat, quality: Quality, fps: Framerate): 
       crf[quality],
       '-deadline',
       deadline[quality],
+      '-cpu-used',
+      cpuUsed[quality],
+      ...threadArgs,
       '-c:a',
       'libopus',
       ...fpsArgs,
@@ -173,6 +352,7 @@ export function cancelExport(): void {
     ffmpegReady.value = false
   }
   loadingPromise = null
+  coreMode.value = null
   ffmpegProgress.value = 0
   warn('Export canceled / FFmpeg terminated')
 }
@@ -316,7 +496,8 @@ function planFullEncode(
   format: ExportFormat,
   quality: Quality,
   fps: Framerate,
-  runId: string
+  runId: string,
+  options: EncodeOptions
 ): ExportPlan {
   const inputFiles: ExportPlan['inputFiles'] = []
   const filterParts: string[] = []
@@ -381,7 +562,7 @@ function planFullEncode(
         '[outv]',
         '-map',
         '[outa]',
-        ...getOutputArgs(format, quality, fps),
+        ...getOutputArgs(format, quality, fps, options),
         outputFile,
       ],
     ],
@@ -395,7 +576,8 @@ export function planExport(
   format: ExportFormat,
   quality: Quality,
   fps: Framerate,
-  runId: string
+  runId: string,
+  options: EncodeOptions
 ): ExportPlan {
   // Use stream copy when lossless + original fps + no per-segment muting
   if (quality === 'lossless' && fps === 'original' && canUseStreamCopy(segments, format)) {
@@ -414,7 +596,7 @@ export function planExport(
     if (canMutedCopy) return planMuteStreamCopy(segments, format, runId)
   }
 
-  return planFullEncode(segments, format, quality, fps, runId)
+  return planFullEncode(segments, format, quality, fps, runId, options)
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +609,16 @@ async function runExport(plan: ExportPlan): Promise<{ url: string; size: number 
 
   const ffmpeg = await getFfmpeg()
   ffmpegProgress.value = 0
+
+  // Per-run ETA listener. The global progress handler in getFfmpeg keeps
+  // driving ffmpegProgress; this one only feeds the ETA tracker.
+  const eta = new EtaTracker()
+  exportEtaSeconds.value = null
+  const onProgress = ({ progress }: { progress: number }) => {
+    eta.sample(progress, performance.now())
+    exportEtaSeconds.value = eta.etaSeconds(progress, performance.now())
+  }
+  ffmpeg.on('progress', onProgress)
 
   const tempFiles: string[] = []
 
@@ -461,6 +653,8 @@ async function runExport(plan: ExportPlan): Promise<{ url: string; size: number 
     ffmpegProgress.value = 1
     return { url: URL.createObjectURL(blob), size: blob.size }
   } finally {
+    ffmpeg.off('progress', onProgress)
+    exportEtaSeconds.value = null
     await deleteFilesBestEffort(ffmpeg, [...tempFiles, ...plan.intermediateFiles, plan.outputFile])
   }
 }
@@ -468,6 +662,16 @@ async function runExport(plan: ExportPlan): Promise<{ url: string; size: number 
 function isWasmOomError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
   return message.toLowerCase().includes('memory access out of bounds')
+}
+
+function isWorkerThreadError(err: unknown): boolean {
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  return (
+    message.includes('worker') ||
+    message.includes('pthread') ||
+    message.includes('atomics') ||
+    message.includes('sharedarraybuffer')
+  )
 }
 
 async function restartFfmpeg(): Promise<void> {
@@ -492,20 +696,49 @@ export async function exportVideo(
   if (segments.length === 0) throw new Error('No segments')
 
   const runId = crypto.randomUUID().replace(/-/g, '')
-  const plan = planExport(segments, format, quality, fps, runId)
+  const mode = coreMode.value ?? 'singlethread'
+  const options = encodeOptionsFor(mode, webmCodec.value)
 
-  try {
-    return await runExport(plan)
-  } catch (err) {
-    if (!isWasmOomError(err)) throw err
-    // WASM OOM crash: restart the FFmpeg instance and retry the run once.
-    console.warn('[FFMPEG] memory OOB detected - restarting ffmpeg and retrying')
+  let activeQuality = quality
+  let attempt = 0
+
+  while (true) {
+    const plan = planExport(segments, format, activeQuality, fps, runId, options)
     try {
-      await restartFfmpeg()
-    } catch (restartErr) {
-      console.error('[FFMPEG] failed to restart ffmpeg', restartErr)
-      throw err
+      return await runExport(plan)
+    } catch (err) {
+      if (isWorkerThreadError(err) && coreMode.value === 'multithread') {
+        warn('MT worker error mid-export, downgrading to single-thread', {
+          message: err instanceof Error ? err.message : String(err),
+        })
+        forceSingleThread = true
+        coreMode.value = 'singlethread'
+        coreModeReason.value = 'Multi-threaded export failed at runtime'
+        await restartFfmpeg()
+        // Rebuild options for single-thread and retry the same quality once.
+        options.threads = null
+        continue
+      }
+      if (!isWasmOomError(err)) throw err
+      console.warn('[FFMPEG] memory OOB detected - attempting recovery')
+      try {
+        await restartFfmpeg()
+      } catch (restartErr) {
+        console.error('[FFMPEG] failed to restart ffmpeg', restartErr)
+        throw err
+      }
+      const step = nextRecoveryStep({ quality: activeQuality }, attempt)
+      if (!step) {
+        throw new Error(
+          `Ran out of memory encoding ${format} at ${activeQuality}. Try a lower resolution, a faster preset, or VP8 for WebM.`
+        )
+      }
+      warn('Retrying export at reduced quality after OOM', {
+        from: activeQuality,
+        to: step.quality,
+      })
+      activeQuality = step.quality
+      attempt++
     }
-    return runExport(plan)
   }
 }

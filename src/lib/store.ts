@@ -1,6 +1,7 @@
 import type { Signal } from '@preact/signals'
 import { effect, signal } from '@preact/signals'
 
+import type { CoreMode } from '@/lib/ffmpegCapabilities'
 import type {
   Clip,
   DragState,
@@ -9,6 +10,7 @@ import type {
   Framerate,
   Quality,
   Segment,
+  WebmCodec,
 } from '@/lib/types'
 
 const PERSIST_KEY = 'splicer_state'
@@ -42,6 +44,14 @@ export const playheadTime = signal<number>(0)
 export const selectedSegmentId = signal<string | null>(null)
 export const ffmpegReady = signal<boolean>(false)
 export const ffmpegProgress = signal<number>(0)
+
+// Which ffmpeg core is in use this session, and why single-thread was forced
+// (empty when multithread or not yet decided).
+export const coreMode = signal<CoreMode | null>(null)
+export const coreModeReason = signal<string>('')
+
+// ETA in seconds during an active export (null when unknown).
+export const exportEtaSeconds = signal<number | null>(null)
 
 export const exportHistory = signal<ExportRecord[]>([])
 
@@ -92,6 +102,9 @@ export function getClipById(id: string): Clip | undefined {
 export const exportFormat = signal<ExportFormat>(loadFromStorage('exportFormat', 'mp4'))
 export const quality = signal<Quality>(loadFromStorage('quality', 'lossless'))
 export const framerate = signal<Framerate>(loadFromStorage('framerate', 'original'))
+// VP8 is the default: in-browser VP9 (single-thread core) reliably OOMs, while
+// VP8 encodes quickly and successfully. VP9 stays available as an opt-in.
+export const webmCodec = signal<WebmCodec>(loadFromStorage('webmCodec', 'vp8'))
 
 export const previewVolume = signal(loadFromStorage('previewVolume', 0.5))
 export const previewMuted = signal(loadFromStorage('previewMuted', false))
@@ -110,6 +123,7 @@ export const currentSegmentDuration = signal(0)
 persistSignal('exportFormat', exportFormat)
 persistSignal('quality', quality)
 persistSignal('framerate', framerate)
+persistSignal('webmCodec', webmCodec)
 persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
 persistSignal('logPanelVisible', logPanelVisible)
