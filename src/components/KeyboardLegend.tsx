@@ -4,16 +4,7 @@ import { X } from 'lucide-preact'
 import { createPortal } from 'preact/compat'
 import { useEffect } from 'preact/hooks'
 
-const SHORTCUTS = [
-  { key: 'Space', description: 'Play / Pause' },
-  { key: 'I', description: 'Set In-Point' },
-  { key: 'O', description: 'Set Out-Point' },
-  { key: 'C', description: 'Cut at Playhead' },
-  { key: 'Delete', description: 'Delete Segment' },
-  { key: 'Ctrl +', description: 'Zoom In' },
-  { key: 'Ctrl -', description: 'Zoom Out' },
-  { key: '← →', description: 'Frame Step' },
-]
+import { SHORTCUTS } from '@/lib/shortcuts'
 
 export function KeyboardLegend({ class: className }: { class?: string }) {
   const isOpen = useSignal(false)
@@ -64,7 +55,7 @@ export function KeyboardLegend({ class: className }: { class?: string }) {
                   {shortcut.description}
                 </span>
                 <kbd class="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-900 dark:bg-slate-800 dark:text-slate-100">
-                  {shortcut.key}
+                  {shortcut.display}
                 </kbd>
               </div>
             ))}

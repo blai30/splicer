@@ -14,22 +14,17 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { SegmentBlock } from '@/components/SegmentBlock'
 import { ZoomSlider } from '@/components/ZoomSlider'
+import { seek } from '@/lib/playback'
 import {
   GAP_PX,
   PADDING_PX,
   ZOOM_MAX,
   ZOOM_MIN,
-  cutAtPlayhead,
-  deleteSegment,
   dragState,
   playheadTime,
   pxPerSec,
   selectedSegmentId,
-  setInPoint,
-  setOutPoint,
   timeline,
-  toggleMute,
-  videoEl,
 } from '@/lib/store'
 import {
   computeZoomScroll,
@@ -37,9 +32,15 @@ import {
   buildSegmentLayout,
   createTrackSeekHandler,
 } from '@/lib/timelineDomain'
+import {
+  cutAtPlayhead,
+  deleteSegment,
+  setInPoint,
+  setOutPoint,
+  toggleMute,
+} from '@/lib/timelineEditing'
 import { importAndAppend } from '@/lib/videoImport'
 
-const ZOOM_KEYBOARD_STEP = 10
 const ZOOM_SCALE_FACTOR = 1.25
 
 export function Timeline() {
@@ -74,9 +75,7 @@ export function Timeline() {
       trackEl: trackRef.current,
       onSeek(segmentId, time) {
         selectedSegmentId.value = segmentId
-        playheadTime.value = time
-        const video = videoEl.current
-        if (video) video.currentTime = time
+        seek(time)
       },
     })
 
@@ -93,9 +92,7 @@ export function Timeline() {
       pxPerSec: pxPerSec.value,
       trackEl: trackRef.current,
       onUpdate(time) {
-        playheadTime.value = time
-        const video = videoEl.current
-        if (video) video.currentTime = time
+        seek(time)
       },
     })
 
@@ -115,24 +112,6 @@ export function Timeline() {
 
     pxPerSec.value = clamped
   }
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-
-      if (e.key === '-' || e.key === '_') {
-        e.preventDefault()
-        zoomTo(pxPerSec.value - ZOOM_KEYBOARD_STEP)
-      } else if (e.key === '=' || e.key === '+') {
-        e.preventDefault()
-        zoomTo(pxPerSec.value + ZOOM_KEYBOARD_STEP)
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
 
   // Cleanup any pending drag handlers on unmount
   useEffect(

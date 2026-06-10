@@ -6,22 +6,9 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { VolumeControl } from '@/components/VolumeControl'
 import { formatTimecode } from '@/lib/format'
-import { deleteSegment, setInPoint, setOutPoint } from '@/lib/store'
-import {
-  clips,
-  currentPlaybackTime,
-  currentSegmentDuration,
-  playing,
-  playheadTime,
-  previewMuted,
-  previewVolume,
-  selectedSegmentId,
-  timeline,
-  videoEl,
-  getClipById,
-} from '@/lib/store'
+import { attachVideo, detachVideo, setPlaybackRate, stepFrame, togglePlay } from '@/lib/playback'
+import { clips, currentPlaybackTime, playing, timeline } from '@/lib/store'
 
-const FRAME_STEP = 1 / 30
 const DEFAULT_PREVIEW_HEIGHT = 600
 const DEFAULT_PREVIEW_MAX_WIDTH = 1600
 const ASPECT_RATIO_VARIANCE_THRESHOLD = 0.01
@@ -34,9 +21,7 @@ export function VideoPreview() {
   const previewMaxWidth = useSignal(Math.round(DEFAULT_PREVIEW_HEIGHT * (16 / 9)))
   const previewAspectRatio = useSignal(16 / 9)
   const playbackSpeed = useSignal(1)
-  const resumeAfterSwitch = useRef(false)
   const hasManualResize = useRef(false)
-  const rafId = useRef(0)
 
   function getTimelineAspectRatio(): number {
     const ratios = timeline.value
@@ -68,29 +53,14 @@ export function VideoPreview() {
     return ratios[0]
   }
 
-  function getActiveSegInfo() {
-    const segId = selectedSegmentId.value ?? timeline.value[0]?.id
-    if (!segId) return null
-    const segment = timeline.value.find((segment) => segment.id === segId)
-    if (!segment) return null
-    const clip = getClipById(segment.clipId)
-    if (!clip) return null
-    return { url: clip.objectUrl, start: segment.startTime, end: segment.endTime, segment, clip }
-  }
-
-  useSignalEffect(() => {
+  useEffect(() => {
     const video = videoRef.current
     if (!video) return
-    video.volume = previewVolume.value
-    const segmentMuted = getActiveSegInfo()?.segment.muted ?? false
-    video.muted = previewMuted.value || segmentMuted
-  })
+    attachVideo(video)
+    return () => detachVideo()
+  }, [])
 
   useSignalEffect(() => {
-    const video = videoRef.current
-    if (!video) return
-    videoEl.current = video
-    video.playbackRate = playbackSpeed.value
     const nextAspectRatio = getTimelineAspectRatio()
     previewAspectRatio.value = nextAspectRatio
     if (!hasManualResize.current) {
@@ -100,148 +70,7 @@ export function VideoPreview() {
       )
       previewMaxWidth.value = defaultWidth
     }
-    const info = getActiveSegInfo()
-    if (!info) {
-      video.removeAttribute('src')
-      video.load()
-      currentSegmentDuration.value = 0
-      currentPlaybackTime.value = 0
-      playing.value = false
-      return
-    }
-
-    const segmentMuted = info?.segment.muted ?? false
-    video.muted = previewMuted.value || segmentMuted
-
-    const resume = resumeAfterSwitch.current
-    resumeAfterSwitch.current = false
-
-    if (video.src !== info.url) {
-      video.src = info.url
-      video.load()
-      video.onloadedmetadata = () => {
-        video.currentTime = info.start
-        currentSegmentDuration.value = info.end - info.start
-        currentPlaybackTime.value = 0
-        if (resume) video.play()
-      }
-    } else {
-      currentSegmentDuration.value = info.end - info.start
-      if (video.currentTime < info.start || video.currentTime >= info.end) {
-        video.currentTime = info.start
-        currentPlaybackTime.value = 0
-      }
-      if (resume && video.paused) video.play()
-    }
   })
-
-  function tickPlayhead() {
-    const video = videoRef.current
-    if (!video) return
-    const info = getActiveSegInfo()
-    const segStart = info?.start ?? 0
-    playheadTime.value = video.currentTime
-    currentPlaybackTime.value = Math.max(0, video.currentTime - segStart)
-    rafId.current = requestAnimationFrame(tickPlayhead)
-  }
-
-  function onTimeUpdate() {
-    const video = videoRef.current
-    if (!video) return
-    const info = getActiveSegInfo()
-    const segEnd = info?.end ?? video.duration
-
-    if (video.currentTime >= segEnd) {
-      const segments = timeline.value
-      const currentIndex = segments.findIndex((segment) => segment.id === info?.segment.id)
-      const nextSeg = segments[currentIndex + 1]
-      if (nextSeg && playing.value) {
-        resumeAfterSwitch.current = true
-        selectedSegmentId.value = nextSeg.id
-      } else {
-        video.pause()
-        playing.value = false
-        currentPlaybackTime.value = 0
-        if (segments.length > 0) {
-          selectedSegmentId.value = segments[0].id
-        }
-      }
-    }
-  }
-
-  function togglePlay() {
-    const video = videoRef.current
-    if (!video) return
-    const info = getActiveSegInfo()
-    if (video.paused) {
-      if (info && video.currentTime >= info.end) video.currentTime = info.start
-      video.play()
-    } else {
-      video.pause()
-    }
-  }
-
-  function stepBack() {
-    const video = videoRef.current
-    if (!video) return
-    const info = getActiveSegInfo()
-    const segStart = info?.start ?? 0
-    const t = Math.max(segStart, video.currentTime - FRAME_STEP)
-    video.currentTime = t
-    playheadTime.value = t
-    currentPlaybackTime.value = Math.max(0, t - segStart)
-  }
-
-  function stepForward() {
-    const video = videoRef.current
-    if (!video) return
-    const info = getActiveSegInfo()
-    const segEnd = info?.end ?? video.duration
-    const segStart = info?.start ?? 0
-    const t = Math.min(segEnd, video.currentTime + FRAME_STEP)
-    video.currentTime = t
-    playheadTime.value = t
-    currentPlaybackTime.value = Math.max(0, t - segStart)
-  }
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-
-      switch (e.key) {
-        case ' ':
-          e.preventDefault()
-          togglePlay()
-          break
-        case 'ArrowLeft':
-        case ',':
-          e.preventDefault()
-          stepBack()
-          break
-        case 'ArrowRight':
-        case '.':
-          e.preventDefault()
-          stepForward()
-          break
-        case 'i':
-          setInPoint()
-          break
-        case 'o':
-          setOutPoint()
-          break
-        case 'Delete':
-        case 'Backspace':
-          deleteSegment()
-          break
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      cancelAnimationFrame(rafId.current)
-    }
-  }, [])
 
   function onResizePointerDown(e: PointerEvent) {
     e.stopPropagation()
@@ -300,19 +129,7 @@ export function VideoPreview() {
               <p class="text-base text-slate-500 select-none">Drop video files onto the timeline</p>
             </div>
           )}
-          <video
-            ref={videoRef}
-            class="absolute inset-0 h-full w-full object-contain"
-            onTimeUpdate={onTimeUpdate}
-            onPlay={() => {
-              playing.value = true
-              rafId.current = requestAnimationFrame(tickPlayhead)
-            }}
-            onPause={() => {
-              playing.value = false
-              cancelAnimationFrame(rafId.current)
-            }}
-          />
+          <video ref={videoRef} class="absolute inset-0 h-full w-full object-contain" />
 
           {/* Resize handle */}
           <div
@@ -340,7 +157,7 @@ export function VideoPreview() {
           <VolumeControl />
           <div class="flex items-center gap-0.5">
             <button
-              onClick={stepBack}
+              onClick={() => stepFrame(-1)}
               disabled={!hasContent}
               class="flex h-9 w-9 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               title="Step back one frame (←)"
@@ -355,7 +172,7 @@ export function VideoPreview() {
               {playing.value ? <Pause class="h-5 w-5" /> : <Play class="ml-0.5 h-5 w-5" />}
             </button>
             <button
-              onClick={stepForward}
+              onClick={() => stepFrame(1)}
               disabled={!hasContent}
               class="flex h-9 w-9 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               title="Step forward one frame (→)"
@@ -368,7 +185,9 @@ export function VideoPreview() {
               id="playback-speed"
               value={playbackSpeed.value}
               onChange={(e) => {
-                playbackSpeed.value = Number((e.currentTarget as HTMLSelectElement).value)
+                const nextSpeed = Number((e.currentTarget as HTMLSelectElement).value)
+                playbackSpeed.value = nextSpeed
+                setPlaybackRate(nextSpeed)
               }}
               class="rounded border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none hover:duration-0 focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
               title="Playback speed"
