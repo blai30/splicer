@@ -30,7 +30,7 @@ export function AppHeader() {
       <div class="flex items-center gap-2">
         <a
           href="https://github.com/blai30/splicer"
-          target="_self"
+          target="_blank"
           rel="noopener noreferrer"
           class="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           aria-label="Open Splicer on GitHub"

@@ -69,8 +69,11 @@ No upload pipeline is used. Processing happens client-side via FFmpeg WASM.
 - `Enter` (while focused in zoom % field): Apply typed zoom level
 - `I`: Set in-point
 - `O`: Set out-point
+- `C`: Cut at playhead
 - `M`: Toggle mute on selected segment
 - `Delete` / `Backspace`: Delete selected segment
+- `Ctrl` + `Z`: Undo
+- `Ctrl` + `Shift` + `Z` or `Ctrl` + `Y`: Redo
 
 ## Tech Stack
 

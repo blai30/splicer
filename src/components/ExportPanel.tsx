@@ -17,11 +17,11 @@ import {
 import type { ExportFormat, ExportRecord, Framerate, Quality } from '@/lib/types'
 
 function makeFilename(format: ExportFormat): string {
-  const ts = new Date()
+  const timestamp = new Date()
     .toISOString()
     .replace(/:/g, '-')
     .replace(/\.\d{3}Z$/, '')
-  return `splicer-${ts}.${format}`
+  return `splicer-${timestamp}.${format}`
 }
 
 function OptionButtonGroup<T extends string>({
@@ -68,8 +68,8 @@ export function ExportPanel() {
       const clip = clips.value.find((clip) => clip.id === segment.clipId)
       if (!clip) continue
       const clipBytes = (clip.file as File).size ?? 0
-      const durRatio = (segment.endTime - segment.startTime) / Math.max(1, clip.duration)
-      total += clipBytes * durRatio
+      const durationRatio = (segment.endTime - segment.startTime) / Math.max(1, clip.duration)
+      total += clipBytes * durationRatio
     }
 
     // Adjust by quality: lossless ~1x, high~0.5x, medium~0.25x, low~0.12x
@@ -125,9 +125,9 @@ export function ExportPanel() {
       }
       addExportRecord(record)
       info('Export finished', { filename, size })
-    } catch (e) {
-      logError('Export failed', { message: e instanceof Error ? e.message : String(e) })
-      if (exporting.value) error.value = e instanceof Error ? e.message : 'Export failed'
+    } catch (err) {
+      logError('Export failed', { message: err instanceof Error ? err.message : String(err) })
+      if (exporting.value) error.value = err instanceof Error ? err.message : 'Export failed'
     } finally {
       exporting.value = false
     }
@@ -136,7 +136,7 @@ export function ExportPanel() {
   function handleCancel() {
     exporting.value = false
     cancelExport()
-    info('Export cancelled by user')
+    info('Export canceled by user')
   }
 
   const formats: { value: ExportFormat; label: string }[] = [
@@ -171,15 +171,15 @@ export function ExportPanel() {
   )
 
   const maxClip = (() => {
-    let w = 0
-    let h = 0
+    let width = 0
+    let height = 0
     for (const segment of timeline.value) {
-      const clip = clips.value.find((c) => c.id === segment.clipId)
+      const clip = clips.value.find((clip) => clip.id === segment.clipId)
       if (!clip) continue
-      w = Math.max(w, clip.width ?? 0)
-      h = Math.max(h, clip.height ?? 0)
+      width = Math.max(width, clip.width ?? 0)
+      height = Math.max(height, clip.height ?? 0)
     }
-    return { w, h }
+    return { width, height }
   })()
 
   // Heuristics for WebM/VP9 in-browser limits. Tunable thresholds.
@@ -187,9 +187,9 @@ export function ExportPanel() {
   const webmDangerMB = 150
   let warnSeverity: 'none' | 'warn' | 'danger' = 'none'
   if (exportFormat.value === 'webm') {
-    if (estimatedSizeMB > webmDangerMB || maxClip.w >= 2160 || totalDuration > 120)
+    if (estimatedSizeMB > webmDangerMB || maxClip.width >= 2160 || totalDuration > 120)
       warnSeverity = 'danger'
-    else if (estimatedSizeMB > webmWarnMB || maxClip.w >= 1280 || totalDuration > 30)
+    else if (estimatedSizeMB > webmWarnMB || maxClip.width >= 1280 || totalDuration > 30)
       warnSeverity = 'warn'
   }
 
@@ -234,7 +234,7 @@ export function ExportPanel() {
         <div class="flex min-h-13 min-w-0 flex-1 flex-col gap-1">
           <div class="mb-1 text-sm text-slate-500 dark:text-slate-400">
             Estimated export size:{' '}
-            {estimatedSize > 0 ? `${Math.round(estimatedSize / 1024 / 1024)} MB` : '—'}
+            {estimatedSize > 0 ? `${Math.round(estimatedSize / 1024 / 1024)} MB` : '–'}
           </div>
           {exportFormat.value === 'webm' && warnSeverity !== 'none' && (
             <div
@@ -247,7 +247,7 @@ export function ExportPanel() {
               role="alert"
             >
               <div class="flex items-start gap-2">
-                <span className="flex h-lh items-center">
+                <span class="flex h-lh items-center">
                   <AlertTriangle class="m-0.5 size-4.5 flex-none shrink-0" />
                 </span>
                 <div>

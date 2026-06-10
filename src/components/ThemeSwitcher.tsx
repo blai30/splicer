@@ -14,11 +14,11 @@ function setTheme(next: 'light' | 'dark') {
 }
 
 export function ThemeSwitcher({ class: className }: { class?: string }) {
-  function toggleTheme(e: MouseEvent) {
+  function toggleTheme(event: MouseEvent) {
     const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark'
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const doc = document as ViewTransitionDocument
-    const button = e.currentTarget as HTMLButtonElement | null
+    const button = event.currentTarget as HTMLButtonElement | null
     const rect = button?.getBoundingClientRect()
     const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2
     const y = rect ? rect.top + rect.height / 2 : window.innerHeight / 2

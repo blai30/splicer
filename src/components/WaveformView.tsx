@@ -21,9 +21,9 @@ export function WaveformView({
     if (!canvas) return
 
     const draw = () => {
-      const el = canvasRef.current
-      if (!el) return
-      const rect = el.getBoundingClientRect()
+      const canvasElement = canvasRef.current
+      if (!canvasElement) return
+      const rect = canvasElement.getBoundingClientRect()
       if (rect.width <= 0 || rect.height <= 0) return
 
       const dpr = window.devicePixelRatio || 1
@@ -38,12 +38,12 @@ export function WaveformView({
         prevSize.dpr !== nextSize.dpr
 
       if (resized) {
-        el.width = Math.max(1, Math.floor(width * dpr))
-        el.height = Math.max(1, Math.floor(height * dpr))
+        canvasElement.width = Math.max(1, Math.floor(width * dpr))
+        canvasElement.height = Math.max(1, Math.floor(height * dpr))
         lastSizeRef.current = nextSize
       }
 
-      const ctx = el.getContext('2d')
+      const ctx = canvasElement.getContext('2d')
       if (!ctx) return
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, width, height)
@@ -78,10 +78,10 @@ export function WaveformView({
       }
 
       for (let bar = 0; bar < barCount; bar++) {
-        const h = Math.max(1, Math.round(bucketMax[bar] * maxHalfHeight))
+        const barHalfHeight = Math.max(1, Math.round(bucketMax[bar] * maxHalfHeight))
         const x = bar * barStep
-        const y = Math.floor(center - h)
-        ctx.fillRect(x, y, 1, h * 2)
+        const y = Math.floor(center - barHalfHeight)
+        ctx.fillRect(x, y, 1, barHalfHeight * 2)
       }
     }
 

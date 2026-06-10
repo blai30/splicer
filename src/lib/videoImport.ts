@@ -1,7 +1,7 @@
 import { fetchFile } from '@ffmpeg/util'
 
 import { getFfmpeg } from '@/lib/ffmpeg'
-import { info, error as logError } from '@/lib/logger'
+import { info, warn, error as logError } from '@/lib/logger'
 import { clips, getClipById, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
 import type { Clip } from '@/lib/types'
@@ -16,27 +16,46 @@ export function getVideoMetadata(
   url: string
 ): Promise<{ duration: number; width: number; height: number }> {
   return new Promise((resolve, reject) => {
-    const v = document.createElement('video')
-    v.preload = 'metadata'
+    const video = document.createElement('video')
+    video.preload = 'metadata'
 
     const cleanup = () => {
-      v.onloadedmetadata = null
-      v.onerror = null
-      v.src = ''
-      v.load()
+      video.onloadedmetadata = null
+      video.ondurationchange = null
+      video.onerror = null
+      video.src = ''
+      video.load()
     }
 
-    v.onloadedmetadata = () => {
-      const metadata = { duration: v.duration, width: v.videoWidth, height: v.videoHeight }
+    const finish = () => {
+      const metadata = {
+        duration: video.duration,
+        width: video.videoWidth,
+        height: video.videoHeight,
+      }
       cleanup()
       resolve(metadata)
     }
-    v.onerror = () => {
+
+    video.onloadedmetadata = () => {
+      // MediaRecorder output (e.g. screen recordings) can report Infinity;
+      // seeking far past the end forces the browser to compute the real
+      // duration and fire durationchange.
+      if (!Number.isFinite(video.duration)) {
+        video.ondurationchange = () => {
+          if (Number.isFinite(video.duration)) finish()
+        }
+        video.currentTime = Number.MAX_SAFE_INTEGER
+        return
+      }
+      finish()
+    }
+    video.onerror = () => {
       cleanup()
       reject(new Error('Failed to read video metadata'))
     }
 
-    v.src = url
+    video.src = url
   })
 }
 
@@ -49,8 +68,8 @@ function getPeaksFromSamples(samples: Float32Array, peakCount: number): number[]
   for (let i = 0; i < samples.length; i += samplesPerPeak) {
     const end = Math.min(samples.length, i + samplesPerPeak)
     let peak = 0
-    for (let s = i; s < end; s++) {
-      const amp = Math.abs(samples[s])
+    for (let sampleIndex = i; sampleIndex < end; sampleIndex++) {
+      const amp = Math.abs(samples[sampleIndex])
       if (amp > peak) peak = amp
     }
     peaks.push(peak)
@@ -79,8 +98,8 @@ async function extractWaveformPeaksWithAudioContext(
     if (!channels || !totalSamples) return []
 
     const merged = new Float32Array(totalSamples)
-    for (let c = 0; c < channels; c++) {
-      const data = decoded.getChannelData(c)
+    for (let channel = 0; channel < channels; channel++) {
+      const data = decoded.getChannelData(channel)
       for (let i = 0; i < totalSamples; i++) {
         const amp = Math.abs(data[i])
         if (amp > merged[i]) merged[i] = amp
@@ -106,7 +125,7 @@ async function extractWaveformPeaksWithFfmpeg(file: File, peakCount = 2000): Pro
     info('Extracting waveform via FFmpeg', { filename: file.name })
     ffmpeg = await getFfmpeg()
     await ffmpeg.writeFile(inputName, await fetchFile(file))
-    const ret = await ffmpeg.exec([
+    const exitCode = await ffmpeg.exec([
       '-i',
       inputName,
       '-vn',
@@ -120,7 +139,7 @@ async function extractWaveformPeaksWithFfmpeg(file: File, peakCount = 2000): Pro
       'f32le',
       outputName,
     ])
-    if (ret !== 0) return []
+    if (exitCode !== 0) return []
 
     const pcm = (await ffmpeg.readFile(outputName)) as Uint8Array
     const aligned = Math.floor(pcm.byteLength / 4) * 4
@@ -160,19 +179,24 @@ const waveformPending = new Set<string>()
 export async function ensureClipWaveform(clipId: string): Promise<void> {
   const clip = getClipById(clipId)
   if (!clip || (clip.waveformPeaks?.length ?? 0) > 0) return
+  // hasAudio set with empty peaks means a completed probe found no audio
+  // stream; do not re-decode the file on every segment mount.
+  if (clip.hasAudio !== undefined) return
   if (waveformPending.has(clipId)) return
 
   waveformPending.add(clipId)
   try {
     const peaks = await extractWaveformPeaks(clip.file)
-    if (peaks.length === 0) return
-    clips.value = clips.value.map((c) =>
-      c.id === clipId
+    // No extractable peaks from either decoder means the file has no audio
+    // stream; the export planner uses this to substitute silent audio.
+    clips.value = clips.value.map((clip) =>
+      clip.id === clipId
         ? {
-            ...c,
+            ...clip,
             waveformPeaks: peaks,
+            hasAudio: peaks.length > 0,
           }
-        : c
+        : clip
     )
   } finally {
     waveformPending.delete(clipId)
@@ -180,7 +204,10 @@ export async function ensureClipWaveform(clipId: string): Promise<void> {
 }
 
 export async function importAndAppend(file: File): Promise<void> {
-  if (!isVideoFile(file)) return
+  if (!isVideoFile(file)) {
+    warn('Skipped non-video file', { name: file.name, type: file.type })
+    return
+  }
 
   const objectUrl = URL.createObjectURL(file)
   let imported = false
@@ -208,8 +235,12 @@ export async function importAndAppend(file: File): Promise<void> {
     appendClipToTimeline(clip)
     imported = true
     info('Import succeeded', { name: file.name, duration })
-  } catch {
-    // Ignore individual import failures so batch imports continue.
+  } catch (err) {
+    // Log but keep going so batch imports continue with the remaining files.
+    logError('Import failed', {
+      name: file.name,
+      message: err instanceof Error ? err.message : String(err),
+    })
   } finally {
     if (!imported) URL.revokeObjectURL(objectUrl)
     importing.value = false

@@ -20,12 +20,12 @@ export function clampSegmentEndTime(
 
 export function updateSegmentStartTime(
   segments: Segment[],
-  segId: string,
+  segmentId: string,
   nextStart: number,
   minStart = 0
 ): Segment[] {
   return segments.map((segment) =>
-    segment.id === segId
+    segment.id === segmentId
       ? {
           ...segment,
           startTime: clampSegmentStartTime(nextStart, segment.endTime, minStart),
@@ -36,12 +36,12 @@ export function updateSegmentStartTime(
 
 export function updateSegmentEndTime(
   segments: Segment[],
-  segId: string,
+  segmentId: string,
   nextEnd: number,
   clipDuration: number
 ): Segment[] {
   return segments.map((segment) =>
-    segment.id === segId
+    segment.id === segmentId
       ? {
           ...segment,
           endTime: clampSegmentEndTime(nextEnd, segment.startTime, clipDuration),
@@ -52,10 +52,10 @@ export function updateSegmentEndTime(
 
 export function splitSegmentAtPlayhead(
   segments: Segment[],
-  segId: string,
+  segmentId: string,
   splitTime: number
 ): { nextSegments: Segment[]; newSegmentId: string } | null {
-  const segment = segments.find((segment) => segment.id === segId)
+  const segment = segments.find((segment) => segment.id === segmentId)
   if (!segment) return null
   if (splitTime <= segment.startTime || splitTime >= segment.endTime) return null
 
@@ -64,7 +64,7 @@ export function splitSegmentAtPlayhead(
 
   return {
     nextSegments: segments.flatMap((segment) =>
-      segment.id === segId ? [first, second] : [segment]
+      segment.id === segmentId ? [first, second] : [segment]
     ),
     newSegmentId: second.id,
   }
@@ -171,40 +171,40 @@ export function createTrackSeekHandler(options: {
   pxPerSec: number
   padding: number
   gap: number
-  trackEl: HTMLElement
+  trackElement: HTMLElement
   onSeek: (segmentId: string, time: number) => void
 }) {
-  const { timeline, pxPerSec, padding, gap, trackEl, onSeek } = options
+  const { timeline, pxPerSec, padding, gap, trackElement, onSeek } = options
   const throttler = createRafThrottler()
   const layout = buildSegmentLayout(timeline, pxPerSec, gap, padding)
 
   return {
-    onPointerDown(e: PointerEvent) {
+    onPointerDown(event: PointerEvent) {
       if (timeline.length === 0) return
 
-      function seekFromPointer(ev: PointerEvent) {
-        const rect = trackEl.getBoundingClientRect()
-        const trackX = viewportToTrackX(ev.clientX, rect, trackEl.scrollLeft)
+      function seekFromPointer(pointerEvent: PointerEvent) {
+        const rect = trackElement.getBoundingClientRect()
+        const trackX = viewportToTrackX(pointerEvent.clientX, rect, trackElement.scrollLeft)
         const hit = findSegmentAtTrackX(layout, trackX, pxPerSec)
         if (!hit) return
         onSeek(hit.segment.id, hit.time)
       }
 
-      seekFromPointer(e)
-      trackEl.setPointerCapture(e.pointerId)
+      seekFromPointer(event)
+      trackElement.setPointerCapture(event.pointerId)
 
-      function onMove(mv: PointerEvent) {
-        throttler.queue(() => seekFromPointer(mv))
+      function onMove(moveEvent: PointerEvent) {
+        throttler.queue(() => seekFromPointer(moveEvent))
       }
 
       function onUp() {
         throttler.cancel()
-        trackEl.removeEventListener('pointermove', onMove)
-        trackEl.removeEventListener('pointerup', onUp)
+        trackElement.removeEventListener('pointermove', onMove)
+        trackElement.removeEventListener('pointerup', onUp)
       }
 
-      trackEl.addEventListener('pointermove', onMove)
-      trackEl.addEventListener('pointerup', onUp)
+      trackElement.addEventListener('pointermove', onMove)
+      trackElement.addEventListener('pointerup', onUp)
     },
 
     cleanup() {
@@ -217,38 +217,38 @@ export function createPlayheadDragHandler(options: {
   segment: Segment
   segmentStartX: number
   pxPerSec: number
-  trackEl: HTMLElement
+  trackElement: HTMLElement
   onUpdate: (time: number) => void
 }) {
-  const { segment, segmentStartX, pxPerSec, trackEl, onUpdate } = options
+  const { segment, segmentStartX, pxPerSec, trackElement, onUpdate } = options
   const throttler = createRafThrottler()
 
   return {
-    onPointerDown(e: PointerEvent) {
-      e.stopPropagation()
-      const el = e.currentTarget as HTMLElement
-      el.setPointerCapture(e.pointerId)
+    onPointerDown(event: PointerEvent) {
+      event.stopPropagation()
+      const element = event.currentTarget as HTMLElement
+      element.setPointerCapture(event.pointerId)
 
-      function syncPlayheadFromPointer(mv: PointerEvent) {
-        const rect = trackEl.getBoundingClientRect()
-        const trackX = viewportToTrackX(mv.clientX, rect, trackEl.scrollLeft)
+      function syncPlayheadFromPointer(moveEvent: PointerEvent) {
+        const rect = trackElement.getBoundingClientRect()
+        const trackX = viewportToTrackX(moveEvent.clientX, rect, trackElement.scrollLeft)
         const segmentTime = trackXToSegmentTime(trackX, segmentStartX, pxPerSec)
         const clampedTime = clampPlayheadForSegment(segment, segment.startTime + segmentTime)
         onUpdate(clampedTime)
       }
 
-      function onMove(mv: PointerEvent) {
-        throttler.queue(() => syncPlayheadFromPointer(mv))
+      function onMove(moveEvent: PointerEvent) {
+        throttler.queue(() => syncPlayheadFromPointer(moveEvent))
       }
 
       function onUp() {
         throttler.cancel()
-        el.removeEventListener('pointermove', onMove)
-        el.removeEventListener('pointerup', onUp)
+        element.removeEventListener('pointermove', onMove)
+        element.removeEventListener('pointerup', onUp)
       }
 
-      el.addEventListener('pointermove', onMove)
-      el.addEventListener('pointerup', onUp)
+      element.addEventListener('pointermove', onMove)
+      element.addEventListener('pointerup', onUp)
     },
 
     cleanup() {

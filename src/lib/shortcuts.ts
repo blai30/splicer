@@ -3,6 +3,7 @@ import { ZOOM_MAX, ZOOM_MIN, pxPerSec } from '@/lib/store'
 import {
   cutAtPlayhead,
   deleteSegment,
+  redo,
   setInPoint,
   setOutPoint,
   toggleMute,
@@ -19,6 +20,8 @@ export type Shortcut = {
   // Matched against KeyboardEvent.key (lowercased when ctrl is set).
   keys: string[]
   ctrl?: boolean
+  // Only checked for ctrl shortcuts; plain keys already encode shift ('=' vs '+').
+  shift?: boolean
   // Display label and description rendered by the keyboard legend.
   display: string
   description: string
@@ -51,6 +54,15 @@ export const SHORTCUTS: Shortcut[] = [
   },
   { keys: ['z'], ctrl: true, display: 'Ctrl Z', description: 'Undo', run: undo },
   {
+    keys: ['z'],
+    ctrl: true,
+    shift: true,
+    display: 'Ctrl Shift Z',
+    description: 'Redo',
+    run: redo,
+  },
+  { keys: ['y'], ctrl: true, display: 'Ctrl Y', description: 'Redo', run: redo },
+  {
     keys: ['=', '+'],
     display: '+',
     description: 'Zoom In',
@@ -64,16 +76,17 @@ export const SHORTCUTS: Shortcut[] = [
   },
 ]
 
-function handler(e: KeyboardEvent) {
-  const tag = (e.target as HTMLElement).tagName
+function handler(event: KeyboardEvent) {
+  const tag = (event.target as HTMLElement).tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
-  const hasCtrl = e.ctrlKey || e.metaKey
+  const hasCtrl = event.ctrlKey || event.metaKey
   for (const shortcut of SHORTCUTS) {
     if ((shortcut.ctrl ?? false) !== hasCtrl) continue
-    const key = shortcut.ctrl ? e.key.toLowerCase() : e.key
+    if (shortcut.ctrl && (shortcut.shift ?? false) !== event.shiftKey) continue
+    const key = shortcut.ctrl ? event.key.toLowerCase() : event.key
     if (!shortcut.keys.includes(key)) continue
-    e.preventDefault()
+    event.preventDefault()
     shortcut.run()
     return
   }

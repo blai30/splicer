@@ -30,6 +30,7 @@ function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
   if (segments.length === 0) return false
 
   const sourceExtensions = new Set<string>()
+  const audioPresence = new Set<boolean>()
 
   for (const segment of segments) {
     if (segment.crop) return false
@@ -37,7 +38,12 @@ function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
     const clip = getClipById(segment.clipId)
     if (!clip) return false
     sourceExtensions.add(getFileExtension(clip.file.name))
+    audioPresence.add(clip.hasAudio !== false)
   }
+
+  // The concat demuxer needs a uniform stream layout; mixing clips with and
+  // without audio produces broken output.
+  if (audioPresence.size > 1) return false
 
   // Same container -> stream copy
   if (sourceExtensions.size === 1 && sourceExtensions.has(format)) return true
@@ -168,16 +174,35 @@ export function cancelExport(): void {
   }
   loadingPromise = null
   ffmpegProgress.value = 0
-  warn('Export cancelled / FFmpeg terminated')
+  warn('Export canceled / FFmpeg terminated')
 }
 
 async function exec(ffmpeg: FFmpeg, args: string[]): Promise<void> {
   info('Running ffmpeg', { args })
   console.log('[FFMPEG CMD]', args.join(' '))
-  const ret = await ffmpeg.exec(args)
-  if (ret !== 0) {
-    logError('FFmpeg error', { code: ret, args })
-    throw new Error(`FFmpeg error (code ${ret})`)
+
+  // Keep the most recent log lines so a failure can surface the actual
+  // ffmpeg message instead of just an exit code.
+  const recentLogs: string[] = []
+  const onLog = ({ message }: { message: string }) => {
+    recentLogs.push(message)
+    if (recentLogs.length > 10) recentLogs.shift()
+  }
+  ffmpeg.on('log', onLog)
+
+  let exitCode: number
+  try {
+    exitCode = await ffmpeg.exec(args)
+  } finally {
+    ffmpeg.off('log', onLog)
+  }
+
+  if (exitCode !== 0) {
+    const detail =
+      [...recentLogs].reverse().find((line) => /error|invalid|failed|no such/i.test(line)) ??
+      recentLogs.at(-1)
+    logError('FFmpeg error', { code: exitCode, args, detail })
+    throw new Error(detail ? `FFmpeg error: ${detail}` : `FFmpeg error (code ${exitCode})`)
   }
 }
 
@@ -209,10 +234,10 @@ function buildConcatInputs(
     if (!clip) continue
 
     const ext = getFileExtension(clip.file.name) || 'mp4'
-    const fname = `input_${runId}_${inputFiles.length}.${ext}`
-    inputFiles.push({ name: fname, file: clip.file })
+    const fileName = `input_${runId}_${inputFiles.length}.${ext}`
+    inputFiles.push({ name: fileName, file: clip.file })
 
-    concatList += `file '${fname}'\n`
+    concatList += `file '${fileName}'\n`
     concatList += `inpoint ${segment.startTime}\n`
     concatList += `outpoint ${segment.endTime}\n`
   }
@@ -305,8 +330,8 @@ function planFullEncode(
     if (!clip) continue
 
     const ext = getFileExtension(clip.file.name) || 'mp4'
-    const fname = `input_${runId}_${streamIndex}.${ext}`
-    inputFiles.push({ name: fname, file: clip.file })
+    const fileName = `input_${runId}_${streamIndex}.${ext}`
+    inputFiles.push({ name: fileName, file: clip.file })
 
     let videoFilter = `[${streamIndex}:v]trim=${segment.startTime}:${segment.endTime},setpts=PTS-STARTPTS`
     if (segment.crop) {
@@ -315,9 +340,17 @@ function planFullEncode(
     }
     videoFilter += `[v${streamIndex}]`
 
-    let audioFilter = `[${streamIndex}:a]atrim=${segment.startTime}:${segment.endTime},asetpts=PTS-STARTPTS`
-    if (segment.muted) {
-      audioFilter += ',volume=0'
+    // Clips without an audio stream get generated silence of the segment's
+    // duration; mapping [i:a] for them would make the whole command fail.
+    let audioFilter: string
+    if (clip.hasAudio === false) {
+      const segmentDuration = segment.endTime - segment.startTime
+      audioFilter = `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=0:${segmentDuration},asetpts=PTS-STARTPTS`
+    } else {
+      audioFilter = `[${streamIndex}:a]atrim=${segment.startTime}:${segment.endTime},asetpts=PTS-STARTPTS`
+      if (segment.muted) {
+        audioFilter += ',volume=0'
+      }
     }
     audioFilter += `[a${streamIndex}]`
 
@@ -376,7 +409,7 @@ export function planExport(
     const canMutedCopy = segments.every((segment) => {
       if (segment.crop) return false
       const clip = getClipById(segment.clipId)
-      return clip != null && getFileExtension(clip.file.name) === format
+      return clip != null && getFileExtension(clip.file.name) === format && clip.hasAudio !== false
     })
     if (canMutedCopy) return planMuteStreamCopy(segments, format, runId)
   }
@@ -433,8 +466,8 @@ async function runExport(plan: ExportPlan): Promise<{ url: string; size: number 
 }
 
 function isWasmOomError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err)
-  return msg.toLowerCase().includes('memory access out of bounds')
+  const message = err instanceof Error ? err.message : String(err)
+  return message.toLowerCase().includes('memory access out of bounds')
 }
 
 async function restartFfmpeg(): Promise<void> {

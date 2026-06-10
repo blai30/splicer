@@ -18,14 +18,21 @@ type HistoryEntry = {
 }
 
 const history: HistoryEntry[] = []
+const redoHistory: HistoryEntry[] = []
 
-function recordHistory() {
-  history.unshift({
+function captureEntry(): HistoryEntry {
+  return {
     timeline: timeline.value,
     clips: clips.value,
     selectedSegmentId: selectedSegmentId.value,
-  })
+  }
+}
+
+function recordHistory() {
+  history.unshift(captureEntry())
   if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT
+  // A new edit invalidates the redo branch.
+  redoHistory.length = 0
 }
 
 // Continuous gestures (trim drags) record one history entry for the whole
@@ -87,10 +94,15 @@ export function setInPoint() {
 export function setOutPoint() {
   const segment = getSelectedSegment()
   if (!segment) return
-  const clipDur =
+  const clipDuration =
     clips.value.find((clip) => clip.id === segment.clipId)?.duration ?? playheadTime.value
   recordHistory()
-  timeline.value = updateSegmentEndTime(timeline.value, segment.id, playheadTime.value, clipDur)
+  timeline.value = updateSegmentEndTime(
+    timeline.value,
+    segment.id,
+    playheadTime.value,
+    clipDuration
+  )
 }
 
 export function cutAtPlayhead() {
@@ -138,21 +150,18 @@ export function reorderSegment(segmentId: string, dropIndex: number) {
 }
 
 export function deleteSegment() {
-  const segId = selectedSegmentId.value
-  if (!segId) return
-  const currentIndex = timeline.value.findIndex((segment) => segment.id === segId)
+  const segmentId = selectedSegmentId.value
+  if (!segmentId) return
+  const currentIndex = timeline.value.findIndex((segment) => segment.id === segmentId)
   if (currentIndex === -1) return
   recordHistory()
-  const next = timeline.value.filter((segment) => segment.id !== segId)
+  const next = timeline.value.filter((segment) => segment.id !== segmentId)
   timeline.value = next
   selectedSegmentId.value = next[currentIndex]?.id ?? next[currentIndex - 1]?.id ?? null
   removeOrphanedClips()
 }
 
-export function undo() {
-  const entry = history.shift()
-  if (!entry) return
-
+function restoreEntry(entry: HistoryEntry) {
   // Clips that exist now but not in the restored state (e.g. undoing an
   // import) lose their object URLs.
   for (const clip of clips.value) {
@@ -182,4 +191,20 @@ export function undo() {
     entry.timeline.some((segment) => segment.id === entry.selectedSegmentId)
       ? entry.selectedSegmentId
       : (entry.timeline[0]?.id ?? null)
+}
+
+export function undo() {
+  const entry = history.shift()
+  if (!entry) return
+  redoHistory.unshift(captureEntry())
+  if (redoHistory.length > HISTORY_LIMIT) redoHistory.length = HISTORY_LIMIT
+  restoreEntry(entry)
+}
+
+export function redo() {
+  const entry = redoHistory.shift()
+  if (!entry) return
+  history.unshift(captureEntry())
+  if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT
+  restoreEntry(entry)
 }

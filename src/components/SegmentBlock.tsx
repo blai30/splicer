@@ -41,24 +41,24 @@ export function SegmentBlock({
   }, [clip?.id, clip?.waveformPeaks?.length])
 
   function onTrimPointerDown(side: 'left' | 'right') {
-    return (e: PointerEvent) => {
-      e.stopPropagation()
+    return (event: PointerEvent) => {
+      event.stopPropagation()
       const handle = side === 'left' ? leftRef.current! : rightRef.current!
-      handle.setPointerCapture(e.pointerId)
-      const startClientX = e.clientX
+      handle.setPointerCapture(event.pointerId)
+      const startClientX = event.clientX
       const startTime = side === 'left' ? segment.startTime : segment.endTime
 
       // One undo history entry per trim gesture, not per pointer move.
       beginGesture()
       const throttler = createRafThrottler()
 
-      function onMove(mv: PointerEvent) {
-        const dt = (mv.clientX - startClientX) / pxPerSec.value
+      function onMove(moveEvent: PointerEvent) {
+        const deltaTime = (moveEvent.clientX - startClientX) / pxPerSec.value
         throttler.queue(() => {
           if (side === 'left') {
-            trimSegmentStart(segment.id, startTime + dt)
+            trimSegmentStart(segment.id, startTime + deltaTime)
           } else {
-            trimSegmentEnd(segment.id, startTime + dt)
+            trimSegmentEnd(segment.id, startTime + deltaTime)
           }
         })
       }
@@ -74,48 +74,48 @@ export function SegmentBlock({
     }
   }
 
-  function onBodyPointerDown(e: PointerEvent) {
-    const el = e.currentTarget as HTMLElement
-    const trackEl = el.closest('[data-track]') as HTMLElement | null
-    if (!trackEl) return
-    e.stopPropagation()
-    el.setPointerCapture(e.pointerId)
-    const startClientX = e.clientX
+  function onBodyPointerDown(event: PointerEvent) {
+    const element = event.currentTarget as HTMLElement
+    const trackElement = element.closest('[data-track]') as HTMLElement | null
+    if (!trackElement) return
+    event.stopPropagation()
+    element.setPointerCapture(event.pointerId)
+    const startClientX = event.clientX
     let moved = false
 
-    function onMove(mv: PointerEvent) {
-      if (!moved && Math.abs(mv.clientX - startClientX) > 8) {
+    function onMove(moveEvent: PointerEvent) {
+      if (!moved && Math.abs(moveEvent.clientX - startClientX) > 8) {
         moved = true
       }
-      if (moved && trackEl) {
-        const rect = trackEl.getBoundingClientRect()
-        const x = mv.clientX - rect.left + trackEl.scrollLeft - GAP_PX
+      if (moved && trackElement) {
+        const rect = trackElement.getBoundingClientRect()
+        const x = moveEvent.clientX - rect.left + trackElement.scrollLeft - GAP_PX
         const dropIndex = findDropIndexAtTrackX(timeline.value, x, pxPerSec.value, GAP_PX)
-        dragState.value = { segId: segment.id, dropIndex }
+        dragState.value = { segmentId: segment.id, dropIndex }
       }
     }
 
     function onUp() {
-      el.removeEventListener('pointermove', onMove)
-      el.removeEventListener('pointerup', onUp)
+      element.removeEventListener('pointermove', onMove)
+      element.removeEventListener('pointerup', onUp)
       if (moved && dragState.value) {
         reorderSegment(segment.id, dragState.value.dropIndex)
         dragState.value = null
       } else if (!moved) {
         selectedSegmentId.value = segment.id
-        if (trackEl) {
-          const rect = trackEl.getBoundingClientRect()
-          const x = e.clientX - rect.left + trackEl.scrollLeft
+        if (trackElement) {
+          const rect = trackElement.getBoundingClientRect()
+          const x = event.clientX - rect.left + trackElement.scrollLeft
           const segmentStartX = startX
-          const t = segment.startTime + Math.max(0, x - segmentStartX) / pxPerSec.value
-          const clamped = clampPlayheadForSegment(segment, t)
+          const time = segment.startTime + Math.max(0, x - segmentStartX) / pxPerSec.value
+          const clamped = clampPlayheadForSegment(segment, time)
           seek(clamped)
         }
       }
     }
 
-    el.addEventListener('pointermove', onMove)
-    el.addEventListener('pointerup', onUp)
+    element.addEventListener('pointermove', onMove)
+    element.addEventListener('pointerup', onUp)
   }
 
   return (
@@ -152,13 +152,13 @@ export function SegmentBlock({
         ref={leftRef}
         class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('left')}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       />
       <div
         ref={rightRef}
         class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('right')}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       />
     </div>
   )

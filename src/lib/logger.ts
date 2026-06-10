@@ -12,9 +12,9 @@ function pushEntry(level: LogLevel, message: string, meta?: any) {
     if (next.length > LOG_LIMIT) next.length = LOG_LIMIT
     logs.value = next
     return entry
-  } catch (e) {
+  } catch (err) {
     // Best effort: do not fail app if logging breaks
-    console.error('Logger push failed', e)
+    console.error('Logger push failed', err)
     return null
   }
 }

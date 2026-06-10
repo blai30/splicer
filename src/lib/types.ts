@@ -7,6 +7,8 @@ export type Clip = {
   height: number
   objectUrl: string
   waveformPeaks: number[]
+  // Set after waveform extraction; undefined means not yet probed.
+  hasAudio?: boolean
 }
 
 export type CropParams = {
@@ -17,7 +19,7 @@ export type CropParams = {
 }
 
 export type DragState = {
-  segId: string
+  segmentId: string
   dropIndex: number
 }
 
