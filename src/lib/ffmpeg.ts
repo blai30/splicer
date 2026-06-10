@@ -519,6 +519,12 @@ function planFullEncode(
       const { x, y, width, height } = segment.crop
       videoFilter += `,crop=${width}:${height}:${x}:${y}`
     }
+    if (options.maxDimension) {
+      // Cap the longest side, preserve aspect ratio, keep dimensions even for
+      // yuv420. Used by OOM recovery to shrink the memory footprint.
+      const cap = options.maxDimension
+      videoFilter += `,scale=w=${cap}:h=${cap}:force_original_aspect_ratio=decrease:force_divisible_by=2`
+    }
     videoFilter += `[v${streamIndex}]`
 
     // Clips without an audio stream get generated silence of the segment's
@@ -699,11 +705,8 @@ export async function exportVideo(
   const mode = coreMode.value ?? 'singlethread'
   const options = encodeOptionsFor(mode, webmCodec.value)
 
-  let activeQuality = quality
-  let attempt = 0
-
   while (true) {
-    const plan = planExport(segments, format, activeQuality, fps, runId, options)
+    const plan = planExport(segments, format, quality, fps, runId, options)
     try {
       return await runExport(plan)
     } catch (err) {
@@ -715,7 +718,7 @@ export async function exportVideo(
         coreMode.value = 'singlethread'
         coreModeReason.value = 'Multi-threaded export failed at runtime'
         await restartFfmpeg()
-        // Rebuild options for single-thread and retry the same quality once.
+        // Rebuild options for single-thread and retry once.
         options.threads = null
         continue
       }
@@ -727,18 +730,18 @@ export async function exportVideo(
         console.error('[FFMPEG] failed to restart ffmpeg', restartErr)
         throw err
       }
-      const step = nextRecoveryStep({ quality: activeQuality }, attempt)
+      // OOM is resolution-bound: downscale the longest side, do not touch CRF.
+      const step = nextRecoveryStep({ maxDimension: options.maxDimension ?? null })
       if (!step) {
         throw new Error(
-          `Ran out of memory encoding ${format} at ${activeQuality}. Try a lower resolution, a faster preset, or VP8 for WebM.`
+          `Ran out of memory exporting ${format}. This video is too large for in-browser encoding even at reduced resolution. Try a shorter selection or a lower FPS.`
         )
       }
-      warn('Retrying export at reduced quality after OOM', {
-        from: activeQuality,
-        to: step.quality,
+      warn('Retrying export at reduced resolution after OOM', {
+        capPx: step.maxDimension,
       })
-      activeQuality = step.quality
-      attempt++
+      info(`Export ran out of memory; retrying downscaled to ${step.maxDimension}px`)
+      options.maxDimension = step.maxDimension
     }
   }
 }

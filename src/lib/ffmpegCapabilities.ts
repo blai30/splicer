@@ -4,9 +4,11 @@ export type CoreMode = 'multithread' | 'singlethread'
 
 // Encode options threaded through the pure planner so it stays testable.
 // threads === null means single-thread: omit all thread args.
+// maxDimension caps the longest output side (used by OOM recovery to downscale).
 export type EncodeOptions = {
   threads: number | null
   webmCodec: WebmCodec
+  maxDimension?: number | null
 }
 
 const MAX_THREADS = 8
@@ -26,6 +28,7 @@ export function encodeOptionsFor(mode: CoreMode, webmCodec: WebmCodec): EncodeOp
   return {
     threads: mode === 'multithread' ? computeThreadCount() : null,
     webmCodec,
+    maxDimension: null,
   }
 }
 
