@@ -29,6 +29,9 @@ export function KeyboardLegend({ class: className }: { class?: string }) {
         onClick={() => (isOpen.value = false)}
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Keyboard shortcuts"
           class="relative max-h-128 w-full max-w-md scrollbar-thumb-slate-400/80 scrollbar-track-transparent overflow-auto rounded-lg border border-slate-200/80 bg-white shadow-lg dark:scrollbar-thumb-slate-600/80 dark:border-slate-700/70 dark:bg-slate-900"
           onClick={(event) => event.stopPropagation()}
         >

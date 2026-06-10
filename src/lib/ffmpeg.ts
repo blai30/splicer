@@ -30,6 +30,7 @@ function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
   if (segments.length === 0) return false
 
   const sourceExtensions = new Set<string>()
+  const audioPresence = new Set<boolean>()
 
   for (const segment of segments) {
     if (segment.crop) return false
@@ -37,7 +38,12 @@ function canUseStreamCopy(segments: Segment[], format: ExportFormat): boolean {
     const clip = getClipById(segment.clipId)
     if (!clip) return false
     sourceExtensions.add(getFileExtension(clip.file.name))
+    audioPresence.add(clip.hasAudio !== false)
   }
+
+  // The concat demuxer needs a uniform stream layout; mixing clips with and
+  // without audio produces broken output.
+  if (audioPresence.size > 1) return false
 
   // Same container -> stream copy
   if (sourceExtensions.size === 1 && sourceExtensions.has(format)) return true
@@ -174,10 +180,29 @@ export function cancelExport(): void {
 async function exec(ffmpeg: FFmpeg, args: string[]): Promise<void> {
   info('Running ffmpeg', { args })
   console.log('[FFMPEG CMD]', args.join(' '))
-  const exitCode = await ffmpeg.exec(args)
+
+  // Keep the most recent log lines so a failure can surface the actual
+  // ffmpeg message instead of just an exit code.
+  const recentLogs: string[] = []
+  const onLog = ({ message }: { message: string }) => {
+    recentLogs.push(message)
+    if (recentLogs.length > 10) recentLogs.shift()
+  }
+  ffmpeg.on('log', onLog)
+
+  let exitCode: number
+  try {
+    exitCode = await ffmpeg.exec(args)
+  } finally {
+    ffmpeg.off('log', onLog)
+  }
+
   if (exitCode !== 0) {
-    logError('FFmpeg error', { code: exitCode, args })
-    throw new Error(`FFmpeg error (code ${exitCode})`)
+    const detail =
+      [...recentLogs].reverse().find((line) => /error|invalid|failed|no such/i.test(line)) ??
+      recentLogs.at(-1)
+    logError('FFmpeg error', { code: exitCode, args, detail })
+    throw new Error(detail ? `FFmpeg error: ${detail}` : `FFmpeg error (code ${exitCode})`)
   }
 }
 
@@ -315,9 +340,17 @@ function planFullEncode(
     }
     videoFilter += `[v${streamIndex}]`
 
-    let audioFilter = `[${streamIndex}:a]atrim=${segment.startTime}:${segment.endTime},asetpts=PTS-STARTPTS`
-    if (segment.muted) {
-      audioFilter += ',volume=0'
+    // Clips without an audio stream get generated silence of the segment's
+    // duration; mapping [i:a] for them would make the whole command fail.
+    let audioFilter: string
+    if (clip.hasAudio === false) {
+      const segmentDuration = segment.endTime - segment.startTime
+      audioFilter = `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=0:${segmentDuration},asetpts=PTS-STARTPTS`
+    } else {
+      audioFilter = `[${streamIndex}:a]atrim=${segment.startTime}:${segment.endTime},asetpts=PTS-STARTPTS`
+      if (segment.muted) {
+        audioFilter += ',volume=0'
+      }
     }
     audioFilter += `[a${streamIndex}]`
 
@@ -376,7 +409,7 @@ export function planExport(
     const canMutedCopy = segments.every((segment) => {
       if (segment.crop) return false
       const clip = getClipById(segment.clipId)
-      return clip != null && getFileExtension(clip.file.name) === format
+      return clip != null && getFileExtension(clip.file.name) === format && clip.hasAudio !== false
     })
     if (canMutedCopy) return planMuteStreamCopy(segments, format, runId)
   }

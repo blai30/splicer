@@ -68,7 +68,13 @@ export const EXPORT_HISTORY_LIMIT = 50
 
 export function addExportRecord(record: ExportRecord) {
   const next = [record, ...exportHistory.value]
-  if (next.length > EXPORT_HISTORY_LIMIT) next.length = EXPORT_HISTORY_LIMIT
+  if (next.length > EXPORT_HISTORY_LIMIT) {
+    // Release blob memory held by evicted records.
+    for (const evicted of next.slice(EXPORT_HISTORY_LIMIT)) {
+      URL.revokeObjectURL(evicted.url)
+    }
+    next.length = EXPORT_HISTORY_LIMIT
+  }
   exportHistory.value = next
 }
 

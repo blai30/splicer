@@ -29,6 +29,15 @@ let video: HTMLVideoElement | null = null
 let rafId = 0
 let resumeAfterSwitch = false
 let disposeEffects: (() => void) | null = null
+// Seek requested while a source switch is still loading metadata; applied in
+// onloadedmetadata instead of being overwritten by the segment start.
+let pendingSeekTime: number | null = null
+
+// play() rejects when interrupted by a later load() or when no source is set;
+// neither case should surface as an unhandled rejection.
+function playSafely(element: HTMLVideoElement) {
+  element.play().catch(() => {})
+}
 
 export function getActiveSegmentInfo(): ActiveSegmentInfo | null {
   const segmentId = selectedSegmentId.value ?? timeline.value[0]?.id
@@ -46,6 +55,9 @@ function tickPlayhead() {
   const segmentStart = info?.start ?? 0
   playheadTime.value = video.currentTime
   currentPlaybackTime.value = Math.max(0, video.currentTime - segmentStart)
+  // Check the segment boundary every frame: timeupdate alone fires only a few
+  // times per second, letting playback overshoot the out-point audibly.
+  advanceAtSegmentEnd()
   rafId = requestAnimationFrame(tickPlayhead)
 }
 
@@ -61,8 +73,12 @@ function onPause() {
 
 // Auto-advance: when playback reaches the segment end, move to the next
 // segment (resuming playback) or stop and rewind selection to the first.
-function onTimeUpdate() {
-  if (!video) return
+// Only applies during playback; a paused seek or frame step that lands on the
+// segment end must not reset the selection. Gates on the playing signal rather
+// than video.paused because paused already reads true during the final
+// timeupdate when the media runs out.
+function advanceAtSegmentEnd() {
+  if (!video || !playing.value) return
   const info = getActiveSegmentInfo()
   const segmentEnd = info?.end ?? video.duration
 
@@ -70,7 +86,7 @@ function onTimeUpdate() {
     const segments = timeline.value
     const currentIndex = segments.findIndex((segment) => segment.id === info?.segment.id)
     const nextSegment = segments[currentIndex + 1]
-    if (nextSegment && playing.value) {
+    if (nextSegment) {
       resumeAfterSwitch = true
       selectedSegmentId.value = nextSegment.id
     } else {
@@ -118,18 +134,27 @@ function syncSource() {
     videoElement.src = info.url
     videoElement.load()
     videoElement.onloadedmetadata = () => {
-      videoElement.currentTime = info.start
+      // A seek issued while the new source was loading wins over the default
+      // segment start (e.g. clicking into a segment from a different clip).
+      const startTime =
+        pendingSeekTime !== null
+          ? Math.min(info.end, Math.max(info.start, pendingSeekTime))
+          : info.start
+      pendingSeekTime = null
+      videoElement.currentTime = startTime
+      playheadTime.value = startTime
       currentSegmentDuration.value = info.end - info.start
-      currentPlaybackTime.value = 0
-      if (resume) videoElement.play()
+      currentPlaybackTime.value = startTime - info.start
+      if (resume) playSafely(videoElement)
     }
   } else {
     currentSegmentDuration.value = info.end - info.start
     if (videoElement.currentTime < info.start || videoElement.currentTime >= info.end) {
       videoElement.currentTime = info.start
+      playheadTime.value = info.start
       currentPlaybackTime.value = 0
     }
-    if (resume && videoElement.paused) videoElement.play()
+    if (resume && videoElement.paused) playSafely(videoElement)
   }
 }
 
@@ -137,7 +162,7 @@ export function attachVideo(element: HTMLVideoElement) {
   video = element
   element.addEventListener('play', onPlay)
   element.addEventListener('pause', onPause)
-  element.addEventListener('timeupdate', onTimeUpdate)
+  element.addEventListener('timeupdate', advanceAtSegmentEnd)
   const disposeSource = effect(syncSource)
   const disposeAudio = effect(syncAudio)
   disposeEffects = () => {
@@ -150,9 +175,11 @@ export function detachVideo() {
   if (video) {
     video.removeEventListener('play', onPlay)
     video.removeEventListener('pause', onPause)
-    video.removeEventListener('timeupdate', onTimeUpdate)
+    video.removeEventListener('timeupdate', advanceAtSegmentEnd)
+    video.onloadedmetadata = null
   }
   cancelAnimationFrame(rafId)
+  pendingSeekTime = null
   disposeEffects?.()
   disposeEffects = null
   video = null
@@ -161,9 +188,12 @@ export function detachVideo() {
 export function togglePlay() {
   if (!video) return
   const info = getActiveSegmentInfo()
+  // Nothing to play when the timeline is empty; calling play() on a video
+  // without a source leaves a dangling rejected promise.
+  if (!info) return
   if (video.paused) {
-    if (info && video.currentTime >= info.end) video.currentTime = info.start
-    video.play()
+    if (video.currentTime >= info.end) video.currentTime = info.start
+    playSafely(video)
   } else {
     video.pause()
   }
@@ -172,8 +202,9 @@ export function togglePlay() {
 export function stepFrame(direction: 1 | -1) {
   if (!video) return
   const info = getActiveSegmentInfo()
-  const segmentStart = info?.start ?? 0
-  const segmentEnd = info?.end ?? video.duration
+  if (!info) return
+  const segmentStart = info.start
+  const segmentEnd = info.end
   const nextTime =
     direction === 1
       ? Math.min(segmentEnd, video.currentTime + FRAME_STEP)
@@ -185,7 +216,14 @@ export function stepFrame(direction: 1 | -1) {
 
 export function seek(time: number) {
   playheadTime.value = time
-  if (video) video.currentTime = time
+  if (!video) return
+  if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
+    // Metadata for a source switch is still loading; defer the seek so the
+    // onloadedmetadata handler applies it instead of the segment start.
+    pendingSeekTime = time
+  } else {
+    video.currentTime = time
+  }
 }
 
 export function setPlaybackRate(rate: number) {
