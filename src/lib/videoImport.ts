@@ -6,16 +6,10 @@ import { clips, getClipById, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
 import type { Clip } from '@/lib/types'
 
-export const ACCEPTED = [
-  'video/mp4',
-  'video/quicktime',
-  'video/x-msvideo',
-  'video/x-matroska',
-  'video/webm',
-]
+export const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm']
 
 export function isVideoFile(file: File): boolean {
-  return ACCEPTED.includes(file.type) || /\.(mp4|mkv|mov|avi|webm)$/i.test(file.name)
+  return ACCEPTED.includes(file.type) || /\.(mp4|mkv|mov|webm)$/i.test(file.name)
 }
 
 export function getVideoMetadata(

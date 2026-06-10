@@ -30,14 +30,18 @@ test('falls back to ffmpeg when WebCodecs is forced off', async ({ page }) => {
   await page.goto('/splicer/')
   await page.locator('input[type="file"]').setInputFiles(fixture)
 
-  await page.getByRole('button', { name: /^WebM$/ }).click()
+  // MP4 at High quality would normally route to WebCodecs (it is a re-encode,
+  // not a lossless stream copy), so forcing ffmpeg here genuinely exercises the
+  // fallback. libx264 in wasm handles this combo where lossless VP9 WebM OOMs.
+  await page.getByRole('button', { name: /^MP4$/ }).click()
+  await page.getByRole('button', { name: /^High$/ }).click()
 
   const exportButton = page.getByRole('button', { name: /export video/i })
   await expect(exportButton).toBeVisible()
   await exportButton.click()
 
   // The export still completes, produced by ffmpeg (no WebCodecs badge).
-  await expect(page.getByRole('link', { name: /\.webm/i }).first()).toBeVisible({
+  await expect(page.getByRole('link', { name: /\.mp4/i }).first()).toBeVisible({
     timeout: 120_000,
   })
   await expect(page.getByText('WebCodecs')).toHaveCount(0)

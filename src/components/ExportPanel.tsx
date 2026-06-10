@@ -18,11 +18,19 @@ import {
   ffmpegProgress,
   ffmpegReady,
   framerate,
+  mkvCodec,
   quality,
   timeline,
   webmCodec,
 } from '@/lib/store'
-import type { ExportFormat, ExportRecord, Framerate, Quality, WebmCodec } from '@/lib/types'
+import type {
+  ExportFormat,
+  ExportRecord,
+  Framerate,
+  MkvCodec,
+  Quality,
+  WebmCodec,
+} from '@/lib/types'
 
 function makeFilename(format: ExportFormat): string {
   const timestamp = new Date()
@@ -156,7 +164,6 @@ export function ExportPanel() {
     { value: 'mp4', label: 'MP4' },
     { value: 'mkv', label: 'MKV' },
     { value: 'mov', label: 'MOV' },
-    { value: 'avi', label: 'AVI' },
     { value: 'webm', label: 'WebM' },
   ]
   const qualities: { value: Quality; label: string }[] = [
@@ -174,6 +181,10 @@ export function ExportPanel() {
   const webmCodecs: { value: WebmCodec; label: string }[] = [
     { value: 'vp9', label: 'VP9 (recommended)' },
     { value: 'vp8', label: 'VP8 (faster)' },
+  ]
+  const mkvCodecs: { value: MkvCodec; label: string }[] = [
+    { value: 'h264', label: 'H.264 (recommended)' },
+    { value: 'vp9', label: 'VP9' },
   ]
 
   const hasSegments = timeline.value.length > 0
@@ -271,6 +282,16 @@ export function ExportPanel() {
             selected={webmCodec.value}
             onSelect={(value) => {
               webmCodec.value = value
+            }}
+          />
+        )}
+        {exportFormat.value === 'mkv' && (
+          <OptionButtonGroup
+            label="Codec"
+            options={mkvCodecs}
+            selected={mkvCodec.value}
+            onSelect={(value) => {
+              mkvCodec.value = value
             }}
           />
         )}

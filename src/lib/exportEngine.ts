@@ -1,16 +1,22 @@
+import { selectCodecs, WEBCODECS_FORMATS } from '@/lib/exportCodecs'
 import { EtaTracker } from '@/lib/exportEta'
-import { cancelExport as cancelFfmpeg, exportVideo } from '@/lib/ffmpeg'
+import { cancelExport as cancelFfmpeg, exportVideo, willStreamCopy } from '@/lib/ffmpeg'
 import { info, warn } from '@/lib/logger'
 import {
   exportEngineUsed,
   exportEtaSeconds,
   ffmpegProgress,
   getClipById,
+  mkvCodec,
   webmCodec,
 } from '@/lib/store'
-import type { ExportFormat, Framerate, Quality, Segment } from '@/lib/types'
-import { webcodecsSupported } from '@/lib/webcodecs/capabilities'
-import { probeContainer } from '@/lib/webcodecs/demux'
+import {
+  MIME_TYPES,
+  type ExportFormat,
+  type Framerate,
+  type Quality,
+  type Segment,
+} from '@/lib/types'
 import type { ExportJob, JobSource, WorkerResponse } from '@/lib/webcodecs/protocol'
 
 let activeWorker: Worker | null = null
@@ -24,10 +30,28 @@ function forceFfmpeg(): boolean {
   }
 }
 
+// Pure decision: which engine should handle this export. Stream-copy-eligible
+// exports stay on ffmpeg (instant, lossless); otherwise supported formats
+// re-encode through WebCodecs and the rest fall back to ffmpeg.
+export function chooseEngine(input: {
+  format: ExportFormat
+  forceFfmpeg: boolean
+  streamCopyEligible: boolean
+}): 'webcodecs' | 'ffmpeg' {
+  if (input.forceFfmpeg) return 'ffmpeg'
+  if (input.streamCopyEligible) return 'ffmpeg'
+  return WEBCODECS_FORMATS.includes(input.format) ? 'webcodecs' : 'ffmpeg'
+}
+
 // Resolve the timeline into a serializable job: one source per distinct clip,
 // each segment mapped to a slice referencing its source. Returns null when any
 // clip is missing (the router then uses ffmpeg).
-function buildJob(segments: Segment[], quality: Quality, fps: Framerate): ExportJob | null {
+function buildJob(
+  segments: Segment[],
+  format: ExportFormat,
+  quality: Quality,
+  fps: Framerate
+): ExportJob | null {
   const sources: JobSource[] = []
   const indexByClip = new Map<string, number>()
 
@@ -55,32 +79,17 @@ function buildJob(segments: Segment[], quality: Quality, fps: Framerate): Export
   })
 
   if (slices.some((slice) => slice === null)) return null
+  const selection = selectCodecs(format, webmCodec.value, mkvCodec.value)
   return {
     sources,
     slices: slices as ExportJob['slices'],
     quality,
     fps,
-    webmCodec: webmCodec.value,
+    format,
+    container: selection.container,
+    videoCodec: selection.videoCodec,
+    audioCodec: selection.audioCodec,
   }
-}
-
-// Up-front gate: every source must be a demuxable container and WebCodecs must
-// support the target encode at the output dimensions. Precise source-codec
-// decode support is verified inside the worker (it falls back on failure).
-async function canRunWebcodecs(job: ExportJob): Promise<boolean> {
-  let maxWidth = 0
-  let maxHeight = 0
-  for (const source of job.sources) {
-    const container = await probeContainer(source.file)
-    if (container === 'unsupported') return false
-    maxWidth = Math.max(maxWidth, source.width)
-    maxHeight = Math.max(maxHeight, source.height)
-  }
-  return webcodecsSupported({
-    webmCodec: job.webmCodec,
-    width: maxWidth,
-    height: maxHeight,
-  })
 }
 
 function runInWorker(job: ExportJob): Promise<{ url: string; size: number }> {
@@ -108,7 +117,7 @@ function runInWorker(job: ExportJob): Promise<{ url: string; size: number }> {
         exportEtaSeconds.value = eta.etaSeconds(message.progress, performance.now())
       } else if (message.type === 'done') {
         cleanup()
-        const blob = new Blob([message.buffer], { type: 'video/webm' })
+        const blob = new Blob([message.buffer], { type: MIME_TYPES[job.format] })
         ffmpegProgress.value = 1
         resolve({ url: URL.createObjectURL(blob), size: blob.size })
       } else if (message.type === 'canceled') {
@@ -139,20 +148,18 @@ export async function runExportEngine(
 ): Promise<{ url: string; size: number }> {
   if (segments.length === 0) throw new Error('No segments')
 
-  if (format === 'webm' && !forceFfmpeg()) {
-    const job = buildJob(segments, quality, fps)
+  const streamCopyEligible = willStreamCopy(segments, format, quality, fps)
+  if (chooseEngine({ format, forceFfmpeg: forceFfmpeg(), streamCopyEligible }) === 'webcodecs') {
+    const job = buildJob(segments, format, quality, fps)
     if (job) {
       try {
-        if (await canRunWebcodecs(job)) {
-          info('Exporting via WebCodecs engine')
-          const result = await runInWorker(job)
-          exportEngineUsed.value = 'webcodecs'
-          return result
-        }
+        info('Exporting via WebCodecs engine')
+        const result = await runInWorker(job)
+        exportEngineUsed.value = 'webcodecs'
+        return result
       } catch (err) {
         if (err instanceof Error && err.message === 'canceled') throw err
         const message = err instanceof Error ? err.message : String(err)
-        console.warn('[exportEngine] WebCodecs export failed, falling back to ffmpeg:', message)
         warn('WebCodecs export failed, falling back to ffmpeg', { message })
       }
     }
