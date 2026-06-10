@@ -2,6 +2,7 @@ import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { CirclePlay, X, AlertTriangle } from 'lucide-preact'
 
+import { ExportFaq } from '@/components/ExportFaq'
 import { runExportEngine, cancelActiveExport } from '@/lib/exportEngine'
 import { assessFeasibility } from '@/lib/exportFeasibility'
 import { getFfmpeg } from '@/lib/ffmpeg'
@@ -213,6 +214,7 @@ export function ExportPanel() {
         <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
           Export
         </span>
+        <ExportFaq />
         {coreMode.value && (
           <span
             class={clsx(
