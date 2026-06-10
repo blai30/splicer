@@ -39,7 +39,6 @@ import {
 } from '@/lib/timelineDomain'
 import { importAndAppend } from '@/lib/videoImport'
 
-const ZOOM_KEYBOARD_STEP = 10
 const ZOOM_SCALE_FACTOR = 1.25
 
 export function Timeline() {
@@ -111,24 +110,6 @@ export function Timeline() {
 
     pxPerSec.value = clamped
   }
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-
-      if (e.key === '-' || e.key === '_') {
-        e.preventDefault()
-        zoomTo(pxPerSec.value - ZOOM_KEYBOARD_STEP)
-      } else if (e.key === '=' || e.key === '+') {
-        e.preventDefault()
-        zoomTo(pxPerSec.value + ZOOM_KEYBOARD_STEP)
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
 
   // Cleanup any pending drag handlers on unmount
   useEffect(
