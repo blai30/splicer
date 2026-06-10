@@ -50,6 +50,9 @@ export const ffmpegProgress = signal<number>(0)
 export const coreMode = signal<CoreMode | null>(null)
 export const coreModeReason = signal<string>('')
 
+// Which engine produced the most recent export: 'webcodecs' or 'ffmpeg'.
+export const exportEngineUsed = signal<'webcodecs' | 'ffmpeg' | null>(null)
+
 // ETA in seconds during an active export (null when unknown).
 export const exportEtaSeconds = signal<number | null>(null)
 

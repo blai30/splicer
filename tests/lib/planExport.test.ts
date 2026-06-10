@@ -113,3 +113,41 @@ describe('planExport webm stream copy', () => {
     expect(lastCmd).toContain('volume=0')
   })
 })
+
+describe('planFullEncode no-audio handling', () => {
+  it('omits the audio track entirely when no clip has audio', () => {
+    clips.value = [makeClip({ hasAudio: false })]
+    // medium quality forces a full re-encode (no stream copy path).
+    const plan = planExport([segment()], 'mp4', 'medium', 'original', 'run1', {
+      threads: null,
+      webmCodec: 'vp8',
+    })
+    const cmd = plan.commands.at(-1)!.join(' ')
+    expect(cmd).not.toContain('anullsrc')
+    expect(cmd).not.toContain('[outa]')
+    // A single segment skips the concat filter; the video output maps directly.
+    expect(cmd).toContain('[outv]')
+    expect(cmd).not.toContain('concat=')
+    // Exactly one -map, for video only.
+    expect(cmd.match(/-map/g)?.length).toBe(1)
+  })
+
+  it('keeps silence-fill when some clips have audio and others do not', () => {
+    clips.value = [
+      makeClip({ id: 'clip-1', hasAudio: true }),
+      makeClip({ id: 'clip-2', hasAudio: false }),
+    ]
+    const plan = planExport(
+      [segment({ id: 'seg-1', clipId: 'clip-1' }), segment({ id: 'seg-2', clipId: 'clip-2' })],
+      'mp4',
+      'medium',
+      'original',
+      'run1',
+      { threads: null, webmCodec: 'vp8' }
+    )
+    const cmd = plan.commands.at(-1)!.join(' ')
+    expect(cmd).toContain('anullsrc')
+    expect(cmd).toContain('[outa]')
+    expect(cmd).toContain('concat=n=2:v=1:a=1')
+  })
+})
