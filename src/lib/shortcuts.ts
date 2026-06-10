@@ -1,10 +1,10 @@
+import { stepFrame, togglePlay } from '@/lib/playback'
 import {
   setInPoint,
   setOutPoint,
   cutAtPlayhead,
   deleteSegment,
   undoDelete,
-  videoEl,
   toggleMute,
 } from '@/lib/store'
 
@@ -19,25 +19,20 @@ export function initKeyboardShortcuts() {
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
     // basic playback controls
-    const video = videoEl.current
     switch (e.key) {
       case ' ':
         e.preventDefault()
-        if (!video) return
-        if (video.paused) video.play()
-        else video.pause()
+        togglePlay()
         return
       case 'ArrowLeft':
       case ',':
         e.preventDefault()
-        if (!video) return
-        video.currentTime = Math.max(0, video.currentTime - 1 / 30)
+        stepFrame(-1)
         return
       case 'ArrowRight':
       case '.':
         e.preventDefault()
-        if (!video) return
-        video.currentTime = Math.min(video.duration, video.currentTime + 1 / 30)
+        stepFrame(1)
         return
       case 'i':
         setInPoint()

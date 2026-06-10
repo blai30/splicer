@@ -14,6 +14,7 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { SegmentBlock } from '@/components/SegmentBlock'
 import { ZoomSlider } from '@/components/ZoomSlider'
+import { seek } from '@/lib/playback'
 import {
   GAP_PX,
   PADDING_PX,
@@ -29,7 +30,6 @@ import {
   setOutPoint,
   timeline,
   toggleMute,
-  videoEl,
 } from '@/lib/store'
 import {
   computeZoomScroll,
@@ -74,9 +74,7 @@ export function Timeline() {
       trackEl: trackRef.current,
       onSeek(segmentId, time) {
         selectedSegmentId.value = segmentId
-        playheadTime.value = time
-        const video = videoEl.current
-        if (video) video.currentTime = time
+        seek(time)
       },
     })
 
@@ -93,9 +91,7 @@ export function Timeline() {
       pxPerSec: pxPerSec.value,
       trackEl: trackRef.current,
       onUpdate(time) {
-        playheadTime.value = time
-        const video = videoEl.current
-        if (video) video.currentTime = time
+        seek(time)
       },
     })
 

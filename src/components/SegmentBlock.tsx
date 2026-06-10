@@ -3,7 +3,8 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
-import { playheadTime, selectedSegmentId, timeline, videoEl, getClipById, clips } from '@/lib/store'
+import { seek } from '@/lib/playback'
+import { selectedSegmentId, timeline, getClipById, clips } from '@/lib/store'
 import { GAP_PX, clipColor, dragState, pxPerSec } from '@/lib/store'
 import { createRafThrottler } from '@/lib/timelineDomain'
 import {
@@ -120,9 +121,7 @@ export function SegmentBlock({
           const segmentStartX = startX
           const t = segment.startTime + Math.max(0, x - segmentStartX) / pxPerSec.value
           const clamped = clampPlayheadForSegment(segment, t)
-          playheadTime.value = clamped
-          const video = videoEl.current
-          if (video) video.currentTime = clamped
+          seek(clamped)
         }
       }
     }

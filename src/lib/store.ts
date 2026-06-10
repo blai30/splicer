@@ -101,10 +101,10 @@ export const theme = signal<'light' | 'dark'>(
     : 'light'
 )
 
+// Playback output signals. Written only by the playback module (lib/playback.ts).
 export const playing = signal(false)
 export const currentPlaybackTime = signal(0)
 export const currentSegmentDuration = signal(0)
-export const videoEl: { current: HTMLVideoElement | null } = { current: null }
 
 persistSignal('exportFormat', exportFormat)
 persistSignal('quality', quality)
