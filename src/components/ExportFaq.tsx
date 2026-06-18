@@ -13,9 +13,9 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
       'WebM is a container, not a codec. Exporting to WebM re-encodes your video with VP8 or VP9, and re-encoding an already-compressed video always loses a little quality. You cannot gain quality by re-encoding, and a smaller file with zero quality loss is not possible this way.',
   },
   {
-    question: 'How do I export without losing any quality?',
+    question: 'How do I keep quality as high as possible?',
     answer:
-      'Export to the same format as your source, at Lossless quality, with FPS left on Original and without cropping or muting. Splicer then copies the video stream directly instead of re-encoding, so there is no quality loss and it finishes almost instantly. Trimming is still fine; changing the format, FPS, cropping, or muting forces a re-encode.',
+      'Every export re-encodes the video, so a perfectly lossless copy is not possible. To stay as close to the source as you can, export to the same format as your source at Lossless quality with FPS left on Original. Lossless targets a very high bitrate for near-transparent quality.',
   },
   {
     question: 'Should I use VP8 or VP9?',
@@ -80,10 +80,9 @@ export function ExportFaq({ class: className }: { class?: string }) {
             <div class="mb-2 rounded-md border border-violet-200/80 bg-violet-50 p-3 text-sm leading-relaxed text-slate-700 dark:border-violet-800/50 dark:bg-violet-900/20 dark:text-slate-200">
               <p>
                 <span class="font-semibold text-violet-700 dark:text-violet-300">TL;DR:</span> For
-                the fastest, lossless export, keep the format the same as your source video and leave
-                quality on Lossless and FPS on Original (no crop or mute). Splicer then copies the
-                video stream directly instead of re-encoding, so it finishes almost instantly with no
-                quality loss. Changing the format forces a slower re-encode.
+                the highest-quality export, keep the format the same as your source video and leave
+                quality on Lossless and FPS on Original. Every export re-encodes in the browser, so
+                Lossless aims for near-transparent quality rather than a perfect copy.
               </p>
             </div>
 
@@ -102,9 +101,8 @@ export function ExportFaq({ class: className }: { class?: string }) {
                   photocopying a photocopy.
                 </li>
                 <li class="list-disc">
-                  The only way to lose zero quality is to not re-encode at all (stream-copy). But
-                  H.264 cannot live in a WebM container, so WebM export always re-encodes. There is
-                  no zero-loss path from an MP4 to WebM.
+                  Re-encoding always loses a little quality, and H.264 cannot live in a WebM
+                  container, so there is no zero-loss path from an MP4 to WebM.
                 </li>
               </ul>
             </div>

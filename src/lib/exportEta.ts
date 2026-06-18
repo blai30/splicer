@@ -1,4 +1,4 @@
-// Smooths jumpy ffmpeg progress into an ETA and an x-realtime-ish speed.
+// Smooths jumpy export progress into an ETA and an x-realtime-ish speed.
 // Time is passed in by the caller (ms) so the module stays pure and testable.
 export class EtaTracker {
   private firstProgress: number | null = null

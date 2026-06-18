@@ -11,7 +11,7 @@ export type CodecSelection = {
   audioCodec: MbAudioCodec
 }
 
-// Formats the WebCodecs/mediabunny engine handles. Anything else uses ffmpeg.
+// Formats the WebCodecs/mediabunny engine handles.
 export const WEBCODECS_FORMATS: ExportFormat[] = ['mp4', 'mov', 'mkv', 'webm']
 
 export function selectCodecs(

@@ -12,8 +12,5 @@ test('switches between Basic and Advanced and remembers the choice', async ({ pa
 
   // The choice is remembered across reloads.
   await page.reload()
-  await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
-    'aria-selected',
-    'true'
-  )
+  await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute('aria-selected', 'true')
 })

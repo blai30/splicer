@@ -2,8 +2,8 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test } from '@playwright/test'
 
-// Imports a tiny clip, exports MP4 (stream-copy, fast and deterministic), and
-// asserts a downloadable record appears. Heavy WebM is excluded from CI.
+// Imports a tiny clip, exports MP4 via the WebCodecs engine, and asserts a
+// downloadable record appears. Heavy WebM is excluded from CI.
 test('imports a clip and exports MP4', async ({ page }) => {
   await page.goto('/splicer/')
 
@@ -22,7 +22,6 @@ test('imports a clip and exports MP4', async ({ page }) => {
     timeout: 60_000,
   })
 
-  // Default quality is lossless on a same-container trim, so this must route to
-  // the ffmpeg stream-copy fast path, not a WebCodecs re-encode.
-  await expect(page.getByText('WebCodecs')).toHaveCount(0)
+  // Every export now runs through the WebCodecs engine.
+  await expect(page.getByText('WebCodecs')).toBeVisible()
 })

@@ -4,8 +4,8 @@ import { expect, test } from '@playwright/test'
 
 const fixture = fileURLToPath(new URL('../fixtures/tiny.mp4', import.meta.url))
 
-// High quality forces a re-encode (lossless same-container would stream-copy via
-// ffmpeg), so each case exercises the WebCodecs/mediabunny engine.
+// Each case re-encodes through the WebCodecs/mediabunny engine; the WebCodecs
+// badge confirms the engine.
 const cases: { format: string; ext: string; codec?: string }[] = [
   { format: 'MP4', ext: 'mp4' },
   { format: 'MOV', ext: 'mov' },

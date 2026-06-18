@@ -8,8 +8,8 @@ export function AdvancedPlaceholder() {
         Advanced multi-track compositor
       </h2>
       <p class="max-w-prose text-sm text-slate-500 dark:text-slate-400">
-        The multi-track compositing editor is coming soon. Switch back to Basic to continue
-        editing on the single-track timeline.
+        The multi-track compositing editor is coming soon. Switch back to Basic to continue editing
+        on the single-track timeline.
       </p>
     </section>
   )

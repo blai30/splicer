@@ -41,7 +41,7 @@ export type WorkerResponse =
 
 // Thrown by a demuxer when the source uses a shape outside the bounded subset
 // this engine handles (lacing, unknown codec, etc.). The worker reports it with
-// unsupported: true so the router falls back to ffmpeg.
+// unsupported: true so the export surfaces an honest error.
 export class UnsupportedSourceError extends Error {
   constructor(message: string) {
     super(message)

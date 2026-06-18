@@ -178,8 +178,7 @@ export function ExportPanel() {
   ]
 
   const hasSegments = timeline.value.length > 0
-  // When WebCodecs is present, WebM (including VP9) encodes natively without the
-  // OOM problems of the ffmpeg.wasm path. Only without it does VP9 risk failing.
+  // Export runs entirely through WebCodecs, so a VideoEncoder is required.
   const webcodecsAvailable = typeof VideoEncoder !== 'undefined'
   const currentProgress = exportProgress.value
   const progressPct = Math.max(0, Math.min(100, Math.round(currentProgress * 100)))
@@ -334,28 +333,6 @@ export function ExportPanel() {
               </div>
             </div>
           )}
-          {hasSegments &&
-            exportFormat.value === 'webm' &&
-            webmCodec.value === 'vp9' &&
-            !webcodecsAvailable && (
-              <div
-                class="rounded-md bg-yellow-50 p-2 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300"
-                role="alert"
-              >
-                <div class="flex items-start gap-2">
-                  <span class="flex h-lh items-center">
-                    <AlertTriangle class="m-0.5 size-4.5 flex-none shrink-0" />
-                  </span>
-                  <div>
-                    <div class="font-medium">VP9 may be slow or fail in this browser</div>
-                    <div class="text-sm text-current/90">
-                      This browser has no native video encoder, so VP9 falls back to in-browser
-                      encoding that can run out of memory. Try VP8 or a smaller resolution.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           {exporting.value && (
             <div
               class="flex items-center gap-2"
