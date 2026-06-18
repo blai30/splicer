@@ -2,8 +2,8 @@
 import { assetPath } from '@/lib/paths'
 import Layout from '@/layouts/Layout.astro'
 import { KeyboardShortcutsInit } from '@/components/KeyboardShortcutsInit'
-import { VideoPreview } from '@/components/VideoPreview'
-import { Timeline } from '@/components/Timeline'
+import { ModeTabs } from '@/components/ModeTabs'
+import { EditorSurface } from '@/components/EditorSurface'
 import { ExportPanel } from '@/components/ExportPanel'
 import { ExportHistory } from '@/components/ExportHistory'
 import { LogPanel } from '@/components/LogPanel'
@@ -25,12 +25,8 @@ const pageDescription =
     aria-label="Video timeline editor and exporter application"
   >
     <KeyboardShortcutsInit client:only="preact" />
-    <section aria-label="Video preview and playback controls">
-      <VideoPreview client:only="preact" />
-    </section>
-    <section aria-label="Timeline editor with segments">
-      <Timeline client:only="preact" />
-    </section>
+    <ModeTabs client:only="preact" />
+    <EditorSurface client:only="preact" />
     <section aria-label="Export settings and controls">
       <ExportPanel client:only="preact" />
     </section>

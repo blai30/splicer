@@ -124,6 +124,11 @@ export const theme = signal<'light' | 'dark'>(
     : 'light'
 )
 
+// Which editor mode is active. Basic is today's single-track editor; Advanced
+// is the multi-track compositor. Persisted so the app reopens in the last-used
+// mode (Basic on first visit).
+export const appMode = signal<'basic' | 'advanced'>(loadFromStorage('appMode', 'basic'))
+
 // Playback output signals. Written only by the playback module (lib/playback.ts).
 export const playing = signal(false)
 export const currentPlaybackTime = signal(0)
@@ -137,6 +142,7 @@ persistSignal('mkvCodec', mkvCodec)
 persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
 persistSignal('logPanelVisible', logPanelVisible)
+persistSignal('appMode', appMode)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200
