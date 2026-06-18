@@ -1,6 +1,6 @@
-import { setAdvancedClip } from '@/lib/advanced/advancedEditing'
+import { addClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
 import { info, warn, error as logError } from '@/lib/logger'
-import { clips, getClipById, importing } from '@/lib/store'
+import { advancedTracks, clips, getClipById, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
 import type { Clip } from '@/lib/types'
 
@@ -201,13 +201,17 @@ export async function importAndAppend(file: File): Promise<void> {
   }
 }
 
-// Import a single file into the Advanced project, replacing any existing clip.
-export async function importIntoAdvanced(file: File): Promise<void> {
+export async function importIntoAdvanced(
+  file: File,
+  trackId?: string,
+  timelineStart = 0
+): Promise<void> {
   importing.value = true
   try {
     const clip = await createClip(file)
     if (clip) {
-      setAdvancedClip(clip)
+      const targetTrack = trackId ?? advancedTracks.value[0]?.id ?? 'track-1'
+      addClipToTrack(clip, targetTrack, timelineStart)
       info('Advanced import succeeded', { name: file.name, duration: clip.duration })
     }
   } finally {

@@ -4,11 +4,8 @@ import {
   advancedPlayhead,
   advancedSegments,
   advancedSelectedId,
-  advancedTracks,
-  clips,
   getClipById,
 } from '@/lib/store'
-import type { Clip } from '@/lib/types'
 
 export const CANVAS_MIN = 16
 export const CANVAS_MAX = 7680
@@ -29,26 +26,6 @@ export function setCanvasSize(width: number, height: number): void {
     if (!clip) return segment
     return { ...segment, transform: fitRect(clip.width, clip.height, next.width, next.height) }
   })
-}
-
-// Place a clip as the project's single segment (Phase 1 is single-clip), adding
-// it to the shared library if needed and fitting it to the canvas.
-export function setAdvancedClip(clip: Clip): string {
-  if (!getClipById(clip.id)) clips.value = [...clips.value, clip]
-  const canvas = advancedCanvas.value
-  const segment = {
-    id: crypto.randomUUID(),
-    clipId: clip.id,
-    trackId: advancedTracks.value[0]?.id ?? 'track-1',
-    timelineStart: 0,
-    sourceStart: 0,
-    sourceEnd: clip.duration,
-    transform: fitRect(clip.width, clip.height, canvas.width, canvas.height),
-  }
-  advancedSegments.value = [segment]
-  advancedSelectedId.value = segment.id
-  advancedPlayhead.value = 0
-  return segment.id
 }
 
 export function clearAdvancedClip(): void {
