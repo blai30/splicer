@@ -73,8 +73,13 @@ test('advanced timeline zoom buttons change clip width', async ({ page }) => {
 
   const block = page.locator('[data-advanced-segment]').first()
   const before = (await block.boundingBox())?.width ?? 0
-  await page.getByRole('button', { name: 'Zoom in' }).click()
-  await page.getByRole('button', { name: 'Zoom in' }).click()
+  // Scope to the timeline; the preview stage also has Zoom in/out controls.
+  const timeline = page
+    .locator('div:has([data-advanced-segment])')
+    .filter({ hasText: 'Tracks' })
+    .last()
+  await timeline.getByTitle('Zoom in').click()
+  await timeline.getByTitle('Zoom in').click()
   const after = (await block.boundingBox())?.width ?? 0
   expect(after).toBeGreaterThan(before)
 })

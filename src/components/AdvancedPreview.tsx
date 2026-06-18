@@ -1,4 +1,4 @@
-import { useSignal } from '@preact/signals'
+import { useSignal, useSignalEffect } from '@preact/signals'
 import { Maximize, Minus, Pause, Play, Plus, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
@@ -41,25 +41,30 @@ export function AdvancedPreview() {
     return attachAdvancedPreview(canvas)
   }, [])
 
-  // Track the stage size; fit-to-content the first time we have real dimensions.
+  // Track the stage size. A resize while paused needs an explicit redraw, since
+  // the playback redraw effect watches the viewport, not the stage size; nudge
+  // the viewport signal once we have already framed the content.
   useEffect(() => {
     const wrapper = wrapperRef.current
     if (!wrapper) return
     const observer = new ResizeObserver((entries) => {
       const rect = entries[0].contentRect
       stageSize.value = { width: rect.width, height: rect.height }
-      if (!didFit.current && rect.width > 0 && rect.height > 0) {
-        didFit.current = true
-        advancedViewport.value = fitToContent(
-          computeContentBounds(advancedSegments.value),
-          { width: rect.width, height: rect.height },
-          FIT_PADDING
-        )
-      }
+      if (didFit.current) advancedViewport.value = { ...advancedViewport.value }
     })
     observer.observe(wrapper)
     return () => observer.disconnect()
   }, [])
+
+  // Fit-to-content the first time the stage is measured and a clip is present
+  // (the preview mounts before any clip is added, so fitting must wait for one).
+  useSignalEffect(() => {
+    const size = stageSize.value
+    const segments = advancedSegments.value
+    if (didFit.current || size.width <= 0 || size.height <= 0 || segments.length === 0) return
+    didFit.current = true
+    advancedViewport.value = fitToContent(computeContentBounds(segments), size, FIT_PADDING)
+  })
 
   function fitView() {
     advancedViewport.value = fitToContent(
@@ -110,7 +115,7 @@ export function AdvancedPreview() {
     <div class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       {/* Infinite canvas stage */}
       <div
-        class="group/preview relative flex h-[480px] flex-1 overflow-hidden bg-slate-950"
+        class="group/preview relative h-[480px] overflow-hidden bg-slate-950"
         onWheel={onWheel}
         style={{
           backgroundImage: 'radial-gradient(rgba(148,163,184,0.18) 1px, transparent 1px)',
