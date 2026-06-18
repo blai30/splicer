@@ -16,7 +16,7 @@ const ICON_BUTTON =
 export function AdvancedTrackHeaders({ laneHeight }: { laneHeight: number }) {
   const tracks = advancedTracks.value
   return (
-    <div class="flex w-40 shrink-0 flex-col gap-1 border-r border-slate-200/60 pr-1 dark:border-slate-700/60">
+    <div class="flex w-54 shrink-0 flex-col gap-1 border-r border-slate-200/60 pr-1 dark:border-slate-700/60">
       <button
         onClick={() => addTrack()}
         class="mb-1 flex items-center gap-1 rounded px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:duration-0 dark:text-slate-300 dark:hover:bg-slate-700/50"
