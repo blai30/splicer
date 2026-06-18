@@ -102,10 +102,13 @@ export function AdvancedPreview() {
         <div
           ref={wrapperRef}
           data-canvas-wrapper
-          class="relative max-w-full shrink-0 bg-black ring-1 ring-slate-500/60"
+          class="relative max-w-full shrink-0 ring-1 ring-slate-500/60"
           style={{
             width: `${previewWidth.value}px`,
             aspectRatio: `${canvas.width} / ${canvas.height}`,
+            backgroundColor: '#2a2a2a',
+            backgroundImage: 'repeating-conic-gradient(#3b3b3b 0% 25%, #2a2a2a 0% 50%)',
+            backgroundSize: '48px 48px',
           }}
         >
           <canvas
