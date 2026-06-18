@@ -1,15 +1,34 @@
+import clsx from 'clsx/lite'
+import { ArrowLeftToLine, ArrowRightToLine, Scissors, Trash2, VolumeX, ZoomIn, ZoomOut } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { AdvancedSegmentBlock } from '@/components/advanced/AdvancedSegmentBlock'
 import { AdvancedTrackHeaders } from '@/components/advanced/AdvancedTrackHeaders'
+import { ZoomSlider } from '@/components/ZoomSlider'
 import { seek } from '@/lib/advanced/advancedPlayback'
 import { moveSegment } from '@/lib/advanced/advancedSegmentEditing'
+import {
+  cutAdvancedAtPlayhead,
+  deleteAdvancedSelected,
+  setAdvancedInPoint,
+  setAdvancedOutPoint,
+  toggleAdvancedMute,
+} from '@/lib/advanced/advancedTimelineEditing'
 import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
-import { advancedPlayhead, advancedSegments, advancedTracks, pxPerSec } from '@/lib/store'
-import { createRafThrottler } from '@/lib/timelineDomain'
+import {
+  advancedPlayhead,
+  advancedSegments,
+  advancedSelectedId,
+  advancedTracks,
+  pxPerSec,
+  ZOOM_MAX,
+  ZOOM_MIN,
+} from '@/lib/store'
+import { computeZoomScroll, createRafThrottler } from '@/lib/timelineDomain'
 
 const LANE_HEIGHT = 56
 const PAD_LEFT = 8
+const ZOOM_SCALE_FACTOR = 1.25
 
 export function AdvancedTimeline() {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -68,6 +87,35 @@ export function AdvancedTimeline() {
   // Cancel any pending throttled seek if we unmount mid-drag.
   useEffect(() => () => scrubThrottlerRef.current?.cancel(), [])
 
+  function zoomTo(newPx: number, anchorX?: number) {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    const oldPx = pxPerSec.value
+    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
+    if (anchorX !== undefined) {
+      scroller.scrollLeft = computeZoomScroll(oldPx, clamped, anchorX, scroller.scrollLeft, PAD_LEFT)
+    }
+    pxPerSec.value = clamped
+  }
+
+  function onWheel(event: WheelEvent) {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    if (event.ctrlKey) {
+      event.preventDefault()
+      const rect = scroller.getBoundingClientRect()
+      const anchorX = event.clientX - rect.left
+      const factor = event.deltaY > 0 ? 1 / ZOOM_SCALE_FACTOR : ZOOM_SCALE_FACTOR
+      zoomTo(pxPerSec.value * factor, anchorX)
+    } else if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+      event.preventDefault()
+      scroller.scrollLeft += event.deltaY
+    }
+  }
+
+  const selectedSegment = segments.find((segment) => segment.id === advancedSelectedId.value)
+  const toolbarDisabled = !selectedSegment
+
   function makeRequestMove(segmentId: string) {
     return (deltaTime: number, deltaLanes: number) => {
       const segment = advancedSegments.value.find((entry) => entry.id === segmentId)
@@ -80,14 +128,102 @@ export function AdvancedTimeline() {
   }
 
   return (
-    <div class="flex shrink-0 flex-col gap-2 rounded-lg border border-slate-200/60 bg-slate-50/40 px-4 py-3 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
-      <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
-        Tracks
-      </span>
+    <div class="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
+      {/* Header */}
+      <div class="flex shrink-0 flex-col gap-y-1.5 px-4 pt-3 pb-2 md:flex-row md:items-start md:gap-x-2.5">
+        <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase md:pt-1 dark:text-slate-400">
+          Tracks
+        </span>
+        <div class="flex items-start gap-2.5 md:flex-1">
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <button
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              disabled={toolbarDisabled}
+              onClick={setAdvancedInPoint}
+              title="Set in-point (I)"
+              aria-label="Set clip in-point at current playhead position"
+            >
+              <ArrowLeftToLine class="h-3.5 w-3.5" />
+              In
+            </button>
+            <button
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              disabled={toolbarDisabled}
+              onClick={setAdvancedOutPoint}
+              title="Set out-point (O)"
+              aria-label="Set clip out-point at current playhead position"
+            >
+              <ArrowRightToLine class="h-3.5 w-3.5" />
+              Out
+            </button>
+            <button
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              disabled={toolbarDisabled}
+              onClick={cutAdvancedAtPlayhead}
+              title="Split at playhead (C)"
+              aria-label="Split clip at current playhead position"
+            >
+              <Scissors class="h-3.5 w-3.5" />
+              Cut
+            </button>
+            <button
+              class={clsx(
+                'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold transition-colors hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40',
+                selectedSegment?.muted
+                  ? 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-900/30'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
+              )}
+              disabled={toolbarDisabled}
+              onClick={toggleAdvancedMute}
+              title="Toggle mute on selected clip (M)"
+              aria-label="Toggle mute on selected clip"
+            >
+              <VolumeX class="h-3.5 w-3.5" />
+              {selectedSegment?.muted ? 'Unmute' : 'Mute'}
+            </button>
+            <button
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
+              disabled={toolbarDisabled}
+              onClick={deleteAdvancedSelected}
+              title="Delete clip"
+              aria-label="Delete selected clip"
+            >
+              <Trash2 class="h-3.5 w-3.5" />
+              Delete
+            </button>
+          </div>
+          <div class="flex shrink-0 items-center gap-2 md:gap-3">
+            <button
+              onClick={() => zoomTo(pxPerSec.value - 10)}
+              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
+              title="Zoom out"
+            >
+              <ZoomOut class="h-3.5 w-3.5" />
+            </button>
+            <ZoomSlider
+              class="w-16 md:w-28"
+              value={pxPerSec.value}
+              min={ZOOM_MIN}
+              max={ZOOM_MAX}
+              onChange={zoomTo}
+            />
+            <button
+              onClick={() => zoomTo(pxPerSec.value + 10)}
+              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
+              title="Zoom in"
+            >
+              <ZoomIn class="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tracks body: headers column + scrollable lanes */}
       <div class="flex">
         <AdvancedTrackHeaders laneHeight={LANE_HEIGHT} />
         <div
           ref={scrollRef}
+          onWheel={onWheel}
           class="relative min-h-0 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto dark:scrollbar-thumb-slate-700"
           onPointerDown={onTrackPointerDown}
         >
