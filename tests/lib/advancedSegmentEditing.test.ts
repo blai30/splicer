@@ -4,6 +4,8 @@ import {
   addClipToTrack,
   moveSegment,
   removeAdvancedSegment,
+  setSegmentCrop,
+  setSegmentTransform,
   splitAdvancedSegment,
   trimSegmentEnd,
   trimSegmentStart,
@@ -94,5 +96,27 @@ describe('advancedSegmentEditing trim and split', () => {
     const sorted = [...advancedSegments.value].sort((a, b) => a.timelineStart - b.timelineStart)
     expect(sorted[0]).toMatchObject({ sourceStart: 0, sourceEnd: 2, timelineStart: 0 })
     expect(sorted[1]).toMatchObject({ sourceStart: 2, sourceEnd: 6, timelineStart: 2 })
+  })
+})
+
+describe('advancedSegmentEditing transform and crop', () => {
+  beforeEach(() => {
+    clips.value = []
+    advancedSegments.value = []
+    advancedSelectedId.value = null
+  })
+
+  it('sets a segment transform', () => {
+    const id = addClipToTrack(makeClip('a'), 'track-1', 0)
+    setSegmentTransform(id, { x: 10, y: 20, width: 300, height: 200 })
+    expect(advancedSegments.value[0].transform).toEqual({ x: 10, y: 20, width: 300, height: 200 })
+  })
+
+  it('sets and clears a segment crop', () => {
+    const id = addClipToTrack(makeClip('a'), 'track-1', 0)
+    setSegmentCrop(id, { x: 5, y: 5, width: 100, height: 50 })
+    expect(advancedSegments.value[0].crop).toEqual({ x: 5, y: 5, width: 100, height: 50 })
+    setSegmentCrop(id, undefined)
+    expect(advancedSegments.value[0].crop).toBeUndefined()
   })
 })

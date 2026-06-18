@@ -2,6 +2,8 @@ import { useSignal } from '@preact/signals'
 import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { AdvancedSelectionToolbar } from '@/components/advanced/AdvancedSelectionToolbar'
+import { AdvancedTransformOverlay } from '@/components/advanced/AdvancedTransformOverlay'
 import { VolumeControl } from '@/components/VolumeControl'
 import {
   attachAdvancedPreview,
@@ -22,6 +24,7 @@ const TRANSPORT_BUTTON =
 export function AdvancedPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const playbackSpeed = useSignal(1)
+  const cropMode = useSignal(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -47,6 +50,7 @@ export function AdvancedPreview() {
       {/* Canvas stage */}
       <div class="relative flex flex-1 items-center justify-center overflow-hidden bg-slate-200 p-4 dark:bg-slate-950">
         <div
+          data-canvas-wrapper
           class="relative max-h-[60vh] w-full max-w-3xl bg-black"
           style={{ aspectRatio: `${canvas.width} / ${canvas.height}` }}
         >
@@ -56,8 +60,16 @@ export function AdvancedPreview() {
             height={canvas.height}
             class="absolute inset-0 h-full w-full object-contain"
           />
+          <AdvancedTransformOverlay cropMode={cropMode.value} />
         </div>
       </div>
+
+      <AdvancedSelectionToolbar
+        cropMode={cropMode.value}
+        onToggleCrop={() => {
+          cropMode.value = !cropMode.value
+        }}
+      />
 
       {/* Seek bar */}
       <button
