@@ -1,5 +1,13 @@
 import clsx from 'clsx/lite'
-import { ArrowLeftToLine, ArrowRightToLine, Scissors, Trash2, VolumeX, ZoomIn, ZoomOut } from 'lucide-preact'
+import {
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  Scissors,
+  Trash2,
+  VolumeX,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { AdvancedSegmentBlock } from '@/components/advanced/AdvancedSegmentBlock'
@@ -7,6 +15,7 @@ import { AdvancedTrackHeaders } from '@/components/advanced/AdvancedTrackHeaders
 import { ZoomSlider } from '@/components/ZoomSlider'
 import { seek } from '@/lib/advanced/advancedPlayback'
 import { moveSegment } from '@/lib/advanced/advancedSegmentEditing'
+import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
 import {
   cutAdvancedAtPlayhead,
   deleteAdvancedSelected,
@@ -14,7 +23,6 @@ import {
   setAdvancedOutPoint,
   toggleAdvancedMute,
 } from '@/lib/advanced/advancedTimelineEditing'
-import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
 import {
   advancedPlayhead,
   advancedSegments,
@@ -93,7 +101,13 @@ export function AdvancedTimeline() {
     const oldPx = pxPerSec.value
     const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
     if (anchorX !== undefined) {
-      scroller.scrollLeft = computeZoomScroll(oldPx, clamped, anchorX, scroller.scrollLeft, PAD_LEFT)
+      scroller.scrollLeft = computeZoomScroll(
+        oldPx,
+        clamped,
+        anchorX,
+        scroller.scrollLeft,
+        PAD_LEFT
+      )
     }
     pxPerSec.value = clamped
   }
