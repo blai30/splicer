@@ -106,3 +106,9 @@ export function setSegmentCrop(id: string, crop: CropParams | undefined): void {
     segment.id === id ? { ...segment, crop } : segment
   )
 }
+
+export function toggleSegmentMute(id: string): void {
+  advancedSegments.value = advancedSegments.value.map((segment) =>
+    segment.id === id ? { ...segment, muted: !segment.muted } : segment
+  )
+}
