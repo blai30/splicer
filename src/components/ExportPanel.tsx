@@ -3,10 +3,15 @@ import clsx from 'clsx/lite'
 import { CirclePlay, X, AlertTriangle } from 'lucide-preact'
 
 import { ExportFaq } from '@/components/ExportFaq'
+import { cancelAdvancedExport, runAdvancedExport } from '@/lib/advanced/advancedExport'
 import { runExportEngine, cancelActiveExport } from '@/lib/exportEngine'
 import { assessFeasibility } from '@/lib/exportFeasibility'
+import { formatTimecode } from '@/lib/format'
 import { info, error as logError } from '@/lib/logger'
 import {
+  advancedCanvas,
+  advancedSegments,
+  appMode,
   clips,
   exportEtaSeconds,
   exportFormat,
@@ -95,47 +100,65 @@ export function ExportPanel() {
   }
 
   async function handleExport() {
-    if (timeline.value.length === 0) return
+    if (!hasSegments) return
     exporting.value = true
     error.value = null
     try {
-      info('Export initiated', {
-        format: exportFormat.value,
-        quality: quality.value,
-        fps: framerate.value,
-        segments: timeline.value.length,
-      })
-      const segments = timeline.value
       const filename = makeFilename(exportFormat.value)
-      let url: string
-      let size: number
-      const out = await runExportEngine(
-        segments,
-        exportFormat.value,
-        quality.value,
-        framerate.value
-      )
-      url = out.url
-      size = out.size
+      let record: ExportRecord
 
-      const totalDuration = segments.reduce(
-        (acc, segment) => acc + (segment.endTime - segment.startTime),
-        0
-      )
-      const firstClip = clips.value.find((clip) => clip.id === segments[0].clipId)
-      const record: ExportRecord = {
-        id: crypto.randomUUID(),
-        filename,
-        url,
-        size,
-        duration: totalDuration,
-        fps: framerate.value,
-        width: firstClip?.width ?? 0,
-        height: firstClip?.height ?? 0,
-        format: exportFormat.value,
+      if (isAdvanced) {
+        info('Advanced export initiated', {
+          format: exportFormat.value,
+          quality: quality.value,
+          fps: framerate.value,
+        })
+        const out = await runAdvancedExport(exportFormat.value, quality.value, framerate.value)
+        record = {
+          id: crypto.randomUUID(),
+          filename,
+          url: out.url,
+          size: out.size,
+          duration: out.duration,
+          fps: framerate.value,
+          width: out.width,
+          height: out.height,
+          format: exportFormat.value,
+        }
+      } else {
+        info('Export initiated', {
+          format: exportFormat.value,
+          quality: quality.value,
+          fps: framerate.value,
+          segments: timeline.value.length,
+        })
+        const segments = timeline.value
+        const out = await runExportEngine(
+          segments,
+          exportFormat.value,
+          quality.value,
+          framerate.value
+        )
+        const totalDuration = segments.reduce(
+          (acc, segment) => acc + (segment.endTime - segment.startTime),
+          0
+        )
+        const firstClip = clips.value.find((clip) => clip.id === segments[0].clipId)
+        record = {
+          id: crypto.randomUUID(),
+          filename,
+          url: out.url,
+          size: out.size,
+          duration: totalDuration,
+          fps: framerate.value,
+          width: firstClip?.width ?? 0,
+          height: firstClip?.height ?? 0,
+          format: exportFormat.value,
+        }
       }
+
       addExportRecord(record)
-      info('Export finished', { filename, size })
+      info('Export finished', { filename, size: record.size })
     } catch (err) {
       logError('Export failed', { message: err instanceof Error ? err.message : String(err) })
       if (exporting.value) error.value = err instanceof Error ? err.message : 'Export failed'
@@ -146,7 +169,8 @@ export function ExportPanel() {
 
   function handleCancel() {
     exporting.value = false
-    cancelActiveExport()
+    if (isAdvanced) cancelAdvancedExport()
+    else cancelActiveExport()
     info('Export canceled by user')
   }
 
@@ -177,7 +201,10 @@ export function ExportPanel() {
     { value: 'vp9', label: 'VP9' },
   ]
 
-  const hasSegments = timeline.value.length > 0
+  const isAdvanced = appMode.value === 'advanced'
+  const hasSegments = isAdvanced
+    ? advancedSegments.value.length > 0
+    : timeline.value.length > 0
   // Export runs entirely through WebCodecs, so a VideoEncoder is required.
   const webcodecsAvailable = typeof VideoEncoder !== 'undefined'
   const currentProgress = exportProgress.value
@@ -292,10 +319,24 @@ export function ExportPanel() {
         )}
         <div class="flex min-h-13 min-w-0 flex-1 flex-col gap-1">
           <div class="mb-1 text-sm text-slate-500 dark:text-slate-400">
-            {hasSegments ? (
+            {isAdvanced ? (
+              hasSegments ? (
+                <>
+                  Output: {advancedCanvas.value.width}x{advancedCanvas.value.height},{' '}
+                  {formatTimecode(
+                    advancedSegments.value.reduce(
+                      (acc, segment) => acc + (segment.sourceEnd - segment.sourceStart),
+                      0
+                    )
+                  )}
+                </>
+              ) : (
+                'Add a clip to the canvas to export.'
+              )
+            ) : hasSegments ? (
               <>
                 Estimated export size:{' '}
-                {estimatedSize > 0 ? `${Math.round(estimatedSize / 1024 / 1024)} MB` : '–'}
+                {estimatedSize > 0 ? `${Math.round(estimatedSize / 1024 / 1024)} MB` : '-'}
               </>
             ) : (
               'Add a clip to the timeline to export.'
@@ -310,7 +351,7 @@ export function ExportPanel() {
               version of Chrome, Edge, or Safari.
             </div>
           )}
-          {feasibility.band !== 'green' && (
+          {!isAdvanced && feasibility.band !== 'green' && (
             <div
               class={clsx(
                 'rounded-md p-2 text-sm',
