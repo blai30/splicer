@@ -33,7 +33,7 @@ export function AdvancedEditor() {
     >
       <div class={`flex flex-col gap-2 px-4 py-3 ${CARD}`}>
         <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
-          Canvas
+          Output
         </span>
         <CanvasSizeControls />
         <button
