@@ -50,6 +50,41 @@ export type SegmentLayoutItem = {
   endX: number
 }
 
+export type CanvasSize = {
+  width: number
+  height: number
+}
+
+export type Transform = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type Track = {
+  id: string
+  name: string
+  hidden?: boolean
+  muted?: boolean
+}
+
+// A clip placed in the Advanced (multi-track compositor) project. Phase 1 uses
+// at most one; later phases place many across tracks and time.
+export type AdvancedSegment = {
+  id: string
+  clipId: string
+  trackId: string
+  timelineStart: number
+  sourceStart: number
+  sourceEnd: number
+  transform: Transform
+  crop?: CropParams
+  opacity?: number
+  volume?: number
+  muted?: boolean
+}
+
 export type ExportFormat = 'mp4' | 'mkv' | 'mov' | 'webm'
 export type Quality = 'lossless' | 'high' | 'medium' | 'low'
 export type Framerate = 'original' | '60' | '30' | '24'

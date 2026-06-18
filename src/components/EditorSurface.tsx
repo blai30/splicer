@@ -1,11 +1,11 @@
-import { AdvancedPlaceholder } from '@/components/AdvancedPlaceholder'
+import { AdvancedEditor } from '@/components/AdvancedEditor'
 import { Timeline } from '@/components/Timeline'
 import { VideoPreview } from '@/components/VideoPreview'
 import { appMode } from '@/lib/store'
 
 export function EditorSurface() {
   if (appMode.value === 'advanced') {
-    return <AdvancedPlaceholder />
+    return <AdvancedEditor />
   }
   return (
     <>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { getPeaksFromSamples, isVideoFile } from '@/lib/videoImport'
+import { advancedSegments } from '@/lib/store'
+import { createClip, getPeaksFromSamples, importIntoAdvanced, isVideoFile } from '@/lib/videoImport'
 
 describe('isVideoFile', () => {
   it('accepts supported video files', () => {
@@ -27,5 +28,17 @@ describe('getPeaksFromSamples', () => {
 
   it('returns an empty array for empty input', () => {
     expect(getPeaksFromSamples(new Float32Array([]), 64)).toEqual([])
+  })
+})
+
+describe('importIntoAdvanced', () => {
+  it('ignores non-video files', async () => {
+    advancedSegments.value = []
+    await importIntoAdvanced(new File([], 'notes.txt', { type: 'text/plain' }))
+    expect(advancedSegments.value).toHaveLength(0)
+  })
+
+  it('exposes createClip', () => {
+    expect(typeof createClip).toBe('function')
   })
 })

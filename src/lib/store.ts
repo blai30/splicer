@@ -2,6 +2,8 @@ import type { Signal } from '@preact/signals'
 import { effect, signal } from '@preact/signals'
 
 import type {
+  AdvancedSegment,
+  CanvasSize,
   Clip,
   DragState,
   ExportFormat,
@@ -10,6 +12,7 @@ import type {
   MkvCodec,
   Quality,
   Segment,
+  Track,
   WebmCodec,
 } from '@/lib/types'
 
@@ -119,6 +122,17 @@ export const theme = signal<'light' | 'dark'>(
 // mode (Basic on first visit).
 export const appMode = signal<'basic' | 'advanced'>(loadFromStorage('appMode', 'basic'))
 
+// Advanced (multi-track compositor) project state, kept separate from Basic's
+// `timeline`. Only the canvas size persists; placed clips reference Files that
+// cannot be rehydrated across reloads (same as Basic's in-memory timeline).
+export const DEFAULT_CANVAS: CanvasSize = { width: 1920, height: 1080 }
+export const advancedCanvas = signal<CanvasSize>(loadFromStorage('advancedCanvas', DEFAULT_CANVAS))
+export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
+export const advancedSegments = signal<AdvancedSegment[]>([])
+export const advancedSelectedId = signal<string | null>(null)
+export const advancedPlayhead = signal<number>(0)
+export const advancedPlaying = signal<boolean>(false)
+
 // Playback output signals. Written only by the playback module (lib/playback.ts).
 export const playing = signal(false)
 export const currentPlaybackTime = signal(0)
@@ -133,6 +147,7 @@ persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
 persistSignal('logPanelVisible', logPanelVisible)
 persistSignal('appMode', appMode)
+persistSignal('advancedCanvas', advancedCanvas)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200
