@@ -7,7 +7,7 @@ import {
   clips,
   getClipById,
 } from '@/lib/store'
-import type { Clip } from '@/lib/types'
+import type { Clip, CropParams, Transform } from '@/lib/types'
 
 export function addClipToTrack(clip: Clip, trackId: string, timelineStart: number): string {
   if (!getClipById(clip.id)) clips.value = [...clips.value, clip]
@@ -93,4 +93,16 @@ export function splitAdvancedSegment(id: string, atGlobalTime: number): string |
     entry.id === id ? [first, second] : [entry]
   )
   return newId
+}
+
+export function setSegmentTransform(id: string, transform: Transform): void {
+  advancedSegments.value = advancedSegments.value.map((segment) =>
+    segment.id === id ? { ...segment, transform } : segment
+  )
+}
+
+export function setSegmentCrop(id: string, crop: CropParams | undefined): void {
+  advancedSegments.value = advancedSegments.value.map((segment) =>
+    segment.id === id ? { ...segment, crop } : segment
+  )
 }

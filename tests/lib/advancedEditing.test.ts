@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { setCanvasSize } from '@/lib/advanced/advancedEditing'
-import { addClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
+import { addClipToTrack, setSegmentTransform } from '@/lib/advanced/advancedSegmentEditing'
 import {
   advancedCanvas,
   advancedSegments,
@@ -23,8 +23,8 @@ describe('advancedEditing canvas', () => {
     expect(advancedCanvas.value).toEqual({ width: 1280, height: 7680 })
   })
 
-  it('re-fits placed segments when the canvas changes', () => {
-    addClipToTrack(
+  it('scales placed segment transforms proportionally when the canvas changes', () => {
+    const id = addClipToTrack(
       {
         id: 'a',
         file: new File([new Uint8Array([0])], 'a.mp4'),
@@ -38,8 +38,9 @@ describe('advancedEditing canvas', () => {
       'track-1',
       0
     )
-    setCanvasSize(1000, 1000)
-    expect(advancedSegments.value[0].transform.width).toBeCloseTo(1000)
-    expect(advancedSegments.value[0].transform.height).toBeCloseTo(562.5)
+    // Default canvas is 1920x1080; place an explicit transform, then halve the canvas.
+    setSegmentTransform(id, { x: 100, y: 200, width: 800, height: 400 })
+    setCanvasSize(960, 540)
+    expect(advancedSegments.value[0].transform).toEqual({ x: 50, y: 100, width: 400, height: 200 })
   })
 })

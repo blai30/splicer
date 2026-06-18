@@ -1,10 +1,8 @@
-import { fitRect } from '@/lib/advanced/fit'
 import {
   advancedCanvas,
   advancedPlayhead,
   advancedSegments,
   advancedSelectedId,
-  getClipById,
 } from '@/lib/store'
 
 export const CANVAS_MIN = 16
@@ -16,16 +14,22 @@ function clampDimension(value: number): number {
   return bounded % 2 === 0 ? bounded : bounded - 1
 }
 
-// Resize the output canvas. With no manual transform editing yet, the placed
-// clip re-fits to the new canvas.
+// Resize the output canvas and scale each segment's transform proportionally.
 export function setCanvasSize(width: number, height: number): void {
   const next = { width: clampDimension(width), height: clampDimension(height) }
+  const prev = advancedCanvas.value
+  const scaleX = prev.width > 0 ? next.width / prev.width : 1
+  const scaleY = prev.height > 0 ? next.height / prev.height : 1
   advancedCanvas.value = next
-  advancedSegments.value = advancedSegments.value.map((segment) => {
-    const clip = getClipById(segment.clipId)
-    if (!clip) return segment
-    return { ...segment, transform: fitRect(clip.width, clip.height, next.width, next.height) }
-  })
+  advancedSegments.value = advancedSegments.value.map((segment) => ({
+    ...segment,
+    transform: {
+      x: segment.transform.x * scaleX,
+      y: segment.transform.y * scaleY,
+      width: segment.transform.width * scaleX,
+      height: segment.transform.height * scaleY,
+    },
+  }))
 }
 
 export function clearAdvancedClip(): void {
