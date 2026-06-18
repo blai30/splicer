@@ -1,5 +1,5 @@
 import type { ResizeHandle } from '@/lib/advanced/transformMath'
-import type { CropParams } from '@/lib/types'
+import type { CropParams, Transform } from '@/lib/types'
 
 export const MIN_CROP_SIZE = 8
 
@@ -43,4 +43,37 @@ export function resizeCrop(
     bottom = Math.max(Math.min(sourceHeight, bottom + dySource), top + MIN_CROP_SIZE)
 
   return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+// True crop: resize the source crop rect AND the destination box together so the
+// visible video keeps its current scale and position, with the dragged edge
+// clipping inward/outward and the opposite edge staying fixed (no stretching).
+// The source-to-canvas mapping is held constant by deriving the new box from the
+// new crop using the start scale and a fixed origin.
+export function resizeCropWithBox(
+  transform: Transform,
+  crop: CropParams,
+  handle: ResizeHandle,
+  dxSource: number,
+  dySource: number,
+  sourceWidth: number,
+  sourceHeight: number
+): { crop: CropParams; transform: Transform } {
+  const scaleX = transform.width / crop.width
+  const scaleY = transform.height / crop.height
+  // Canvas position of source pixel 0 (stays fixed while only the window changes).
+  const originX = transform.x - crop.x * scaleX
+  const originY = transform.y - crop.y * scaleY
+
+  const nextCrop = resizeCrop(crop, handle, dxSource, dySource, sourceWidth, sourceHeight)
+
+  return {
+    crop: nextCrop,
+    transform: {
+      x: originX + nextCrop.x * scaleX,
+      y: originY + nextCrop.y * scaleY,
+      width: nextCrop.width * scaleX,
+      height: nextCrop.height * scaleY,
+    },
+  }
 }
