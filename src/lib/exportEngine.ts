@@ -3,7 +3,7 @@ import { EtaTracker } from '@/lib/exportEta'
 import { info } from '@/lib/logger'
 import {
   exportEtaSeconds,
-  ffmpegProgress,
+  exportProgress,
   getClipById,
   mkvCodec,
   webmCodec,
@@ -76,7 +76,7 @@ function runInWorker(job: ExportJob): Promise<{ url: string; size: number }> {
     activeWorker = worker
 
     const eta = new EtaTracker()
-    ffmpegProgress.value = 0
+    exportProgress.value = 0
     exportEtaSeconds.value = null
 
     const cleanup = () => {
@@ -88,13 +88,13 @@ function runInWorker(job: ExportJob): Promise<{ url: string; size: number }> {
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       const message = event.data
       if (message.type === 'progress') {
-        ffmpegProgress.value = message.progress
+        exportProgress.value = message.progress
         eta.sample(message.progress, performance.now())
         exportEtaSeconds.value = eta.etaSeconds(message.progress, performance.now())
       } else if (message.type === 'done') {
         cleanup()
         const blob = new Blob([message.buffer], { type: MIME_TYPES[job.format] })
-        ffmpegProgress.value = 1
+        exportProgress.value = 1
         resolve({ url: URL.createObjectURL(blob), size: blob.size })
       } else if (message.type === 'canceled') {
         cleanup()
@@ -137,6 +137,6 @@ export function cancelActiveExport(): void {
     activeWorker.terminate()
     activeWorker = null
   }
-  ffmpegProgress.value = 0
+  exportProgress.value = 0
   exportEtaSeconds.value = null
 }

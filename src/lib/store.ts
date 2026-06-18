@@ -1,7 +1,6 @@
 import type { Signal } from '@preact/signals'
 import { effect, signal } from '@preact/signals'
 
-import type { CoreMode } from '@/lib/ffmpegCapabilities'
 import type {
   Clip,
   DragState,
@@ -43,16 +42,7 @@ export const clips = signal<Clip[]>([])
 export const timeline = signal<Segment[]>([])
 export const playheadTime = signal<number>(0)
 export const selectedSegmentId = signal<string | null>(null)
-export const ffmpegReady = signal<boolean>(false)
-export const ffmpegProgress = signal<number>(0)
-
-// Which ffmpeg core is in use this session, and why single-thread was forced
-// (empty when multithread or not yet decided).
-export const coreMode = signal<CoreMode | null>(null)
-export const coreModeReason = signal<string>('')
-
-// Which engine produced the most recent export: 'webcodecs' or 'ffmpeg'.
-export const exportEngineUsed = signal<'webcodecs' | 'ffmpeg' | null>(null)
+export const exportProgress = signal<number>(0)
 
 // ETA in seconds during an active export (null when unknown).
 export const exportEtaSeconds = signal<number | null>(null)

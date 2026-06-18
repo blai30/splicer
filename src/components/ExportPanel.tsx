@@ -11,7 +11,7 @@ import {
   exportEtaSeconds,
   exportFormat,
   addExportRecord,
-  ffmpegProgress,
+  exportProgress,
   framerate,
   mkvCodec,
   quality,
@@ -181,7 +181,7 @@ export function ExportPanel() {
   // When WebCodecs is present, WebM (including VP9) encodes natively without the
   // OOM problems of the ffmpeg.wasm path. Only without it does VP9 risk failing.
   const webcodecsAvailable = typeof VideoEncoder !== 'undefined'
-  const currentProgress = ffmpegProgress.value
+  const currentProgress = exportProgress.value
   const progressPct = Math.max(0, Math.min(100, Math.round(currentProgress * 100)))
   const estimatedSize = estimateSize()
 
