@@ -1,3 +1,4 @@
+import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
   removeAdvancedSegment,
   selectAdvancedSegment,
@@ -36,8 +37,10 @@ export function setAdvancedInPoint(): void {
   if (!segment) return
   const offset = playheadOffsetWithin(segment)
   if (offset === null) return
-  // trimSegmentStart shifts timelineStart by the same delta, so the left edge
-  // lands exactly on the playhead.
+  // Arm a one-shot gesture so the single trim below records exactly one history
+  // entry. trimSegmentStart shifts timelineStart by the same delta, so the left
+  // edge lands exactly on the playhead.
+  beginAdvancedGesture()
   trimSegmentStart(segment.id, segment.sourceStart + offset)
 }
 
@@ -46,6 +49,7 @@ export function setAdvancedOutPoint(): void {
   if (!segment) return
   const offset = playheadOffsetWithin(segment)
   if (offset === null) return
+  beginAdvancedGesture()
   trimSegmentEnd(segment.id, segment.sourceStart + offset)
 }
 

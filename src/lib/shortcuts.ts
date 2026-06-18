@@ -1,3 +1,4 @@
+import { redoAdvanced, undoAdvanced } from '@/lib/advanced/advancedHistory'
 import {
   stepFrame as advancedStepFrame,
   togglePlay as advancedTogglePlay,
@@ -62,10 +63,12 @@ function removeSelected() {
   else deleteSegment()
 }
 function undoEdit() {
-  if (!isAdvanced()) undo()
+  if (isAdvanced()) undoAdvanced()
+  else undo()
 }
 function redoEdit() {
-  if (!isAdvanced()) redo()
+  if (isAdvanced()) redoAdvanced()
+  else redo()
 }
 
 export type Shortcut = {

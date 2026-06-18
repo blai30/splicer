@@ -2,6 +2,7 @@ import clsx from 'clsx/lite'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { WaveformView } from '@/components/WaveformView'
+import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
   trimSegmentEnd,
   trimSegmentStart,
@@ -44,6 +45,8 @@ export function AdvancedSegmentBlock({
       handle.setPointerCapture(event.pointerId)
       const startClientX = event.clientX
       const startValue = side === 'left' ? segment.sourceStart : segment.sourceEnd
+      // One undo entry per trim gesture, consumed by the first trim mutation.
+      beginAdvancedGesture()
       const throttler = createRafThrottler()
 
       function onMove(moveEvent: PointerEvent) {
