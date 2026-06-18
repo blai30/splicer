@@ -48,6 +48,35 @@ const KEYFRAME_INTERVAL_US = 2_000_000
 const REF_PIXELS = 1920 * 1080
 const MIN_VIDEO_BITRATE = 100_000
 
+export type EncodeParams = {
+  frameDurationUs: number | null
+  videoBitrate: number
+  audioBitrate: number
+  keyFrameIntervalUs: number
+}
+
+// Shared encode parameters derived from output dimensions, fps, and quality.
+// Used by both the Basic edit plan and the Advanced compositor plan.
+export function computeEncodeParams(
+  width: number,
+  height: number,
+  fps: Framerate,
+  quality: Quality
+): EncodeParams {
+  const frameDurationUs = fps === 'original' ? null : Math.round(1_000_000 / FPS_BY_PRESET[fps])
+  const pixelRatio = (width * height) / REF_PIXELS
+  const videoBitrate = Math.max(
+    MIN_VIDEO_BITRATE,
+    Math.round(VIDEO_BITRATE_1080P[quality] * pixelRatio)
+  )
+  return {
+    frameDurationUs,
+    videoBitrate,
+    audioBitrate: AUDIO_BITRATE[quality],
+    keyFrameIntervalUs: KEYFRAME_INTERVAL_US,
+  }
+}
+
 // Codecs reject odd dimensions for yuv420; floor to even.
 function evenFloor(value: number): number {
   const floored = Math.floor(value)
@@ -91,14 +120,7 @@ export function buildEditPlan(job: ExportJob): EditPlan {
     return withStart
   })
 
-  const frameDurationUs =
-    job.fps === 'original' ? null : Math.round(1_000_000 / FPS_BY_PRESET[job.fps])
-
-  const pixelRatio = (width * height) / REF_PIXELS
-  const videoBitrate = Math.max(
-    MIN_VIDEO_BITRATE,
-    Math.round(VIDEO_BITRATE_1080P[job.quality] * pixelRatio)
-  )
+  const params = computeEncodeParams(width, height, job.fps, job.quality)
 
   const hasAudioOutput = job.slices.some(
     (slice) => job.sources[slice.sourceIndex]?.hasAudio === true
@@ -108,10 +130,10 @@ export function buildEditPlan(job: ExportJob): EditPlan {
     outputWidth: width,
     outputHeight: height,
     slices,
-    frameDurationUs,
-    videoBitrate,
-    audioBitrate: AUDIO_BITRATE[job.quality],
-    keyFrameIntervalUs: KEYFRAME_INTERVAL_US,
+    frameDurationUs: params.frameDurationUs,
+    videoBitrate: params.videoBitrate,
+    audioBitrate: params.audioBitrate,
+    keyFrameIntervalUs: params.keyFrameIntervalUs,
     videoCodec: job.videoCodec,
     audioCodec: job.audioCodec,
     hasAudioOutput,

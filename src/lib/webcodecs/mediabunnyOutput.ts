@@ -10,8 +10,18 @@ import {
   type OutputFormat,
 } from 'mediabunny'
 
-import type { MbContainer } from '../exportCodecs'
-import type { EditPlan } from './editPlan'
+import type { MbAudioCodec, MbContainer, MbVideoCodec } from '../exportCodecs'
+
+// The encode parameters createOutput reads. Both EditPlan and CompositorPlan
+// satisfy this shape structurally.
+export type OutputParams = {
+  videoCodec: MbVideoCodec
+  videoBitrate: number
+  keyFrameIntervalUs: number
+  hasAudioOutput: boolean
+  audioCodec: MbAudioCodec
+  audioBitrate: number
+}
 
 function outputFormatFor(container: MbContainer): OutputFormat {
   switch (container) {
@@ -36,7 +46,7 @@ export type OutputHandle = {
 // Build a mediabunny Output for the target container with one video source and,
 // when the plan has audio, one audio source. mediabunny encodes the samples fed
 // to these sources and muxes them into the container.
-export function createOutput(plan: EditPlan, container: MbContainer): OutputHandle {
+export function createOutput(plan: OutputParams, container: MbContainer): OutputHandle {
   const output = new Output({ format: outputFormatFor(container), target: new BufferTarget() })
 
   const videoSource = new VideoSampleSource({
