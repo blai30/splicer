@@ -16,10 +16,11 @@ const ICON_BUTTON =
 export function AdvancedTrackHeaders({ laneHeight }: { laneHeight: number }) {
   const tracks = advancedTracks.value
   return (
-    <div class="flex w-54 shrink-0 flex-col gap-1 border-r border-slate-200/60 pr-1 dark:border-slate-700/60">
+    <div class="flex w-54 shrink-0 flex-col border-r border-slate-200/60 pr-1 dark:border-slate-700/60">
+      {/* Fixed h-7 row mirrors the lanes' spacer so each header lines up with its lane. */}
       <button
         onClick={() => addTrack()}
-        class="mb-1 flex items-center gap-1 rounded px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:duration-0 dark:text-slate-300 dark:hover:bg-slate-700/50"
+        class="flex h-7 shrink-0 items-center gap-1 rounded px-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:duration-0 dark:text-slate-300 dark:hover:bg-slate-700/50"
       >
         <Plus class="h-4 w-4" />
         Add track
@@ -27,7 +28,7 @@ export function AdvancedTrackHeaders({ laneHeight }: { laneHeight: number }) {
       {tracks.map((track, index) => (
         <div
           key={track.id}
-          class="flex items-center gap-1 rounded bg-slate-100/60 px-2 dark:bg-slate-800/40"
+          class="flex items-center gap-1 border-b border-slate-200/40 px-2 dark:border-slate-700/40"
           style={{ height: `${laneHeight}px` }}
         >
           <span class="mr-auto truncate text-sm text-slate-700 dark:text-slate-200">
