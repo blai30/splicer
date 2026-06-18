@@ -24,19 +24,39 @@ export function AdvancedSelectionToolbar({
 
   return (
     <div class="flex flex-wrap items-center gap-1 px-1">
-      <button class={BUTTON} disabled={!hasSelection} onClick={() => run(bringToFront)} title="Bring to front">
+      <button
+        class={BUTTON}
+        disabled={!hasSelection}
+        onClick={() => run(bringToFront)}
+        title="Bring to front"
+      >
         <ArrowUpToLine class="h-4 w-4" />
         Front
       </button>
-      <button class={BUTTON} disabled={!hasSelection} onClick={() => run(bringForward)} title="Bring forward">
+      <button
+        class={BUTTON}
+        disabled={!hasSelection}
+        onClick={() => run(bringForward)}
+        title="Bring forward"
+      >
         <ArrowUp class="h-4 w-4" />
         Forward
       </button>
-      <button class={BUTTON} disabled={!hasSelection} onClick={() => run(sendBackward)} title="Send backward">
+      <button
+        class={BUTTON}
+        disabled={!hasSelection}
+        onClick={() => run(sendBackward)}
+        title="Send backward"
+      >
         <ArrowDown class="h-4 w-4" />
         Backward
       </button>
-      <button class={BUTTON} disabled={!hasSelection} onClick={() => run(sendToBack)} title="Send to back">
+      <button
+        class={BUTTON}
+        disabled={!hasSelection}
+        onClick={() => run(sendToBack)}
+        title="Send to back"
+      >
         <ArrowDownToLine class="h-4 w-4" />
         Back
       </button>

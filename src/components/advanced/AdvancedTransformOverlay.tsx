@@ -1,19 +1,15 @@
 import { useSignal } from '@preact/signals'
 
-import { pointInTransform, screenDeltaToCanvas } from '@/lib/advanced/canvasCoords'
-import { defaultCrop, resizeCrop } from '@/lib/advanced/cropMath'
-import { segmentsActiveAt, orderedForRender } from '@/lib/advanced/advancedTimelineDomain'
 import {
   selectAdvancedSegment,
   setSegmentCrop,
   setSegmentTransform,
 } from '@/lib/advanced/advancedSegmentEditing'
+import { segmentsActiveAt, orderedForRender } from '@/lib/advanced/advancedTimelineDomain'
+import { pointInTransform, screenDeltaToCanvas } from '@/lib/advanced/canvasCoords'
+import { defaultCrop, resizeCrop } from '@/lib/advanced/cropMath'
 import { snapCandidates, snapMove } from '@/lib/advanced/snapMath'
-import {
-  RESIZE_HANDLES,
-  resizeTransform,
-  type ResizeHandle,
-} from '@/lib/advanced/transformMath'
+import { RESIZE_HANDLES, resizeTransform, type ResizeHandle } from '@/lib/advanced/transformMath'
 import {
   advancedCanvas,
   advancedPlayhead,
@@ -91,7 +87,11 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
     function onMove(moveEvent: PointerEvent) {
       const dx = screenDeltaToCanvas(moveEvent.clientX - startX, displayW, canvas.width)
       const dy = screenDeltaToCanvas(moveEvent.clientY - startY, displayH, canvas.height)
-      const moved: Transform = { ...startTransform, x: startTransform.x + dx, y: startTransform.y + dy }
+      const moved: Transform = {
+        ...startTransform,
+        x: startTransform.x + dx,
+        y: startTransform.y + dy,
+      }
       const snapped = snapMove(moved, candidates, SNAP_THRESHOLD)
       guideX.value = snapped.guideX
       guideY.value = snapped.guideY
@@ -167,7 +167,11 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
 
       {selected && (
         <div
-          class={cropMode ? 'absolute border-2 border-dashed border-amber-400' : 'absolute border border-violet-400'}
+          class={
+            cropMode
+              ? 'absolute border-2 border-dashed border-amber-400'
+              : 'absolute border border-violet-400'
+          }
           style={{
             left: `${(selected.transform.x / canvas.width) * 100}%`,
             top: `${(selected.transform.y / canvas.height) * 100}%`,

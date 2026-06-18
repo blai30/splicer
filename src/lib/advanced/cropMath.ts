@@ -36,9 +36,11 @@ export function resizeCrop(
   let bottom = crop.y + crop.height
 
   if (movesLeft(handle)) left = Math.min(Math.max(0, left + dxSource), right - MIN_CROP_SIZE)
-  if (movesRight(handle)) right = Math.max(Math.min(sourceWidth, right + dxSource), left + MIN_CROP_SIZE)
+  if (movesRight(handle))
+    right = Math.max(Math.min(sourceWidth, right + dxSource), left + MIN_CROP_SIZE)
   if (movesTop(handle)) top = Math.min(Math.max(0, top + dySource), bottom - MIN_CROP_SIZE)
-  if (movesBottom(handle)) bottom = Math.max(Math.min(sourceHeight, bottom + dySource), top + MIN_CROP_SIZE)
+  if (movesBottom(handle))
+    bottom = Math.max(Math.min(sourceHeight, bottom + dySource), top + MIN_CROP_SIZE)
 
   return { x: left, y: top, width: right - left, height: bottom - top }
 }

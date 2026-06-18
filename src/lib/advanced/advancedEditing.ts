@@ -1,9 +1,4 @@
-import {
-  advancedCanvas,
-  advancedPlayhead,
-  advancedSegments,
-  advancedSelectedId,
-} from '@/lib/store'
+import { advancedCanvas, advancedPlayhead, advancedSegments, advancedSelectedId } from '@/lib/store'
 
 export const CANVAS_MIN = 16
 export const CANVAS_MAX = 7680

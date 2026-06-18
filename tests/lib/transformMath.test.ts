@@ -7,15 +7,30 @@ const base: Transform = { x: 100, y: 100, width: 200, height: 100 }
 
 describe('resizeTransform', () => {
   it('drags the east edge to widen, keeping x', () => {
-    expect(resizeTransform(base, 'e', 50, 0, false)).toEqual({ x: 100, y: 100, width: 250, height: 100 })
+    expect(resizeTransform(base, 'e', 50, 0, false)).toEqual({
+      x: 100,
+      y: 100,
+      width: 250,
+      height: 100,
+    })
   })
 
   it('drags the west edge to move x and shrink width', () => {
-    expect(resizeTransform(base, 'w', 40, 0, false)).toEqual({ x: 140, y: 100, width: 160, height: 100 })
+    expect(resizeTransform(base, 'w', 40, 0, false)).toEqual({
+      x: 140,
+      y: 100,
+      width: 160,
+      height: 100,
+    })
   })
 
   it('drags the south-east corner moving both dimensions', () => {
-    expect(resizeTransform(base, 'se', 20, 30, false)).toEqual({ x: 100, y: 100, width: 220, height: 130 })
+    expect(resizeTransform(base, 'se', 20, 30, false)).toEqual({
+      x: 100,
+      y: 100,
+      width: 220,
+      height: 130,
+    })
   })
 
   it('clamps to a minimum size instead of inverting', () => {
