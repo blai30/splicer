@@ -1,6 +1,5 @@
 import {
-  advancedCanvas,
-  advancedCanvasAuto,
+  advancedOutputLock,
   advancedSegments,
   advancedSelectedId,
   advancedTracks,
@@ -20,8 +19,7 @@ type AdvancedHistoryEntry = {
   tracks: Track[]
   selectedId: string | null
   clips: Clip[]
-  canvas: CanvasSize
-  canvasAuto: boolean
+  outputLock: CanvasSize | null
 }
 
 const history: AdvancedHistoryEntry[] = []
@@ -33,8 +31,7 @@ function captureEntry(): AdvancedHistoryEntry {
     tracks: advancedTracks.value,
     selectedId: advancedSelectedId.value,
     clips: clips.value,
-    canvas: advancedCanvas.value,
-    canvasAuto: advancedCanvasAuto.value,
+    outputLock: advancedOutputLock.value,
   }
 }
 
@@ -87,8 +84,7 @@ function restoreEntry(entry: AdvancedHistoryEntry) {
   advancedSegments.value = entry.segments
   advancedTracks.value = entry.tracks
   clips.value = restoredClips
-  advancedCanvas.value = entry.canvas
-  advancedCanvasAuto.value = entry.canvasAuto
+  advancedOutputLock.value = entry.outputLock
   advancedSelectedId.value =
     entry.selectedId && entry.segments.some((segment) => segment.id === entry.selectedId)
       ? entry.selectedId

@@ -1,19 +1,22 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { enableAutoCanvas } from '@/lib/advanced/advancedEditing'
-import { redoAdvanced, resetAdvancedHistory, undoAdvanced } from '@/lib/advanced/advancedHistory'
+import { setOutputLock } from '@/lib/advanced/advancedEditing'
+import {
+  recordAdvancedHistory,
+  redoAdvanced,
+  resetAdvancedHistory,
+  undoAdvanced,
+} from '@/lib/advanced/advancedHistory'
 import { addClipToTrack, toggleSegmentMute } from '@/lib/advanced/advancedSegmentEditing'
 import { deleteAdvancedSelected, setAdvancedInPoint } from '@/lib/advanced/advancedTimelineEditing'
 import { addTrack } from '@/lib/advanced/advancedTrackEditing'
 import {
-  advancedCanvas,
-  advancedCanvasAuto,
+  advancedOutputLock,
   advancedPlayhead,
   advancedSegments,
   advancedSelectedId,
   advancedTracks,
   clips,
-  DEFAULT_CANVAS,
 } from '@/lib/store'
 import type { Clip } from '@/lib/types'
 
@@ -37,8 +40,7 @@ describe('advancedHistory', () => {
     advancedTracks.value = []
     advancedSelectedId.value = null
     advancedPlayhead.value = 0
-    advancedCanvas.value = DEFAULT_CANVAS
-    advancedCanvasAuto.value = false
+    advancedOutputLock.value = null
     resetAdvancedHistory()
   })
 
@@ -86,33 +88,17 @@ describe('advancedHistory', () => {
     expect(advancedTracks.value).toHaveLength(0)
   })
 
-  it('round-trips the canvas size and auto flag when enabling auto', () => {
-    advancedCanvas.value = { width: 640, height: 480 }
-    advancedSegments.value = [
-      {
-        id: 'a',
-        clipId: 'a',
-        trackId: 'track-1',
-        timelineStart: 0,
-        sourceStart: 0,
-        sourceEnd: 5,
-        transform: { x: 100, y: 50, width: 800, height: 400 },
-      },
-    ]
-    enableAutoCanvas()
-    expect(advancedCanvasAuto.value).toBe(true)
-    expect(advancedCanvas.value).toEqual({ width: 800, height: 400 })
-    expect(advancedSegments.value[0].transform).toEqual({ x: 0, y: 0, width: 800, height: 400 })
+  it('undo/redo restores the output lock', () => {
+    advancedOutputLock.value = null
+    recordAdvancedHistory()
+    setOutputLock(1280, 720)
+    expect(advancedOutputLock.value).toEqual({ width: 1280, height: 720 })
 
     undoAdvanced()
-    expect(advancedCanvasAuto.value).toBe(false)
-    expect(advancedCanvas.value).toEqual({ width: 640, height: 480 })
-    expect(advancedSegments.value[0].transform).toEqual({ x: 100, y: 50, width: 800, height: 400 })
+    expect(advancedOutputLock.value).toBeNull()
 
     redoAdvanced()
-    expect(advancedCanvasAuto.value).toBe(true)
-    expect(advancedCanvas.value).toEqual({ width: 800, height: 400 })
-    expect(advancedSegments.value[0].transform).toEqual({ x: 0, y: 0, width: 800, height: 400 })
+    expect(advancedOutputLock.value).toEqual({ width: 1280, height: 720 })
   })
 
   it('a new edit clears the redo stack', () => {
