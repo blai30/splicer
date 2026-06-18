@@ -1,4 +1,5 @@
 import clsx from 'clsx/lite'
+import { Info } from 'lucide-preact'
 
 import { CANVAS_MAX, CANVAS_MIN, setCanvasSize } from '@/lib/advanced/advancedEditing'
 import { advancedCanvas } from '@/lib/store'
@@ -47,7 +48,11 @@ export function CanvasSizeControls() {
           max={CANVAS_MAX}
           value={canvas.width}
           aria-label="Canvas width"
-          onChange={(event) => onManual('width', (event.target as HTMLInputElement).value)}
+          onBlur={(event) => onManual('width', (event.currentTarget as HTMLInputElement).value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter')
+              onManual('width', (event.currentTarget as HTMLInputElement).value)
+          }}
           class="w-20 rounded border border-slate-300 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800"
         />
         <span class="text-slate-400">x</span>
@@ -57,10 +62,21 @@ export function CanvasSizeControls() {
           max={CANVAS_MAX}
           value={canvas.height}
           aria-label="Canvas height"
-          onChange={(event) => onManual('height', (event.target as HTMLInputElement).value)}
+          onBlur={(event) => onManual('height', (event.currentTarget as HTMLInputElement).value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter')
+              onManual('height', (event.currentTarget as HTMLInputElement).value)
+          }}
           class="w-20 rounded border border-slate-300 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800"
         />
       </div>
+      <span
+        class="inline-flex text-slate-400 dark:text-slate-500"
+        title="Dimensions are rounded to even numbers (required for video export)"
+        aria-label="Dimensions are rounded to even numbers (required for video export)"
+      >
+        <Info class="h-3.5 w-3.5" />
+      </span>
     </div>
   )
 }
