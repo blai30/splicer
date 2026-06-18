@@ -1,6 +1,3 @@
-import { fetchFile } from '@ffmpeg/util'
-
-import { getFfmpeg } from '@/lib/ffmpeg'
 import { info, warn, error as logError } from '@/lib/logger'
 import { clips, getClipById, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
@@ -59,7 +56,7 @@ export function getVideoMetadata(
   })
 }
 
-function getPeaksFromSamples(samples: Float32Array, peakCount: number): number[] {
+export function getPeaksFromSamples(samples: Float32Array, peakCount: number): number[] {
   if (samples.length === 0) return []
   const target = Math.max(64, Math.floor(peakCount))
   const samplesPerPeak = Math.max(1, Math.floor(samples.length / target))
@@ -114,64 +111,11 @@ async function extractWaveformPeaksWithAudioContext(
   }
 }
 
-async function extractWaveformPeaksWithFfmpeg(file: File, peakCount = 2000): Promise<number[]> {
-  const ext = file.name.split('.').pop() ?? 'mp4'
-  const runId = crypto.randomUUID().replace(/-/g, '')
-  const inputName = `waveform_${runId}.${ext}`
-  const outputName = `waveform_${runId}.f32`
-
-  let ffmpeg
-  try {
-    info('Extracting waveform via FFmpeg', { filename: file.name })
-    ffmpeg = await getFfmpeg()
-    await ffmpeg.writeFile(inputName, await fetchFile(file))
-    const exitCode = await ffmpeg.exec([
-      '-i',
-      inputName,
-      '-vn',
-      '-map',
-      'a:0?',
-      '-ac',
-      '1',
-      '-ar',
-      '8000',
-      '-f',
-      'f32le',
-      outputName,
-    ])
-    if (exitCode !== 0) return []
-
-    const pcm = (await ffmpeg.readFile(outputName)) as Uint8Array
-    const aligned = Math.floor(pcm.byteLength / 4) * 4
-    if (aligned === 0) return []
-
-    const view = new Float32Array(pcm.buffer, pcm.byteOffset, aligned / 4)
-    const peaks = getPeaksFromSamples(view, peakCount)
-    info('Waveform extracted', { filename: file.name, peaks: peaks.length })
-    return peaks
-  } catch {
-    logError('Waveform extraction failed', { filename: file.name })
-    return []
-  } finally {
-    if (ffmpeg) {
-      try {
-        await ffmpeg.deleteFile(inputName)
-      } catch {
-        // Best effort cleanup for temp input file.
-      }
-      try {
-        await ffmpeg.deleteFile(outputName)
-      } catch {
-        // Best effort cleanup for temp output file.
-      }
-    }
-  }
-}
-
 export async function extractWaveformPeaks(file: File, peakCount = 2000): Promise<number[]> {
-  const byAudioContext = await extractWaveformPeaksWithAudioContext(file, peakCount)
-  if (byAudioContext.length > 0) return byAudioContext
-  return extractWaveformPeaksWithFfmpeg(file, peakCount)
+  // WebAudio decodeAudioData is the only extraction path now that FFmpeg is
+  // removed. Files the browser cannot decode yield no peaks and are treated as
+  // having no audio.
+  return extractWaveformPeaksWithAudioContext(file, peakCount)
 }
 
 const waveformPending = new Set<string>()
