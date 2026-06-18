@@ -4,6 +4,7 @@ import { recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
 import {
   advancedCanvas,
   advancedCanvasAuto,
+  advancedOutputLock,
   advancedPlayhead,
   advancedSegments,
   advancedSelectedId,
@@ -73,6 +74,16 @@ export function enableAutoCanvas(): void {
   recordAdvancedHistory()
   advancedCanvasAuto.value = true
   recomputeAutoCanvas()
+}
+
+// Lock the export output to a fixed size (Auto off). Clamped to even integers.
+export function setOutputLock(width: number, height: number): void {
+  advancedOutputLock.value = { width: clampDimension(width), height: clampDimension(height) }
+}
+
+// Return to Auto (output = bounding box of placed clips).
+export function clearOutputLock(): void {
+  advancedOutputLock.value = null
 }
 
 export function clearAdvancedClip(): void {

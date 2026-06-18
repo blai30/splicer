@@ -1,15 +1,18 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  clearOutputLock,
   enableAutoCanvas,
   recomputeAutoCanvas,
   setCanvasSize,
+  setOutputLock,
 } from '@/lib/advanced/advancedEditing'
 import { resetAdvancedHistory } from '@/lib/advanced/advancedHistory'
 import { addClipToTrack, setSegmentTransform } from '@/lib/advanced/advancedSegmentEditing'
 import {
   advancedCanvas,
   advancedCanvasAuto,
+  advancedOutputLock,
   advancedSegments,
   advancedSelectedId,
   clips,
@@ -124,5 +127,22 @@ describe('advancedEditing auto canvas', () => {
     setCanvasSize(1280, 720)
     expect(advancedCanvasAuto.value).toBe(false)
     expect(advancedCanvas.value).toEqual({ width: 1280, height: 720 })
+  })
+})
+
+describe('advancedEditing output lock', () => {
+  beforeEach(() => {
+    advancedOutputLock.value = null
+  })
+
+  it('setOutputLock clamps to even integers within bounds', () => {
+    setOutputLock(1281, 9999)
+    expect(advancedOutputLock.value).toEqual({ width: 1280, height: 7680 })
+  })
+
+  it('clearOutputLock resets to Auto (null)', () => {
+    setOutputLock(1280, 720)
+    clearOutputLock()
+    expect(advancedOutputLock.value).toBeNull()
   })
 })

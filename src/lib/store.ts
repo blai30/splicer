@@ -13,6 +13,7 @@ import type {
   Quality,
   Segment,
   Track,
+  Viewport,
   WebmCodec,
 } from '@/lib/types'
 
@@ -130,6 +131,15 @@ export const advancedCanvas = signal<CanvasSize>(loadFromStorage('advancedCanvas
 // When true, the canvas size tracks the bounding box of placed clips instead of
 // a fixed preset/manual size (recomputed at edit-commit time, not mid-gesture).
 export const advancedCanvasAuto = signal<boolean>(loadFromStorage('advancedCanvasAuto', false))
+// Output-size lock for the Advanced infinite canvas. null = Auto (export the
+// bounding box of placed clips). A CanvasSize locks the output to that size,
+// contain-fitting and letterboxing the content at export.
+export const advancedOutputLock = signal<CanvasSize | null>(
+  loadFromStorage('advancedOutputLock', null)
+)
+// Pan/zoom of the infinite-canvas viewport. View state only (not persisted);
+// reset to fit-content when the preview mounts.
+export const advancedViewport = signal<Viewport>({ panX: 0, panY: 0, zoom: 1 })
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])
 export const advancedSelectedId = signal<string | null>(null)
@@ -152,6 +162,7 @@ persistSignal('logPanelVisible', logPanelVisible)
 persistSignal('appMode', appMode)
 persistSignal('advancedCanvas', advancedCanvas)
 persistSignal('advancedCanvasAuto', advancedCanvasAuto)
+persistSignal('advancedOutputLock', advancedOutputLock)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200
