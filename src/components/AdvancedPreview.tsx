@@ -2,12 +2,7 @@ import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { VolumeControl } from '@/components/VolumeControl'
-import {
-  attachAdvancedPreview,
-  seek,
-  stepFrame,
-  togglePlay,
-} from '@/lib/advanced/advancedPlayback'
+import { attachAdvancedPreview, seek, stepFrame, togglePlay } from '@/lib/advanced/advancedPlayback'
 import { formatTimecode } from '@/lib/format'
 import { advancedCanvas, advancedPlayhead, advancedPlaying, advancedSegments } from '@/lib/store'
 

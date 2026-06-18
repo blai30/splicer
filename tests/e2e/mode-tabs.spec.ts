@@ -6,9 +6,9 @@ test('switches between Basic and Advanced and remembers the choice', async ({ pa
   // Basic is the default mode on first visit.
   await expect(page.getByRole('tab', { name: 'Basic' })).toHaveAttribute('aria-selected', 'true')
 
-  // Switching to Advanced shows the placeholder.
+  // Switching to Advanced shows the compositor surface (canvas controls + import).
   await page.getByRole('tab', { name: 'Advanced' }).click()
-  await expect(page.getByText(/multi-track compositor/i)).toBeVisible()
+  await expect(page.getByText(/add it to the canvas/i)).toBeVisible()
 
   // The choice is remembered across reloads.
   await page.reload()

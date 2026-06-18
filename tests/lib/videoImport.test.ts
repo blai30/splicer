@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { advancedSegments } from '@/lib/store'
-import {
-  createClip,
-  getPeaksFromSamples,
-  importIntoAdvanced,
-  isVideoFile,
-} from '@/lib/videoImport'
+import { createClip, getPeaksFromSamples, importIntoAdvanced, isVideoFile } from '@/lib/videoImport'
 
 describe('isVideoFile', () => {
   it('accepts supported video files', () => {
