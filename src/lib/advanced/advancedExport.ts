@@ -37,7 +37,13 @@ export function buildCompositorJob(
   const sources: JobSource[] = []
   const indexByClip = new Map<string, number>()
 
-  const layers = segments.map((segment) => {
+  const hiddenTrackIds = new Set(
+    advancedTracks.value.filter((track) => track.hidden).map((track) => track.id)
+  )
+
+  const visibleSegments = segments.filter((segment) => !hiddenTrackIds.has(segment.trackId))
+
+  const layers = visibleSegments.map((segment) => {
     const clip = getClipById(segment.clipId)
     if (!clip) return null
     let sourceIndex = indexByClip.get(segment.clipId)

@@ -75,4 +75,24 @@ describe('buildCompositorJob', () => {
       )
     ).toBeNull()
   })
+
+  it('excludes segments on hidden tracks from layers', () => {
+    clips.value = [makeClip('a'), makeClip('b')]
+    advancedTracks.value = [
+      { id: 'track-1', name: 'T1' },
+      { id: 'track-2', name: 'T2', hidden: true },
+    ]
+    const segOnT1 = { ...makeSegment('a'), trackId: 'track-1' }
+    const segOnT2 = { ...makeSegment('b'), id: 'seg-b', trackId: 'track-2' }
+    const job = buildCompositorJob(
+      [segOnT1, segOnT2],
+      { width: 1920, height: 1080 },
+      'mp4',
+      'high',
+      'original'
+    )
+    expect(job).not.toBeNull()
+    expect(job?.layers).toHaveLength(1)
+    expect(job?.layers[0].trackId).toBe('track-1')
+  })
 })

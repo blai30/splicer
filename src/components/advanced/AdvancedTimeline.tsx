@@ -1,17 +1,14 @@
-import { useRef } from 'preact/hooks'
-
 import { AdvancedSegmentBlock } from '@/components/advanced/AdvancedSegmentBlock'
 import { AdvancedTrackHeaders } from '@/components/advanced/AdvancedTrackHeaders'
+import { seek } from '@/lib/advanced/advancedPlayback'
 import { moveSegment } from '@/lib/advanced/advancedSegmentEditing'
 import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
-import { seek } from '@/lib/advanced/advancedPlayback'
 import { advancedPlayhead, advancedSegments, advancedTracks, pxPerSec } from '@/lib/store'
 
 const LANE_HEIGHT = 56
 const PAD_LEFT = 8
 
 export function AdvancedTimeline() {
-  const lanesRef = useRef<HTMLDivElement>(null)
   const tracks = advancedTracks.value
   const segments = advancedSegments.value
   const duration = projectDuration(segments)
@@ -46,7 +43,6 @@ export function AdvancedTimeline() {
       <div class="flex">
         <AdvancedTrackHeaders laneHeight={LANE_HEIGHT} />
         <div
-          ref={lanesRef}
           class="relative min-h-0 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto dark:scrollbar-thumb-slate-700"
           onPointerDown={onLanesPointerDown}
         >

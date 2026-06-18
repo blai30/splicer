@@ -8,7 +8,13 @@ import {
   trimSegmentEnd,
   trimSegmentStart,
 } from '@/lib/advanced/advancedSegmentEditing'
-import { advancedCanvas, advancedSegments, advancedSelectedId, clips, DEFAULT_CANVAS } from '@/lib/store'
+import {
+  advancedCanvas,
+  advancedSegments,
+  advancedSelectedId,
+  clips,
+  DEFAULT_CANVAS,
+} from '@/lib/store'
 import type { Clip } from '@/lib/types'
 
 function makeClip(id: string): Clip {
@@ -62,6 +68,7 @@ describe('advancedSegmentEditing trim and split', () => {
     clips.value = []
     advancedSegments.value = []
     advancedSelectedId.value = null
+    advancedCanvas.value = DEFAULT_CANVAS
   })
 
   it('trims the end without moving timelineStart', () => {
