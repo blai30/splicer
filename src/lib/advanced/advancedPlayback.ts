@@ -79,7 +79,12 @@ function drawComposite(playhead: number) {
     if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) continue
     const { x, y, width, height } = segment.transform
     ctx.globalAlpha = segment.opacity ?? 1
-    ctx.drawImage(video, x, y, width, height)
+    if (segment.crop) {
+      const crop = segment.crop
+      ctx.drawImage(video, crop.x, crop.y, crop.width, crop.height, x, y, width, height)
+    } else {
+      ctx.drawImage(video, x, y, width, height)
+    }
   }
   ctx.globalAlpha = 1
 }
