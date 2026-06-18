@@ -1,9 +1,10 @@
 import { mixAdvancedAudio } from '@/lib/advanced/advancedAudioMix'
+import { computeExportBounds } from '@/lib/advanced/exportLayout'
 import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
 import { selectCodecs } from '@/lib/exportCodecs'
 import { EtaTracker } from '@/lib/exportEta'
 import {
-  advancedCanvas,
+  advancedOutputLock,
   advancedSegments,
   advancedTracks,
   exportEtaSeconds,
@@ -29,7 +30,6 @@ let activeWorker: Worker | null = null
 // Returns null when any clip is missing.
 export function buildCompositorJob(
   segments: AdvancedSegment[],
-  canvas: { width: number; height: number },
   format: ExportFormat,
   quality: Quality,
   fps: Framerate
@@ -42,6 +42,9 @@ export function buildCompositorJob(
   )
 
   const visibleSegments = segments.filter((segment) => !hiddenTrackIds.has(segment.trackId))
+
+  const exportBounds = computeExportBounds(visibleSegments, advancedOutputLock.value)
+  if (!exportBounds) return null
 
   const layers = visibleSegments.map((segment) => {
     const clip = getClipById(segment.clipId)
@@ -63,7 +66,7 @@ export function buildCompositorJob(
       sourceEnd: segment.sourceEnd,
       timelineStart: segment.timelineStart,
       trackId: segment.trackId,
-      transform: segment.transform,
+      transform: exportBounds.mapTransform(segment.transform),
       crop: segment.crop,
       muted: segment.muted === true,
       opacity: segment.opacity ?? 1,
@@ -73,7 +76,7 @@ export function buildCompositorJob(
   if (layers.some((layer) => layer === null)) return null
   const selection = selectCodecs(format, webmCodec.value, mkvCodec.value)
   return {
-    canvas,
+    canvas: { width: exportBounds.width, height: exportBounds.height },
     sources,
     layers: layers as CompositorJob['layers'],
     tracksOrder: advancedTracks.value.map((track) => track.id),
@@ -139,16 +142,15 @@ export async function runAdvancedExport(
 ): Promise<{ url: string; size: number; width: number; height: number; duration: number }> {
   const segments = advancedSegments.value
   if (segments.length === 0) throw new Error('No clips to export')
-  const canvas = advancedCanvas.value
   const duration = projectDuration(segments)
 
-  const job = buildCompositorJob(segments, canvas, format, quality, fps)
+  const job = buildCompositorJob(segments, format, quality, fps)
   if (!job) throw new Error('Missing clip data for export')
 
   job.mixedAudio = (await mixAdvancedAudio(segments, advancedTracks.value, duration)) ?? undefined
 
   const result = await runCompositorWorker(job)
-  return { ...result, width: canvas.width, height: canvas.height, duration }
+  return { ...result, width: job.canvas.width, height: job.canvas.height, duration }
 }
 
 export function cancelAdvancedExport(): void {

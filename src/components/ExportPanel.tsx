@@ -4,12 +4,13 @@ import { CirclePlay, X, AlertTriangle } from 'lucide-preact'
 
 import { ExportFaq } from '@/components/ExportFaq'
 import { cancelAdvancedExport, runAdvancedExport } from '@/lib/advanced/advancedExport'
+import { computeExportBounds } from '@/lib/advanced/exportLayout'
 import { runExportEngine, cancelActiveExport } from '@/lib/exportEngine'
 import { assessFeasibility } from '@/lib/exportFeasibility'
 import { formatTimecode } from '@/lib/format'
 import { info, error as logError } from '@/lib/logger'
 import {
-  advancedCanvas,
+  advancedOutputLock,
   advancedSegments,
   appMode,
   clips,
@@ -320,7 +321,15 @@ export function ExportPanel() {
             {isAdvanced ? (
               hasSegments ? (
                 <>
-                  Output: {advancedCanvas.value.width}x{advancedCanvas.value.height},{' '}
+                  Output:{' '}
+                  {(() => {
+                    const bounds = computeExportBounds(
+                      advancedSegments.value,
+                      advancedOutputLock.value
+                    )
+                    return bounds ? `${bounds.width}x${bounds.height}` : 'auto'
+                  })()}
+                  ,{' '}
                   {formatTimecode(
                     advancedSegments.value.reduce(
                       (acc, segment) => acc + (segment.sourceEnd - segment.sourceStart),
