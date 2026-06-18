@@ -5,18 +5,13 @@ import { CirclePlay, X, AlertTriangle } from 'lucide-preact'
 import { ExportFaq } from '@/components/ExportFaq'
 import { runExportEngine, cancelActiveExport } from '@/lib/exportEngine'
 import { assessFeasibility } from '@/lib/exportFeasibility'
-import { getFfmpeg } from '@/lib/ffmpeg'
 import { info, error as logError } from '@/lib/logger'
 import {
   clips,
-  coreMode,
-  coreModeReason,
-  exportEngineUsed,
   exportEtaSeconds,
   exportFormat,
   addExportRecord,
   ffmpegProgress,
-  ffmpegReady,
   framerate,
   mkvCodec,
   quality,
@@ -97,11 +92,6 @@ export function ExportPanel() {
     }
 
     return Math.max(0, Math.round(total * factorMap[quality.value]))
-  }
-
-  async function initFFmpeg() {
-    if (ffmpegReady.value) return
-    await getFfmpeg()
   }
 
   async function handleExport() {
@@ -217,7 +207,7 @@ export function ExportPanel() {
     height: maxClip.height,
     durationSec: totalDuration,
     format: exportFormat.value,
-    threads: coreMode.value === 'multithread' ? 8 : null,
+    threads: null,
   })
 
   return (
@@ -227,27 +217,12 @@ export function ExportPanel() {
           Export
         </span>
         <ExportFaq />
-        {coreMode.value && (
-          <span
-            class={clsx(
-              'rounded px-2 py-0.5 text-xs font-medium',
-              coreMode.value === 'multithread'
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-            )}
-            title={coreModeReason.value || undefined}
-          >
-            {coreMode.value === 'multithread' ? 'multi-threaded' : 'single-threaded'}
-          </span>
-        )}
-        {exportEngineUsed.value === 'webcodecs' && (
-          <span
-            class="rounded bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
-            title="Exported with the browser's native WebCodecs engine"
-          >
-            WebCodecs
-          </span>
-        )}
+        <span
+          class="rounded bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+          title="Exported with the browser's native WebCodecs engine"
+        >
+          WebCodecs
+        </span>
       </div>
 
       <div class="grid gap-2">
@@ -309,8 +284,7 @@ export function ExportPanel() {
         ) : (
           <button
             onClick={handleExport}
-            onMouseEnter={initFFmpeg}
-            disabled={!hasSegments}
+            disabled={!hasSegments || !webcodecsAvailable}
             class="inline-flex h-10 w-42 items-center justify-center gap-2 rounded bg-violet-500 px-4 text-base font-semibold text-white transition-colors hover:bg-violet-600 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <CirclePlay class="h-4 w-4" />
@@ -328,6 +302,15 @@ export function ExportPanel() {
               'Add a clip to the timeline to export.'
             )}
           </div>
+          {!webcodecsAvailable && (
+            <div
+              class="rounded-md bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300"
+              role="alert"
+            >
+              This browser has no WebCodecs video encoder, so export is unavailable. Try a recent
+              version of Chrome, Edge, or Safari.
+            </div>
+          )}
           {feasibility.band !== 'green' && (
             <div
               class={clsx(
@@ -373,14 +356,6 @@ export function ExportPanel() {
                 </div>
               </div>
             )}
-          {exporting.value && !ffmpegReady.value && (
-            <div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <div class="h-2 w-2 animate-pulse rounded-full bg-violet-500" />
-              <span role="status" aria-live="polite">
-                Initializing FFmpeg…
-              </span>
-            </div>
-          )}
           {exporting.value && (
             <div
               class="flex items-center gap-2"
