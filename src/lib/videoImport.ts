@@ -1,3 +1,4 @@
+import { setAdvancedClip } from '@/lib/advanced/advancedEditing'
 import { info, warn, error as logError } from '@/lib/logger'
 import { clips, getClipById, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
@@ -147,26 +148,26 @@ export async function ensureClipWaveform(clipId: string): Promise<void> {
   }
 }
 
-export async function importAndAppend(file: File): Promise<void> {
+// Probe metadata and build a Clip from a file. Returns null when the file is
+// not a video or its metadata cannot be read (logging the reason). Does not
+// place the clip anywhere. On success the caller owns the object URL via the
+// returned clip; on failure the URL is revoked here.
+export async function createClip(file: File): Promise<Clip | null> {
   if (!isVideoFile(file)) {
     warn('Skipped non-video file', { name: file.name, type: file.type })
-    return
+    return null
   }
 
   const objectUrl = URL.createObjectURL(file)
-  let imported = false
-
   try {
     info('Importing file', { name: file.name })
-    importing.value = true
     const { duration, width, height } = await getVideoMetadata(objectUrl)
     if (!Number.isFinite(duration) || duration <= 0) {
       throw new Error('Invalid video duration')
     }
-
     // Defer waveform extraction to avoid blocking import. Waveform will be
     // generated lazily when the segment's view mounts (see SegmentBlock).
-    const clip: Clip = {
+    return {
       id: crypto.randomUUID(),
       file,
       name: file.name.replace(/\.[^.]+$/, ''),
@@ -176,18 +177,40 @@ export async function importAndAppend(file: File): Promise<void> {
       objectUrl,
       waveformPeaks: [],
     }
-    appendClipToTimeline(clip)
-    imported = true
-    info('Import succeeded', { name: file.name, duration })
   } catch (err) {
-    // Log but keep going so batch imports continue with the remaining files.
+    URL.revokeObjectURL(objectUrl)
     const rawMessage = err instanceof Error ? err.message : String(err)
     const friendly = /metadata/i.test(rawMessage)
       ? `Could not read "${file.name}". The codec (e.g. AV1) may not be supported by this browser.`
       : rawMessage
     logError('Import failed', { name: file.name, message: friendly })
+    return null
+  }
+}
+
+export async function importAndAppend(file: File): Promise<void> {
+  importing.value = true
+  try {
+    const clip = await createClip(file)
+    if (clip) {
+      appendClipToTimeline(clip)
+      info('Import succeeded', { name: file.name, duration: clip.duration })
+    }
   } finally {
-    if (!imported) URL.revokeObjectURL(objectUrl)
+    importing.value = false
+  }
+}
+
+// Import a single file into the Advanced project, replacing any existing clip.
+export async function importIntoAdvanced(file: File): Promise<void> {
+  importing.value = true
+  try {
+    const clip = await createClip(file)
+    if (clip) {
+      setAdvancedClip(clip)
+      info('Advanced import succeeded', { name: file.name, duration: clip.duration })
+    }
+  } finally {
     importing.value = false
   }
 }
