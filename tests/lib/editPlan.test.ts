@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildEditPlan } from '@/lib/webcodecs/editPlan'
+import { buildEditPlan, computeEncodeParams } from '@/lib/webcodecs/editPlan'
 import type { ExportJob, JobSlice, JobSource } from '@/lib/webcodecs/protocol'
+
+describe('computeEncodeParams', () => {
+  it('scales video bitrate by pixel count relative to 1080p', () => {
+    const full = computeEncodeParams(1920, 1080, 'original', 'high')
+    const quarter = computeEncodeParams(960, 540, 'original', 'high')
+    expect(quarter.videoBitrate).toBeCloseTo(full.videoBitrate / 4, -3)
+  })
+
+  it('orders bitrate by quality preset', () => {
+    const lossless = computeEncodeParams(1920, 1080, 'original', 'lossless').videoBitrate
+    const low = computeEncodeParams(1920, 1080, 'original', 'low').videoBitrate
+    expect(lossless).toBeGreaterThan(low)
+  })
+
+  it('maps fps presets to a frame duration and original to null', () => {
+    expect(computeEncodeParams(1920, 1080, 'original', 'high').frameDurationUs).toBeNull()
+    expect(computeEncodeParams(1920, 1080, '30', 'high').frameDurationUs).toBe(
+      Math.round(1_000_000 / 30)
+    )
+  })
+})
 
 function source(overrides: Partial<JobSource> = {}): JobSource {
   return {
