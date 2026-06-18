@@ -1,8 +1,13 @@
 import clsx from 'clsx/lite'
 import { Info } from 'lucide-preact'
 
-import { CANVAS_MAX, CANVAS_MIN, setCanvasSize } from '@/lib/advanced/advancedEditing'
-import { advancedCanvas } from '@/lib/store'
+import {
+  CANVAS_MAX,
+  CANVAS_MIN,
+  enableAutoCanvas,
+  setCanvasSize,
+} from '@/lib/advanced/advancedEditing'
+import { advancedCanvas, advancedCanvasAuto } from '@/lib/store'
 
 const PRESETS: { label: string; width: number; height: number }[] = [
   { label: '1080p', width: 1920, height: 1080 },
@@ -13,6 +18,7 @@ const PRESETS: { label: string; width: number; height: number }[] = [
 
 export function CanvasSizeControls() {
   const canvas = advancedCanvas.value
+  const auto = advancedCanvasAuto.value
 
   function onManual(axis: 'width' | 'height', raw: string) {
     const value = Number(raw)
@@ -25,7 +31,7 @@ export function CanvasSizeControls() {
     <div class="flex flex-wrap items-center gap-2">
       <span class="w-14 text-sm text-slate-500 dark:text-slate-400">Canvas</span>
       {PRESETS.map((preset) => {
-        const active = canvas.width === preset.width && canvas.height === preset.height
+        const active = !auto && canvas.width === preset.width && canvas.height === preset.height
         return (
           <button
             key={preset.label}
@@ -41,19 +47,37 @@ export function CanvasSizeControls() {
           </button>
         )
       })}
+      <button
+        onClick={enableAutoCanvas}
+        title="Match the output size to the bounding box of placed clips"
+        class={clsx(
+          'rounded px-2.5 py-1 text-sm font-medium transition-colors hover:duration-0',
+          auto
+            ? 'bg-violet-500 text-white'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
+        )}
+      >
+        Auto
+      </button>
       <div class="flex items-center gap-1 text-sm text-slate-600 dark:text-slate-300">
         <input
           type="number"
           min={CANVAS_MIN}
           max={CANVAS_MAX}
           value={canvas.width}
+          disabled={auto}
           aria-label="Canvas width"
           onBlur={(event) => onManual('width', (event.currentTarget as HTMLInputElement).value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter')
               onManual('width', (event.currentTarget as HTMLInputElement).value)
           }}
-          class="w-20 rounded border border-slate-300 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800"
+          class={clsx(
+            'w-20 rounded border border-slate-300 px-2 py-1 outline-none focus:border-violet-400 dark:border-slate-600',
+            auto
+              ? 'cursor-not-allowed bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-400'
+              : 'bg-white dark:bg-slate-800'
+          )}
         />
         <span class="text-slate-400">x</span>
         <input
@@ -61,13 +85,19 @@ export function CanvasSizeControls() {
           min={CANVAS_MIN}
           max={CANVAS_MAX}
           value={canvas.height}
+          disabled={auto}
           aria-label="Canvas height"
           onBlur={(event) => onManual('height', (event.currentTarget as HTMLInputElement).value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter')
               onManual('height', (event.currentTarget as HTMLInputElement).value)
           }}
-          class="w-20 rounded border border-slate-300 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800"
+          class={clsx(
+            'w-20 rounded border border-slate-300 px-2 py-1 outline-none focus:border-violet-400 dark:border-slate-600',
+            auto
+              ? 'cursor-not-allowed bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-400'
+              : 'bg-white dark:bg-slate-800'
+          )}
         />
       </div>
       <span

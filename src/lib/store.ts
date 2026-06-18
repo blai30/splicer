@@ -127,6 +127,9 @@ export const appMode = signal<'basic' | 'advanced'>(loadFromStorage('appMode', '
 // cannot be rehydrated across reloads (same as Basic's in-memory timeline).
 export const DEFAULT_CANVAS: CanvasSize = { width: 1920, height: 1080 }
 export const advancedCanvas = signal<CanvasSize>(loadFromStorage('advancedCanvas', DEFAULT_CANVAS))
+// When true, the canvas size tracks the bounding box of placed clips instead of
+// a fixed preset/manual size (recomputed at edit-commit time, not mid-gesture).
+export const advancedCanvasAuto = signal<boolean>(loadFromStorage('advancedCanvasAuto', false))
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])
 export const advancedSelectedId = signal<string | null>(null)
@@ -148,6 +151,7 @@ persistSignal('previewMuted', previewMuted)
 persistSignal('logPanelVisible', logPanelVisible)
 persistSignal('appMode', appMode)
 persistSignal('advancedCanvas', advancedCanvas)
+persistSignal('advancedCanvasAuto', advancedCanvasAuto)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200

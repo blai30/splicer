@@ -1,5 +1,6 @@
 import { batch, useSignal } from '@preact/signals'
 
+import { recomputeAutoCanvas } from '@/lib/advanced/advancedEditing'
 import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
   selectAdvancedSegment,
@@ -105,6 +106,8 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
       guideY.value = null
       element.removeEventListener('pointermove', onMove)
       element.removeEventListener('pointerup', onUp)
+      // Auto canvas tracks the content bbox; recompute once the gesture commits.
+      recomputeAutoCanvas()
     }
     element.addEventListener('pointermove', onMove)
     element.addEventListener('pointerup', onUp)
@@ -157,6 +160,8 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
       function onUp() {
         element.removeEventListener('pointermove', onMove)
         element.removeEventListener('pointerup', onUp)
+        // Auto canvas tracks the content bbox; recompute once the gesture commits.
+        recomputeAutoCanvas()
       }
       element.addEventListener('pointermove', onMove)
       element.addEventListener('pointerup', onUp)

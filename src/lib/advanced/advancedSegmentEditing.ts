@@ -1,3 +1,4 @@
+import { recomputeAutoCanvas } from '@/lib/advanced/advancedEditing'
 import { consumeAdvancedGesture, recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
 import { ADV_MIN_SEGMENT_DURATION } from '@/lib/advanced/advancedTimelineDomain'
 import { fitRect } from '@/lib/advanced/fit'
@@ -25,6 +26,7 @@ export function addClipToTrack(clip: Clip, trackId: string, timelineStart: numbe
   }
   advancedSegments.value = [...advancedSegments.value, segment]
   advancedSelectedId.value = segment.id
+  recomputeAutoCanvas()
   return segment.id
 }
 
@@ -41,6 +43,7 @@ export function removeAdvancedSegment(id: string): void {
   if (advancedSelectedId.value === id) {
     advancedSelectedId.value = advancedSegments.value[0]?.id ?? null
   }
+  recomputeAutoCanvas()
 }
 
 export function selectAdvancedSegment(id: string): void {

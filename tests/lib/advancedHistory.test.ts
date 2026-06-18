@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { enableAutoCanvas } from '@/lib/advanced/advancedEditing'
 import { redoAdvanced, resetAdvancedHistory, undoAdvanced } from '@/lib/advanced/advancedHistory'
 import { addClipToTrack, toggleSegmentMute } from '@/lib/advanced/advancedSegmentEditing'
 import { deleteAdvancedSelected, setAdvancedInPoint } from '@/lib/advanced/advancedTimelineEditing'
 import { addTrack } from '@/lib/advanced/advancedTrackEditing'
 import {
   advancedCanvas,
+  advancedCanvasAuto,
   advancedPlayhead,
   advancedSegments,
   advancedSelectedId,
@@ -36,6 +38,7 @@ describe('advancedHistory', () => {
     advancedSelectedId.value = null
     advancedPlayhead.value = 0
     advancedCanvas.value = DEFAULT_CANVAS
+    advancedCanvasAuto.value = false
     resetAdvancedHistory()
   })
 
@@ -81,6 +84,35 @@ describe('advancedHistory', () => {
     expect(advancedTracks.value).toHaveLength(1)
     undoAdvanced()
     expect(advancedTracks.value).toHaveLength(0)
+  })
+
+  it('round-trips the canvas size and auto flag when enabling auto', () => {
+    advancedCanvas.value = { width: 640, height: 480 }
+    advancedSegments.value = [
+      {
+        id: 'a',
+        clipId: 'a',
+        trackId: 'track-1',
+        timelineStart: 0,
+        sourceStart: 0,
+        sourceEnd: 5,
+        transform: { x: 100, y: 50, width: 800, height: 400 },
+      },
+    ]
+    enableAutoCanvas()
+    expect(advancedCanvasAuto.value).toBe(true)
+    expect(advancedCanvas.value).toEqual({ width: 800, height: 400 })
+    expect(advancedSegments.value[0].transform).toEqual({ x: 0, y: 0, width: 800, height: 400 })
+
+    undoAdvanced()
+    expect(advancedCanvasAuto.value).toBe(false)
+    expect(advancedCanvas.value).toEqual({ width: 640, height: 480 })
+    expect(advancedSegments.value[0].transform).toEqual({ x: 100, y: 50, width: 800, height: 400 })
+
+    redoAdvanced()
+    expect(advancedCanvasAuto.value).toBe(true)
+    expect(advancedCanvas.value).toEqual({ width: 800, height: 400 })
+    expect(advancedSegments.value[0].transform).toEqual({ x: 0, y: 0, width: 800, height: 400 })
   })
 
   it('a new edit clears the redo stack', () => {
