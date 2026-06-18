@@ -1,3 +1,4 @@
+import { consumeAdvancedGesture, recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
 import { ADV_MIN_SEGMENT_DURATION } from '@/lib/advanced/advancedTimelineDomain'
 import { fitRect } from '@/lib/advanced/fit'
 import {
@@ -10,6 +11,7 @@ import {
 import type { Clip, CropParams, Transform } from '@/lib/types'
 
 export function addClipToTrack(clip: Clip, trackId: string, timelineStart: number): string {
+  recordAdvancedHistory()
   if (!getClipById(clip.id)) clips.value = [...clips.value, clip]
   const canvas = advancedCanvas.value
   const segment = {
@@ -27,12 +29,14 @@ export function addClipToTrack(clip: Clip, trackId: string, timelineStart: numbe
 }
 
 export function moveSegment(id: string, trackId: string, timelineStart: number): void {
+  recordAdvancedHistory()
   advancedSegments.value = advancedSegments.value.map((segment) =>
     segment.id === id ? { ...segment, trackId, timelineStart: Math.max(0, timelineStart) } : segment
   )
 }
 
 export function removeAdvancedSegment(id: string): void {
+  recordAdvancedHistory()
   advancedSegments.value = advancedSegments.value.filter((segment) => segment.id !== id)
   if (advancedSelectedId.value === id) {
     advancedSelectedId.value = advancedSegments.value[0]?.id ?? null
@@ -44,6 +48,7 @@ export function selectAdvancedSegment(id: string): void {
 }
 
 export function trimSegmentStart(id: string, nextSourceStart: number): void {
+  consumeAdvancedGesture()
   advancedSegments.value = advancedSegments.value.map((segment) => {
     if (segment.id !== id) return segment
     const clamped = Math.min(
@@ -60,6 +65,7 @@ export function trimSegmentStart(id: string, nextSourceStart: number): void {
 }
 
 export function trimSegmentEnd(id: string, nextSourceEnd: number): void {
+  consumeAdvancedGesture()
   advancedSegments.value = advancedSegments.value.map((segment) => {
     if (segment.id !== id) return segment
     const clip = getClipById(segment.clipId)
@@ -81,6 +87,7 @@ export function splitAdvancedSegment(id: string, atGlobalTime: number): string |
   const sourceSplit = segment.sourceStart + localTime
   if (sourceSplit <= segment.sourceStart || sourceSplit >= segment.sourceEnd) return null
 
+  recordAdvancedHistory()
   const newId = crypto.randomUUID()
   const first = { ...segment, sourceEnd: sourceSplit }
   const second = {
@@ -96,13 +103,22 @@ export function splitAdvancedSegment(id: string, atGlobalTime: number): string |
 }
 
 export function setSegmentTransform(id: string, transform: Transform): void {
+  consumeAdvancedGesture()
   advancedSegments.value = advancedSegments.value.map((segment) =>
     segment.id === id ? { ...segment, transform } : segment
   )
 }
 
 export function setSegmentCrop(id: string, crop: CropParams | undefined): void {
+  consumeAdvancedGesture()
   advancedSegments.value = advancedSegments.value.map((segment) =>
     segment.id === id ? { ...segment, crop } : segment
+  )
+}
+
+export function toggleSegmentMute(id: string): void {
+  recordAdvancedHistory()
+  advancedSegments.value = advancedSegments.value.map((segment) =>
+    segment.id === id ? { ...segment, muted: !segment.muted } : segment
   )
 }

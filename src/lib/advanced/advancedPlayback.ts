@@ -148,31 +148,6 @@ function expectedSourceTime(segment: AdvancedSegment, playhead: number): number 
   return segment.sourceStart + (playhead - segment.timelineStart)
 }
 
-// A reusable checkerboard swatch used to fill uncovered canvas areas in the
-// preview (an empty / out-of-bounds indicator). The export fills these with
-// black instead; this is a preview-only editing aid.
-let checkerSwatch: HTMLCanvasElement | null = null
-
-function getCheckerPattern(context: CanvasRenderingContext2D): CanvasPattern | null {
-  if (!checkerSwatch) {
-    const cell = 24
-    checkerSwatch = document.createElement('canvas')
-    checkerSwatch.width = cell * 2
-    checkerSwatch.height = cell * 2
-    const swatchCtx = checkerSwatch.getContext('2d')
-    if (!swatchCtx) {
-      checkerSwatch = null
-      return null
-    }
-    swatchCtx.fillStyle = '#2a2a2a'
-    swatchCtx.fillRect(0, 0, cell * 2, cell * 2)
-    swatchCtx.fillStyle = '#3b3b3b'
-    swatchCtx.fillRect(0, 0, cell, cell)
-    swatchCtx.fillRect(cell, cell, cell, cell)
-  }
-  return context.createPattern(checkerSwatch, 'repeat')
-}
-
 // Draw all active, non-hidden layers onto the canvas, ordered bottom lane first.
 function drawComposite(playhead: number) {
   if (!ctx || !canvasEl) return
@@ -180,10 +155,9 @@ function drawComposite(playhead: number) {
   if (canvasEl.width !== canvas.width) canvasEl.width = canvas.width
   if (canvasEl.height !== canvas.height) canvasEl.height = canvas.height
 
+  // Leave empty areas transparent so the fixed-size CSS checkerboard behind the
+  // canvas shows through (a preview-only editing aid). Export fills these black.
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  const checker = getCheckerPattern(ctx)
-  ctx.fillStyle = checker ?? '#000000'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   const active = segmentsActiveAt(advancedSegments.value, playhead).filter(
     (segment) => !trackHidden(segment.trackId)

@@ -1,5 +1,17 @@
-import { stepFrame, togglePlay } from '@/lib/playback'
-import { ZOOM_MAX, ZOOM_MIN, pxPerSec } from '@/lib/store'
+import { redoAdvanced, undoAdvanced } from '@/lib/advanced/advancedHistory'
+import {
+  stepFrame as advancedStepFrame,
+  togglePlay as advancedTogglePlay,
+} from '@/lib/advanced/advancedPlayback'
+import {
+  cutAdvancedAtPlayhead,
+  deleteAdvancedSelected,
+  setAdvancedInPoint,
+  setAdvancedOutPoint,
+  toggleAdvancedMute,
+} from '@/lib/advanced/advancedTimelineEditing'
+import { stepFrame as basicStepFrame, togglePlay as basicTogglePlay } from '@/lib/playback'
+import { appMode, ZOOM_MAX, ZOOM_MIN, pxPerSec } from '@/lib/store'
 import {
   cutAtPlayhead,
   deleteSegment,
@@ -12,8 +24,51 @@ import {
 
 const ZOOM_KEYBOARD_STEP = 10
 
+function isAdvanced(): boolean {
+  return appMode.value === 'advanced'
+}
+
 function zoomBy(delta: number) {
   pxPerSec.value = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pxPerSec.value + delta))
+}
+
+// Mode-aware action dispatch. Zoom is shared (pxPerSec); undo/redo exist only in
+// Basic, so they no-op in Advanced rather than mutating Basic state.
+function togglePlay() {
+  if (isAdvanced()) advancedTogglePlay()
+  else basicTogglePlay()
+}
+function stepFrame(direction: 1 | -1) {
+  if (isAdvanced()) advancedStepFrame(direction)
+  else basicStepFrame(direction)
+}
+function setIn() {
+  if (isAdvanced()) setAdvancedInPoint()
+  else setInPoint()
+}
+function setOut() {
+  if (isAdvanced()) setAdvancedOutPoint()
+  else setOutPoint()
+}
+function cut() {
+  if (isAdvanced()) cutAdvancedAtPlayhead()
+  else cutAtPlayhead()
+}
+function muteSegment() {
+  if (isAdvanced()) toggleAdvancedMute()
+  else toggleMute()
+}
+function removeSelected() {
+  if (isAdvanced()) deleteAdvancedSelected()
+  else deleteSegment()
+}
+function undoEdit() {
+  if (isAdvanced()) undoAdvanced()
+  else undo()
+}
+function redoEdit() {
+  if (isAdvanced()) redoAdvanced()
+  else redo()
 }
 
 export type Shortcut = {
@@ -42,26 +97,26 @@ export const SHORTCUTS: Shortcut[] = [
     description: 'Step Forward One Frame',
     run: () => stepFrame(1),
   },
-  { keys: ['i'], display: 'I', description: 'Set In-Point', run: setInPoint },
-  { keys: ['o'], display: 'O', description: 'Set Out-Point', run: setOutPoint },
-  { keys: ['c'], display: 'C', description: 'Cut at Playhead', run: cutAtPlayhead },
-  { keys: ['m'], display: 'M', description: 'Mute Segment', run: toggleMute },
+  { keys: ['i'], display: 'I', description: 'Set In-Point', run: setIn },
+  { keys: ['o'], display: 'O', description: 'Set Out-Point', run: setOut },
+  { keys: ['c'], display: 'C', description: 'Cut at Playhead', run: cut },
+  { keys: ['m'], display: 'M', description: 'Mute Segment', run: muteSegment },
   {
     keys: ['Delete', 'Backspace'],
     display: 'Delete',
     description: 'Delete Segment',
-    run: deleteSegment,
+    run: removeSelected,
   },
-  { keys: ['z'], ctrl: true, display: 'Ctrl Z', description: 'Undo', run: undo },
+  { keys: ['z'], ctrl: true, display: 'Ctrl Z', description: 'Undo', run: undoEdit },
   {
     keys: ['z'],
     ctrl: true,
     shift: true,
     display: 'Ctrl Shift Z',
     description: 'Redo',
-    run: redo,
+    run: redoEdit,
   },
-  { keys: ['y'], ctrl: true, display: 'Ctrl Y', description: 'Redo', run: redo },
+  { keys: ['y'], ctrl: true, display: 'Ctrl Y', description: 'Redo', run: redoEdit },
   {
     keys: ['=', '+'],
     display: '+',

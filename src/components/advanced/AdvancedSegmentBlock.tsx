@@ -1,6 +1,8 @@
 import clsx from 'clsx/lite'
-import { useRef } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 
+import { WaveformView } from '@/components/WaveformView'
+import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
   trimSegmentEnd,
   trimSegmentStart,
@@ -11,6 +13,7 @@ import { formatTime } from '@/lib/format'
 import { advancedSelectedId, clipColor, getClipById, pxPerSec } from '@/lib/store'
 import { createRafThrottler } from '@/lib/timelineDomain'
 import type { AdvancedSegment } from '@/lib/types'
+import { ensureClipWaveform } from '@/lib/videoImport'
 
 export function AdvancedSegmentBlock({
   segment,
@@ -29,6 +32,12 @@ export function AdvancedSegmentBlock({
   const left = segment.timelineStart * pxPerSec.value
   const width = Math.max(2, duration * pxPerSec.value)
 
+  useEffect(() => {
+    if (!clip) return
+    if ((clip.waveformPeaks?.length ?? 0) > 0) return
+    void ensureClipWaveform(clip.id)
+  }, [clip?.id, clip?.waveformPeaks?.length])
+
   function onTrimPointerDown(side: 'left' | 'right') {
     return (event: PointerEvent) => {
       event.stopPropagation()
@@ -36,6 +45,8 @@ export function AdvancedSegmentBlock({
       handle.setPointerCapture(event.pointerId)
       const startClientX = event.clientX
       const startValue = side === 'left' ? segment.sourceStart : segment.sourceEnd
+      // One undo entry per trim gesture, consumed by the first trim mutation.
+      beginAdvancedGesture()
       const throttler = createRafThrottler()
 
       function onMove(moveEvent: PointerEvent) {
@@ -98,11 +109,20 @@ export function AdvancedSegmentBlock({
       style={{ left: `${left}px`, width: `${width}px` }}
       onPointerDown={onBodyPointerDown}
     >
-      <span class="relative z-10 truncate px-2 text-sm font-medium text-white">
+      {clip && (
+        <WaveformView
+          peaks={clip.waveformPeaks ?? []}
+          clipDuration={clip.duration}
+          segmentStart={segment.sourceStart}
+          segmentEnd={segment.sourceEnd}
+          class="absolute inset-0 h-full w-full opacity-80"
+        />
+      )}
+      <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
         {clip?.name ?? 'Clip'}
         {segment.muted && <span class="ml-1">{'\u{1F507}'}</span>}
       </span>
-      <span class="relative z-10 ml-auto shrink-0 pr-2 text-xs text-white/70">
+      <span class="relative z-10 ml-auto shrink-0 self-end pr-2 text-sm text-white/70">
         {formatTime(duration)}
       </span>
       <div

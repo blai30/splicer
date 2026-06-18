@@ -1,5 +1,6 @@
 import { batch, useSignal } from '@preact/signals'
 
+import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
   selectAdvancedSegment,
   setSegmentCrop,
@@ -74,6 +75,8 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
     event.stopPropagation()
     const element = event.currentTarget as HTMLElement
     element.setPointerCapture(event.pointerId)
+    // One undo entry per move gesture, consumed by the first transform update.
+    beginAdvancedGesture()
     const startX = event.clientX
     const startY = event.clientY
     const startTransform = active.transform
@@ -114,6 +117,8 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
       event.stopPropagation()
       const element = event.currentTarget as HTMLElement
       element.setPointerCapture(event.pointerId)
+      // One undo entry per resize/crop gesture, consumed by the first update.
+      beginAdvancedGesture()
       const startX = event.clientX
       const startY = event.clientY
       const startTransform = active.transform
