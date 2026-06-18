@@ -42,13 +42,7 @@ export function fitToContent(
   stage: { width: number; height: number },
   padding: number
 ): Viewport {
-  if (
-    !bounds ||
-    bounds.width <= 0 ||
-    bounds.height <= 0 ||
-    stage.width <= 0 ||
-    stage.height <= 0
-  ) {
+  if (!bounds || bounds.width <= 0 || bounds.height <= 0 || stage.width <= 0 || stage.height <= 0) {
     return { panX: 0, panY: 0, zoom: 1 }
   }
   const usableWidth = Math.max(1, stage.width - padding * 2)

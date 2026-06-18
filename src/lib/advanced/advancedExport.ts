@@ -1,6 +1,6 @@
 import { mixAdvancedAudio } from '@/lib/advanced/advancedAudioMix'
-import { computeExportBounds } from '@/lib/advanced/exportLayout'
 import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
+import { computeExportBounds } from '@/lib/advanced/exportLayout'
 import { selectCodecs } from '@/lib/exportCodecs'
 import { EtaTracker } from '@/lib/exportEta'
 import {

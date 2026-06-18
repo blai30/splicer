@@ -8,14 +8,7 @@ import {
   setAdvancedOutPoint,
   toggleAdvancedMute,
 } from '@/lib/advanced/advancedTimelineEditing'
-import {
-  advancedCanvas,
-  advancedPlayhead,
-  advancedSegments,
-  advancedSelectedId,
-  clips,
-  DEFAULT_CANVAS,
-} from '@/lib/store'
+import { advancedPlayhead, advancedSegments, advancedSelectedId, clips } from '@/lib/store'
 import type { Clip } from '@/lib/types'
 
 function makeClip(id: string): Clip {
@@ -37,7 +30,6 @@ describe('advancedTimelineEditing', () => {
     advancedSegments.value = []
     advancedSelectedId.value = null
     advancedPlayhead.value = 0
-    advancedCanvas.value = DEFAULT_CANVAS
   })
 
   it('sets the in-point: trims source start and moves the left edge to the playhead', () => {

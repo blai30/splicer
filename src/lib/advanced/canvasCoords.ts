@@ -1,12 +1,5 @@
 import type { Transform } from '@/lib/types'
 
-// Convert a screen-space pixel delta to canvas-space pixels given the displayed
-// size of the canvas element and the canvas backing-store size.
-export function screenDeltaToCanvas(deltaPx: number, displayPx: number, canvasPx: number): number {
-  if (displayPx <= 0) return deltaPx
-  return (deltaPx / displayPx) * canvasPx
-}
-
 // Convert a screen-space pixel delta to a world-space pixel delta. One world
 // pixel is drawn as `zoom` screen pixels, so screen px / zoom = world px.
 export function screenDeltaToWorld(deltaPx: number, zoom: number): number {

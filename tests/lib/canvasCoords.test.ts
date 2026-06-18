@@ -1,21 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  pointInTransform,
-  screenDeltaToCanvas,
-  screenDeltaToWorld,
-} from '@/lib/advanced/canvasCoords'
+import { pointInTransform, screenDeltaToWorld } from '@/lib/advanced/canvasCoords'
 
 describe('canvasCoords', () => {
-  it('scales a screen delta into canvas space', () => {
-    // 50 screen px across a 500px display of a 1000px canvas -> 100 canvas px.
-    expect(screenDeltaToCanvas(50, 500, 1000)).toBe(100)
-  })
-
-  it('returns the delta unchanged when the display size is zero', () => {
-    expect(screenDeltaToCanvas(50, 0, 1000)).toBe(50)
-  })
-
   it('converts a screen delta to a world delta by zoom', () => {
     expect(screenDeltaToWorld(100, 2)).toBe(50)
     expect(screenDeltaToWorld(100, 0.5)).toBe(200)

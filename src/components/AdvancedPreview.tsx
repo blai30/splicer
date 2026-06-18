@@ -5,7 +5,6 @@ import { useEffect, useRef } from 'preact/hooks'
 import { AdvancedSelectionToolbar } from '@/components/advanced/AdvancedSelectionToolbar'
 import { AdvancedTransformOverlay } from '@/components/advanced/AdvancedTransformOverlay'
 import { VolumeControl } from '@/components/VolumeControl'
-import { computeContentBounds } from '@/lib/advanced/exportLayout'
 import {
   attachAdvancedPreview,
   projectDuration,
@@ -14,6 +13,7 @@ import {
   stepFrame,
   togglePlay,
 } from '@/lib/advanced/advancedPlayback'
+import { computeContentBounds } from '@/lib/advanced/exportLayout'
 import { clampZoom, fitToContent, zoomAtPoint } from '@/lib/advanced/viewportMath'
 import { formatTimecode } from '@/lib/format'
 import { advancedPlayhead, advancedPlaying, advancedSegments, advancedViewport } from '@/lib/store'
