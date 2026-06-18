@@ -8,7 +8,7 @@ test('switches between Basic and Advanced and remembers the choice', async ({ pa
 
   // Switching to Advanced shows the compositor surface (canvas controls + import).
   await page.getByRole('tab', { name: 'Advanced' }).click()
-  await expect(page.getByText(/add it to the canvas/i)).toBeVisible()
+  await expect(page.getByText(/drop a video onto the canvas/i)).toBeVisible()
 
   // The choice is remembered across reloads.
   await page.reload()

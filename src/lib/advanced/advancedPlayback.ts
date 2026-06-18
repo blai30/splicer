@@ -133,3 +133,10 @@ export function seek(time: number) {
   videoEl.currentTime = clamped
   advancedPlayhead.value = clamped
 }
+
+export function setPlaybackRate(rate: number) {
+  if (!videoEl) return
+  // defaultPlaybackRate keeps the rate across source swaps.
+  videoEl.defaultPlaybackRate = rate
+  videoEl.playbackRate = rate
+}
