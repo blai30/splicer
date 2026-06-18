@@ -7,11 +7,11 @@ import {
   segmentsActiveAt,
 } from '@/lib/advanced/advancedTimelineDomain'
 import {
-  advancedCanvas,
   advancedPlayhead,
   advancedPlaying,
   advancedSegments,
   advancedTracks,
+  advancedViewport,
   getClipById,
   previewMuted,
   previewVolume,
@@ -149,15 +149,26 @@ function expectedSourceTime(segment: AdvancedSegment, playhead: number): number 
 }
 
 // Draw all active, non-hidden layers onto the canvas, ordered bottom lane first.
+// The canvas backing store matches the displayed stage (CSS px x devicePixelRatio)
+// and clips are drawn in world coordinates under the pan/zoom viewport transform.
 function drawComposite(playhead: number) {
   if (!ctx || !canvasEl) return
-  const canvas = advancedCanvas.value
-  if (canvasEl.width !== canvas.width) canvasEl.width = canvas.width
-  if (canvasEl.height !== canvas.height) canvasEl.height = canvas.height
+  const viewport = advancedViewport.value
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
+  const backingWidth = Math.max(1, Math.round(canvasEl.clientWidth * dpr))
+  const backingHeight = Math.max(1, Math.round(canvasEl.clientHeight * dpr))
+  if (canvasEl.width !== backingWidth) canvasEl.width = backingWidth
+  if (canvasEl.height !== backingHeight) canvasEl.height = backingHeight
 
-  // Leave empty areas transparent so the fixed-size CSS checkerboard behind the
-  // canvas shows through (a preview-only editing aid). Export fills these black.
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  // Clear to transparent so the stage background (dark + dotted grid) shows in
+  // empty areas. This is a preview-only editing aid; export fills uncovered
+  // areas black, mirroring the previous checkerboard behavior.
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, backingWidth, backingHeight)
+
+  // world -> backing px: scale by dpr*zoom, translate by -pan (in world units).
+  const scale = dpr * viewport.zoom
+  ctx.setTransform(scale, 0, 0, scale, -viewport.panX * scale, -viewport.panY * scale)
 
   const active = segmentsActiveAt(advancedSegments.value, playhead).filter(
     (segment) => !trackHidden(segment.trackId)
@@ -177,6 +188,7 @@ function drawComposite(playhead: number) {
     }
   }
   ctx.globalAlpha = 1
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
 }
 
 // Keep each active source's video element synced to the playhead; play/pause and
@@ -257,7 +269,7 @@ export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
   disposeDraw = effect(() => {
     // touch dependencies
     void advancedSegments.value
-    void advancedCanvas.value
+    void advancedViewport.value
     const playhead = advancedPlayhead.value
     if (!advancedPlaying.value) {
       syncVideos(playhead, false)
