@@ -8,7 +8,7 @@ export type SourceReader = {
 }
 
 // Open one source file with mediabunny, verifying the primary video track can be
-// decoded. Throws UnsupportedSourceError so the worker can fall back to ffmpeg.
+// decoded. Throws UnsupportedSourceError when the source is not decodable.
 export async function openSource(file: File): Promise<SourceReader> {
   const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) })
 

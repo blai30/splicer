@@ -1,7 +1,6 @@
 import type { Signal } from '@preact/signals'
 import { effect, signal } from '@preact/signals'
 
-import type { CoreMode } from '@/lib/ffmpegCapabilities'
 import type {
   Clip,
   DragState,
@@ -43,16 +42,7 @@ export const clips = signal<Clip[]>([])
 export const timeline = signal<Segment[]>([])
 export const playheadTime = signal<number>(0)
 export const selectedSegmentId = signal<string | null>(null)
-export const ffmpegReady = signal<boolean>(false)
-export const ffmpegProgress = signal<number>(0)
-
-// Which ffmpeg core is in use this session, and why single-thread was forced
-// (empty when multithread or not yet decided).
-export const coreMode = signal<CoreMode | null>(null)
-export const coreModeReason = signal<string>('')
-
-// Which engine produced the most recent export: 'webcodecs' or 'ffmpeg'.
-export const exportEngineUsed = signal<'webcodecs' | 'ffmpeg' | null>(null)
+export const exportProgress = signal<number>(0)
 
 // ETA in seconds during an active export (null when unknown).
 export const exportEtaSeconds = signal<number | null>(null)
@@ -124,6 +114,11 @@ export const theme = signal<'light' | 'dark'>(
     : 'light'
 )
 
+// Which editor mode is active. Basic is today's single-track editor; Advanced
+// is the multi-track compositor. Persisted so the app reopens in the last-used
+// mode (Basic on first visit).
+export const appMode = signal<'basic' | 'advanced'>(loadFromStorage('appMode', 'basic'))
+
 // Playback output signals. Written only by the playback module (lib/playback.ts).
 export const playing = signal(false)
 export const currentPlaybackTime = signal(0)
@@ -137,6 +132,7 @@ persistSignal('mkvCodec', mkvCodec)
 persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
 persistSignal('logPanelVisible', logPanelVisible)
+persistSignal('appMode', appMode)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200
