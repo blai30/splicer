@@ -5,31 +5,64 @@ import {
   advancedPlayhead,
   advancedPlaying,
   advancedSegments,
-  advancedSelectedId,
+  advancedTracks,
   getClipById,
   previewMuted,
   previewVolume,
 } from '@/lib/store'
+import {
+  orderedForRender,
+  projectDuration,
+  segmentDuration,
+  segmentsActiveAt,
+} from '@/lib/advanced/advancedTimelineDomain'
 import type { AdvancedSegment } from '@/lib/types'
 
 const FRAME_STEP = 1 / 30
+const DRIFT_THRESHOLD = 0.18
 
 let canvasEl: HTMLCanvasElement | null = null
 let ctx: CanvasRenderingContext2D | null = null
-let videoEl: HTMLVideoElement | null = null
+let videoHost: HTMLDivElement | null = null
 let rafId = 0
-let disposers: (() => void)[] = []
+let playbackRate = 1
+let lastTickMs: number | null = null
+let disposeDraw: (() => void) | null = null
 
-function activeSegment(): AdvancedSegment | null {
-  const segments = advancedSegments.value
-  if (segments.length === 0) return null
-  const selected = segments.find((segment) => segment.id === advancedSelectedId.value)
-  return selected ?? segments[0]
+// One hidden <video> per clip currently needed, keyed by clipId.
+const videoPool = new Map<string, HTMLVideoElement>()
+
+function getVideo(clipId: string): HTMLVideoElement | null {
+  const clip = getClipById(clipId)
+  if (!clip || !videoHost) return null
+  let video = videoPool.get(clipId)
+  if (!video) {
+    video = document.createElement('video')
+    video.playsInline = true
+    video.preload = 'auto'
+    video.src = clip.objectUrl
+    video.muted = true
+    videoHost.appendChild(video)
+    videoPool.set(clipId, video)
+  }
+  return video
 }
 
-// Draw the active clip's current frame onto the canvas using its transform.
-function drawFrame() {
-  if (!ctx || !canvasEl || !videoEl) return
+function trackHidden(trackId: string): boolean {
+  return advancedTracks.value.find((track) => track.id === trackId)?.hidden === true
+}
+
+function trackMuted(trackId: string): boolean {
+  return advancedTracks.value.find((track) => track.id === trackId)?.muted === true
+}
+
+function expectedSourceTime(segment: AdvancedSegment, playhead: number): number {
+  return segment.sourceStart + (playhead - segment.timelineStart)
+}
+
+// Draw all active, non-hidden layers onto the canvas, ordered bottom lane first.
+function drawComposite(playhead: number) {
+  if (!ctx || !canvasEl) return
   const canvas = advancedCanvas.value
   if (canvasEl.width !== canvas.width) canvasEl.width = canvas.width
   if (canvasEl.height !== canvas.height) canvasEl.height = canvas.height
@@ -38,105 +71,148 @@ function drawFrame() {
   ctx.fillStyle = '#000000'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  const segment = activeSegment()
-  if (segment && videoEl.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+  const active = segmentsActiveAt(advancedSegments.value, playhead).filter(
+    (segment) => !trackHidden(segment.trackId)
+  )
+  for (const segment of orderedForRender(active, advancedTracks.value)) {
+    const video = getVideo(segment.clipId)
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) continue
     const { x, y, width, height } = segment.transform
-    ctx.drawImage(videoEl, x, y, width, height)
+    ctx.globalAlpha = segment.opacity ?? 1
+    ctx.drawImage(video, x, y, width, height)
+  }
+  ctx.globalAlpha = 1
+}
+
+// Keep each active source's video element synced to the playhead; play/pause and
+// mute follow the global clock and track/clip mute. Idle clips are paused.
+function syncVideos(playhead: number, playing: boolean) {
+  const active = segmentsActiveAt(advancedSegments.value, playhead)
+  const activeClipIds = new Set(active.map((segment) => segment.clipId))
+
+  for (const [clipId, video] of videoPool) {
+    if (!activeClipIds.has(clipId)) {
+      if (!video.paused) video.pause()
+    }
+  }
+
+  for (const segment of active) {
+    const video = getVideo(segment.clipId)
+    if (!video) continue
+    const expected = expectedSourceTime(segment, playhead)
+    if (Math.abs(video.currentTime - expected) > DRIFT_THRESHOLD || !playing) {
+      try {
+        video.currentTime = expected
+      } catch {
+        // Seeking before metadata loads is a no-op; the next tick corrects it.
+      }
+    }
+    video.muted = previewMuted.value || segment.muted === true || trackMuted(segment.trackId)
+    video.volume = previewVolume.value
+    video.playbackRate = playbackRate
+    if (playing && video.paused) void video.play().catch(() => {})
+    if (!playing && !video.paused) video.pause()
   }
 }
 
-function tick() {
-  if (!videoEl) return
-  advancedPlayhead.value = videoEl.currentTime
-  drawFrame()
+function tick(nowMs: number) {
+  if (lastTickMs === null) lastTickMs = nowMs
+  const deltaSec = ((nowMs - lastTickMs) / 1000) * playbackRate
+  lastTickMs = nowMs
+
+  const duration = projectDuration(advancedSegments.value)
+  let next = advancedPlayhead.value + deltaSec
+  if (next >= duration) {
+    next = duration
+    advancedPlayhead.value = next
+    stopPlayback()
+    drawComposite(next)
+    return
+  }
+  advancedPlayhead.value = next
+  syncVideos(next, true)
+  drawComposite(next)
   rafId = requestAnimationFrame(tick)
 }
 
-function syncSource() {
-  if (!videoEl) return
-  const segment = activeSegment()
-  const clip = segment ? getClipById(segment.clipId) : null
-  if (!clip) {
-    videoEl.removeAttribute('src')
-    videoEl.load()
-    drawFrame()
-    return
-  }
-  if (videoEl.src !== clip.objectUrl) {
-    videoEl.src = clip.objectUrl
-    videoEl.load()
-    videoEl.onloadeddata = () => drawFrame()
-  }
+function startPlayback() {
+  if (advancedPlaying.value) return
+  if (advancedSegments.value.length === 0) return
+  advancedPlaying.value = true
+  lastTickMs = null
+  syncVideos(advancedPlayhead.value, true)
+  rafId = requestAnimationFrame(tick)
 }
 
-function syncAudio() {
-  if (!videoEl) return
-  videoEl.volume = previewVolume.value
-  videoEl.muted = previewMuted.value
+function stopPlayback() {
+  advancedPlaying.value = false
+  cancelAnimationFrame(rafId)
+  lastTickMs = null
+  syncVideos(advancedPlayhead.value, false)
 }
 
-export function attachAdvancedPreview(
-  canvas: HTMLCanvasElement,
-  video: HTMLVideoElement
-): () => void {
+export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
   canvasEl = canvas
   ctx = canvas.getContext('2d')
-  videoEl = video
+  videoHost = document.createElement('div')
+  videoHost.style.display = 'none'
+  document.body.appendChild(videoHost)
 
-  const onPlay = () => {
-    advancedPlaying.value = true
-    cancelAnimationFrame(rafId)
-    rafId = requestAnimationFrame(tick)
-  }
-  const onPause = () => {
-    advancedPlaying.value = false
-    cancelAnimationFrame(rafId)
-    drawFrame()
-  }
-  video.addEventListener('play', onPlay)
-  video.addEventListener('pause', onPause)
-
-  disposers = [effect(syncSource), effect(syncAudio), effect(drawFrame)]
+  // Redraw and re-sync whenever the project or playhead changes while paused.
+  disposeDraw = effect(() => {
+    // touch dependencies
+    void advancedSegments.value
+    void advancedCanvas.value
+    const playhead = advancedPlayhead.value
+    if (!advancedPlaying.value) {
+      syncVideos(playhead, false)
+      drawComposite(playhead)
+    }
+  })
 
   return () => {
     cancelAnimationFrame(rafId)
-    video.removeEventListener('play', onPlay)
-    video.removeEventListener('pause', onPause)
-    video.onloadeddata = null
-    for (const dispose of disposers) dispose()
-    disposers = []
+    disposeDraw?.()
+    disposeDraw = null
+    for (const video of videoPool.values()) {
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+    }
+    videoPool.clear()
+    videoHost?.remove()
+    videoHost = null
     canvasEl = null
     ctx = null
-    videoEl = null
   }
 }
 
 export function togglePlay() {
-  if (!videoEl || !activeSegment()) return
-  if (videoEl.paused) {
-    void videoEl.play().catch(() => {})
-  } else {
-    videoEl.pause()
-  }
+  if (advancedPlaying.value) stopPlayback()
+  else startPlayback()
 }
 
 export function stepFrame(direction: 1 | -1) {
-  if (!videoEl) return
-  const next = Math.max(0, videoEl.currentTime + direction * FRAME_STEP)
-  videoEl.currentTime = next
+  stopPlayback()
+  const duration = projectDuration(advancedSegments.value)
+  const next = Math.max(0, Math.min(duration, advancedPlayhead.value + direction * FRAME_STEP))
   advancedPlayhead.value = next
+  syncVideos(next, false)
+  drawComposite(next)
 }
 
 export function seek(time: number) {
-  if (!videoEl) return
-  const clamped = Math.max(0, Math.min(videoEl.duration || time, time))
-  videoEl.currentTime = clamped
-  advancedPlayhead.value = clamped
+  const duration = projectDuration(advancedSegments.value)
+  const next = Math.max(0, Math.min(duration, time))
+  advancedPlayhead.value = next
+  syncVideos(next, advancedPlaying.value)
+  drawComposite(next)
 }
 
 export function setPlaybackRate(rate: number) {
-  if (!videoEl) return
-  // defaultPlaybackRate keeps the rate across source swaps.
-  videoEl.defaultPlaybackRate = rate
-  videoEl.playbackRate = rate
+  playbackRate = rate
+  for (const video of videoPool.values()) video.playbackRate = rate
 }
+
+// Re-export for the timeline math used by the preview component.
+export { projectDuration, segmentDuration }
