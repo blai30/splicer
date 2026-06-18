@@ -51,7 +51,7 @@ export function AdvancedPreview() {
       <div class="relative flex flex-1 items-center justify-center overflow-hidden bg-slate-200 p-4 dark:bg-slate-950">
         <div
           data-canvas-wrapper
-          class="relative max-h-[60vh] w-full max-w-3xl bg-black"
+          class="relative max-h-[60vh] w-full max-w-3xl bg-black ring-1 ring-slate-500/60"
           style={{ aspectRatio: `${canvas.width} / ${canvas.height}` }}
         >
           <canvas

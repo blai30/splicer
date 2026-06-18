@@ -42,6 +42,14 @@ function getVideo(clipId: string): HTMLVideoElement | null {
     video.preload = 'auto'
     video.src = clip.objectUrl
     video.muted = true
+    // A seek or initial load decodes the frame asynchronously; when that
+    // completes while paused, redraw so the canvas shows the current frame
+    // instead of staying black. The rAF loop covers redraws during playback.
+    const redrawIfPaused = () => {
+      if (!advancedPlaying.value) drawComposite(advancedPlayhead.value)
+    }
+    video.addEventListener('seeked', redrawIfPaused)
+    video.addEventListener('loadeddata', redrawIfPaused)
     videoHost.appendChild(video)
     videoPool.set(clipId, video)
   }
@@ -60,6 +68,31 @@ function expectedSourceTime(segment: AdvancedSegment, playhead: number): number 
   return segment.sourceStart + (playhead - segment.timelineStart)
 }
 
+// A reusable checkerboard swatch used to fill uncovered canvas areas in the
+// preview (an empty / out-of-bounds indicator). The export fills these with
+// black instead; this is a preview-only editing aid.
+let checkerSwatch: HTMLCanvasElement | null = null
+
+function getCheckerPattern(context: CanvasRenderingContext2D): CanvasPattern | null {
+  if (!checkerSwatch) {
+    const cell = 24
+    checkerSwatch = document.createElement('canvas')
+    checkerSwatch.width = cell * 2
+    checkerSwatch.height = cell * 2
+    const swatchCtx = checkerSwatch.getContext('2d')
+    if (!swatchCtx) {
+      checkerSwatch = null
+      return null
+    }
+    swatchCtx.fillStyle = '#2a2a2a'
+    swatchCtx.fillRect(0, 0, cell * 2, cell * 2)
+    swatchCtx.fillStyle = '#3b3b3b'
+    swatchCtx.fillRect(0, 0, cell, cell)
+    swatchCtx.fillRect(cell, cell, cell, cell)
+  }
+  return context.createPattern(checkerSwatch, 'repeat')
+}
+
 // Draw all active, non-hidden layers onto the canvas, ordered bottom lane first.
 function drawComposite(playhead: number) {
   if (!ctx || !canvasEl) return
@@ -68,7 +101,8 @@ function drawComposite(playhead: number) {
   if (canvasEl.height !== canvas.height) canvasEl.height = canvas.height
 
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  ctx.fillStyle = '#000000'
+  const checker = getCheckerPattern(ctx)
+  ctx.fillStyle = checker ?? '#000000'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   const active = segmentsActiveAt(advancedSegments.value, playhead).filter(

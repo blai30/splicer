@@ -4,7 +4,6 @@ import { useRef } from 'preact/hooks'
 import { AdvancedTimeline } from '@/components/advanced/AdvancedTimeline'
 import { AdvancedPreview } from '@/components/AdvancedPreview'
 import { CanvasSizeControls } from '@/components/CanvasSizeControls'
-import { advancedSegments } from '@/lib/store'
 import { importIntoAdvanced } from '@/lib/videoImport'
 
 const CARD =
@@ -12,7 +11,6 @@ const CARD =
 
 export function AdvancedEditor() {
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const hasContent = advancedSegments.value.length > 0
 
   async function onFileInputChange(event: Event) {
     const files = Array.from((event.target as HTMLInputElement).files ?? [])
@@ -47,7 +45,7 @@ export function AdvancedEditor() {
         </button>
       </div>
 
-      {hasContent && <AdvancedPreview />}
+      <AdvancedPreview />
       <AdvancedTimeline />
 
       <input
