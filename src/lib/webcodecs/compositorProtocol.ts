@@ -9,6 +9,7 @@ export type CompositorLayer = {
   sourceStart: number
   sourceEnd: number
   timelineStart: number
+  trackId: string
   transform: Transform
   crop?: CropParams
   muted: boolean
@@ -19,6 +20,8 @@ export type CompositorJob = {
   canvas: { width: number; height: number }
   sources: JobSource[]
   layers: CompositorLayer[]
+  tracksOrder: string[]
+  mixedAudio?: { sampleRate: number; channelData: Float32Array[] }
   quality: Quality
   fps: Framerate
   format: ExportFormat

@@ -1,13 +1,11 @@
 import { registerAacEncoder } from '@mediabunny/aac-encoder'
-import { canEncodeAudio } from 'mediabunny'
+import { AudioSample, canEncodeAudio } from 'mediabunny'
 
-import { encodeAudioSlice } from './audioEncode'
 import { buildCompositorPlan } from './compositorPlan'
 import type { CompositorJob, CompositorWorkerRequest } from './compositorProtocol'
-import { encodeCompositedLayerVideo } from './compositorVideoEncode'
-import type { EditSlice } from './editPlan'
+import { encodeCompositedVideo, type LayerDecoder } from './compositorVideoEncode'
 import { openSource } from './mediabunnyInput'
-import { createOutput } from './mediabunnyOutput'
+import { createOutput, type OutputHandle } from './mediabunnyOutput'
 import { UnsupportedSourceError, type WorkerResponse } from './protocol'
 
 let canceled = false
@@ -17,16 +15,41 @@ function post(message: WorkerResponse, transfer?: Transferable[]): void {
 }
 
 async function ensureAacEncoder(job: CompositorJob): Promise<void> {
-  if (job.audioCodec === 'aac' && !(await canEncodeAudio('aac'))) {
-    registerAacEncoder()
-  }
+  if (job.audioCodec === 'aac' && !(await canEncodeAudio('aac'))) registerAacEncoder()
 }
 
-function estimateTotalFrames(job: CompositorJob): number {
-  const fps = job.fps === 'original' ? 30 : Number(job.fps)
-  let totalSeconds = 0
-  for (const layer of job.layers) totalSeconds += layer.sourceEnd - layer.sourceStart
-  return Math.max(1, Math.round(totalSeconds * fps))
+function projectDuration(job: CompositorJob): number {
+  let max = 0
+  for (const layer of job.layers) {
+    max = Math.max(max, layer.timelineStart + (layer.sourceEnd - layer.sourceStart))
+  }
+  return max
+}
+
+const AUDIO_CHUNK_FRAMES = 4096
+
+async function encodeMixedAudio(job: CompositorJob, out: OutputHandle): Promise<void> {
+  const mixed = job.mixedAudio
+  if (!mixed || !out.audioSource) return
+  const channels = mixed.channelData.length
+  const totalFrames = mixed.channelData[0]?.length ?? 0
+  for (let start = 0; start < totalFrames; start += AUDIO_CHUNK_FRAMES) {
+    if (canceled) throw new Error('canceled')
+    const frames = Math.min(AUDIO_CHUNK_FRAMES, totalFrames - start)
+    const planar = new Float32Array(frames * channels)
+    for (let channel = 0; channel < channels; channel++) {
+      planar.set(mixed.channelData[channel].subarray(start, start + frames), channel * frames)
+    }
+    const sample = new AudioSample({
+      format: 'f32-planar',
+      sampleRate: mixed.sampleRate,
+      numberOfChannels: channels,
+      timestamp: start / mixed.sampleRate,
+      data: planar,
+    })
+    await out.audioSource.add(sample)
+    sample.close()
+  }
 }
 
 async function runExport(job: CompositorJob): Promise<void> {
@@ -40,12 +63,13 @@ async function runExport(job: CompositorJob): Promise<void> {
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('No 2D canvas context available for compositing')
 
-  const totalFrames = estimateTotalFrames(job)
+  const durationSec = projectDuration(job)
+  const totalFrames = Math.max(1, Math.ceil(durationSec * plan.fpsGrid))
   let framesEncoded = 0
   let lastReported = 0
   const onFrameEncoded = () => {
     framesEncoded++
-    const progress = Math.min(0.99, framesEncoded / totalFrames)
+    const progress = Math.min(0.98, framesEncoded / totalFrames)
     if (progress - lastReported >= 0.01) {
       lastReported = progress
       post({ type: 'progress', progress })
@@ -53,39 +77,27 @@ async function runExport(job: CompositorJob): Promise<void> {
   }
   const shouldCancel = () => canceled
 
+  const decoders: LayerDecoder[] = []
   for (const layer of plan.layers) {
-    if (canceled) {
-      post({ type: 'canceled' })
-      return
-    }
-    const reader = await openSource(job.sources[layer.sourceIndex].file)
-    await encodeCompositedLayerVideo({
-      reader,
-      layer,
-      plan,
-      canvas,
-      ctx,
-      out,
-      onFrameEncoded,
-      shouldCancel,
-    })
-    if (plan.hasAudioOutput) {
-      const slice: EditSlice = {
-        sourceIndex: layer.sourceIndex,
-        sourceStart: layer.sourceStart,
-        sourceEnd: layer.sourceEnd,
-        crop: layer.crop,
-        muted: layer.muted,
-        outStartTimestampUs: layer.outStartUs,
-      }
-      await encodeAudioSlice({ reader, slice, out, shouldCancel })
-    }
+    decoders.push({ layer, reader: await openSource(job.sources[layer.sourceIndex].file) })
   }
+
+  await encodeCompositedVideo(
+    decoders,
+    plan,
+    canvas,
+    ctx,
+    out,
+    durationSec,
+    onFrameEncoded,
+    shouldCancel
+  )
 
   if (canceled) {
     post({ type: 'canceled' })
     return
   }
+  if (plan.hasMixedAudio) await encodeMixedAudio(job, out)
 
   const buffer = await out.finalize()
   post({ type: 'progress', progress: 1 })
@@ -102,15 +114,13 @@ self.onmessage = (event: MessageEvent<CompositorWorkerRequest>) => {
     canceled = false
     runExport(message.job).catch((err: unknown) => {
       const unsupported = err instanceof UnsupportedSourceError
-      if (err instanceof Error && err.message === 'canceled') {
-        post({ type: 'canceled' })
-      } else {
+      if (err instanceof Error && err.message === 'canceled') post({ type: 'canceled' })
+      else
         post({
           type: 'error',
           message: err instanceof Error ? err.message : String(err),
           unsupported,
         })
-      }
     })
   }
 }

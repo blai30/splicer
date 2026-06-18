@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'preact/hooks'
 import { VolumeControl } from '@/components/VolumeControl'
 import {
   attachAdvancedPreview,
+  projectDuration,
   seek,
   setPlaybackRate,
   stepFrame,
@@ -20,20 +21,18 @@ const TRANSPORT_BUTTON =
 
 export function AdvancedPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
   const playbackSpeed = useSignal(1)
 
   useEffect(() => {
     const canvas = canvasRef.current
-    const video = videoRef.current
-    if (!canvas || !video) return
-    return attachAdvancedPreview(canvas, video)
+    if (!canvas) return
+    return attachAdvancedPreview(canvas)
   }, [])
 
   const canvas = advancedCanvas.value
-  const segment = advancedSegments.value[0]
-  const hasContent = segment != null
-  const totalDuration = segment ? segment.sourceEnd - segment.sourceStart : 0
+  const segments = advancedSegments.value
+  const hasContent = segments.length > 0
+  const totalDuration = projectDuration(segments)
   const progress = totalDuration > 0 ? Math.min(1, advancedPlayhead.value / totalDuration) : 0
 
   function onSeekClick(event: MouseEvent) {
@@ -58,7 +57,6 @@ export function AdvancedPreview() {
             class="absolute inset-0 h-full w-full object-contain"
           />
         </div>
-        <video ref={videoRef} class="hidden" playsInline />
       </div>
 
       {/* Seek bar */}

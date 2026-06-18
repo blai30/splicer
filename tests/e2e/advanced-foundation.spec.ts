@@ -17,5 +17,5 @@ test('advanced mode places a clip on the canvas and sets resolution', async ({ p
 
   // The preview canvas and transport controls appear.
   await expect(page.locator('canvas')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Remove' })).toBeVisible()
+  await expect(page.getByText(/Tracks/i)).toBeVisible()
 })
