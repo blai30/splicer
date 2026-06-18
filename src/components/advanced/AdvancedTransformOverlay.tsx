@@ -1,4 +1,4 @@
-import { useSignal } from '@preact/signals'
+import { batch, useSignal } from '@preact/signals'
 
 import {
   selectAdvancedSegment,
@@ -7,7 +7,7 @@ import {
 } from '@/lib/advanced/advancedSegmentEditing'
 import { segmentsActiveAt, orderedForRender } from '@/lib/advanced/advancedTimelineDomain'
 import { pointInTransform, screenDeltaToCanvas } from '@/lib/advanced/canvasCoords'
-import { defaultCrop, resizeCrop } from '@/lib/advanced/cropMath'
+import { defaultCrop, resizeCropWithBox } from '@/lib/advanced/cropMath'
 import { snapCandidates, snapMove } from '@/lib/advanced/snapMath'
 import { RESIZE_HANDLES, resizeTransform, type ResizeHandle } from '@/lib/advanced/transformMath'
 import {
@@ -129,7 +129,19 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
           // Map the canvas-space drag into source pixels via the transform box scale.
           const sx = (dx / startTransform.width) * startCrop.width
           const sy = (dy / startTransform.height) * startCrop.height
-          setSegmentCrop(active.id, resizeCrop(startCrop, handle, sx, sy, clip.width, clip.height))
+          const result = resizeCropWithBox(
+            startTransform,
+            startCrop,
+            handle,
+            sx,
+            sy,
+            clip.width,
+            clip.height
+          )
+          batch(() => {
+            setSegmentCrop(active.id, result.crop)
+            setSegmentTransform(active.id, result.transform)
+          })
         } else {
           setSegmentTransform(
             active.id,

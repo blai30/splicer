@@ -20,6 +20,10 @@ import type { AdvancedSegment } from '@/lib/types'
 
 const FRAME_STEP = 1 / 30
 const DRIFT_THRESHOLD = 0.18
+// While paused we compare against the last requested seek target (not the
+// snapped read-back currentTime), so anything above float noise means the
+// target actually changed (a scrub/step) rather than an unrelated redraw.
+const PAUSED_SEEK_EPSILON = 0.0005
 
 let canvasEl: HTMLCanvasElement | null = null
 let ctx: CanvasRenderingContext2D | null = null
@@ -31,6 +35,72 @@ let disposeDraw: (() => void) | null = null
 
 // One hidden <video> per clip currently needed, keyed by clipId.
 const videoPool = new Map<string, HTMLVideoElement>()
+
+// The last source time we requested each video seek to, keyed by clipId. Used
+// to avoid re-seeking a paused video to a frame it is already showing (a
+// transform drag replaces advancedSegments every move, re-running the paused
+// redraw effect; re-seeking on each of those would flicker the clip).
+const lastSeekTarget = new Map<string, number>()
+
+// The latest target a video should seek to once its in-flight seek finishes,
+// keyed by clipId. Setting currentTime while a seek is in progress cancels it
+// and restarts decoding; doing that every pointermove (scrubbing the playhead)
+// keeps the decoder perpetually busy, drops readyState, and blanks the canvas.
+// Instead we let one seek finish, then chase the most recent target.
+const pendingSeek = new Map<string, number>()
+
+// Per-clip cache of the most recently decoded frame. While scrubbing, a video is
+// often mid-seek when we redraw (readyState dips below HAVE_CURRENT_DATA); rather
+// than skip the layer and flash the checkerboard, we draw its last good frame.
+// Preview-only smoothing; the export composites exact frames at grid times.
+const lastFrame = new Map<string, HTMLCanvasElement>()
+
+// Pick what to draw for a layer: the live video when it has a current frame
+// (also refreshing the cache while paused), otherwise the cached last frame.
+function frameSource(clipId: string, video: HTMLVideoElement): CanvasImageSource | null {
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+    if (!advancedPlaying.value) {
+      let cache = lastFrame.get(clipId)
+      if (!cache) {
+        cache = document.createElement('canvas')
+        lastFrame.set(clipId, cache)
+      }
+      if (cache.width !== video.videoWidth) cache.width = video.videoWidth
+      if (cache.height !== video.videoHeight) cache.height = video.videoHeight
+      cache.getContext('2d')?.drawImage(video, 0, 0)
+    }
+    return video
+  }
+  return lastFrame.get(clipId) ?? null
+}
+
+// Decide whether to issue a seek. While playing, correct only real drift. While
+// paused, seek only when the requested target changed (scrub/step), not on every
+// redraw triggered by an unrelated edit such as moving or resizing a clip.
+export function shouldSeekToFrame(args: {
+  currentTime: number
+  expected: number
+  playing: boolean
+  lastTarget: number | undefined
+}): boolean {
+  const { currentTime, expected, playing, lastTarget } = args
+  if (playing) return Math.abs(currentTime - expected) > DRIFT_THRESHOLD
+  return lastTarget === undefined || Math.abs(lastTarget - expected) > PAUSED_SEEK_EPSILON
+}
+
+// Seek a video, coalescing requests that arrive while a seek is still running.
+function requestSeek(video: HTMLVideoElement, clipId: string, target: number) {
+  if (video.seeking) {
+    pendingSeek.set(clipId, target)
+    return
+  }
+  try {
+    video.currentTime = target
+    lastSeekTarget.set(clipId, target)
+  } catch {
+    // Seeking before metadata loads is a no-op; the next tick corrects it.
+  }
+}
 
 function getVideo(clipId: string): HTMLVideoElement | null {
   const clip = getClipById(clipId)
@@ -48,7 +118,17 @@ function getVideo(clipId: string): HTMLVideoElement | null {
     const redrawIfPaused = () => {
       if (!advancedPlaying.value) drawComposite(advancedPlayhead.value)
     }
-    video.addEventListener('seeked', redrawIfPaused)
+    // When a seek finishes, show the freshly decoded frame, then chase the most
+    // recent target queued while it was running (smooth playhead scrubbing).
+    const onSeeked = () => {
+      redrawIfPaused()
+      const pending = pendingSeek.get(clipId)
+      if (pending !== undefined) {
+        pendingSeek.delete(clipId)
+        requestSeek(video as HTMLVideoElement, clipId, pending)
+      }
+    }
+    video.addEventListener('seeked', onSeeked)
     video.addEventListener('loadeddata', redrawIfPaused)
     videoHost.appendChild(video)
     videoPool.set(clipId, video)
@@ -110,14 +190,16 @@ function drawComposite(playhead: number) {
   )
   for (const segment of orderedForRender(active, advancedTracks.value)) {
     const video = getVideo(segment.clipId)
-    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) continue
+    if (!video) continue
+    const source = frameSource(segment.clipId, video)
+    if (!source) continue
     const { x, y, width, height } = segment.transform
     ctx.globalAlpha = segment.opacity ?? 1
     if (segment.crop) {
       const crop = segment.crop
-      ctx.drawImage(video, crop.x, crop.y, crop.width, crop.height, x, y, width, height)
+      ctx.drawImage(source, crop.x, crop.y, crop.width, crop.height, x, y, width, height)
     } else {
-      ctx.drawImage(video, x, y, width, height)
+      ctx.drawImage(source, x, y, width, height)
     }
   }
   ctx.globalAlpha = 1
@@ -139,13 +221,13 @@ function syncVideos(playhead: number, playing: boolean) {
     const video = getVideo(segment.clipId)
     if (!video) continue
     const expected = expectedSourceTime(segment, playhead)
-    if (Math.abs(video.currentTime - expected) > DRIFT_THRESHOLD || !playing) {
-      try {
-        video.currentTime = expected
-      } catch {
-        // Seeking before metadata loads is a no-op; the next tick corrects it.
-      }
+    const seekArgs = {
+      currentTime: video.currentTime,
+      expected,
+      playing,
+      lastTarget: lastSeekTarget.get(segment.clipId),
     }
+    if (shouldSeekToFrame(seekArgs)) requestSeek(video, segment.clipId, expected)
     video.muted = previewMuted.value || segment.muted === true || trackMuted(segment.trackId)
     video.volume = previewVolume.value
     video.playbackRate = playbackRate
@@ -219,6 +301,9 @@ export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
       video.load()
     }
     videoPool.clear()
+    lastSeekTarget.clear()
+    pendingSeek.clear()
+    lastFrame.clear()
     videoHost?.remove()
     videoHost = null
     canvasEl = null
