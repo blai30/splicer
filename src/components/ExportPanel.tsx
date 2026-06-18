@@ -202,9 +202,7 @@ export function ExportPanel() {
   ]
 
   const isAdvanced = appMode.value === 'advanced'
-  const hasSegments = isAdvanced
-    ? advancedSegments.value.length > 0
-    : timeline.value.length > 0
+  const hasSegments = isAdvanced ? advancedSegments.value.length > 0 : timeline.value.length > 0
   // Export runs entirely through WebCodecs, so a VideoEncoder is required.
   const webcodecsAvailable = typeof VideoEncoder !== 'undefined'
   const currentProgress = exportProgress.value

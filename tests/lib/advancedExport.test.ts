@@ -62,7 +62,13 @@ describe('buildCompositorJob', () => {
 
   it('returns null when a referenced clip is missing', () => {
     expect(
-      buildCompositorJob([makeSegment('missing')], { width: 1920, height: 1080 }, 'mp4', 'high', 'original')
+      buildCompositorJob(
+        [makeSegment('missing')],
+        { width: 1920, height: 1080 },
+        'mp4',
+        'high',
+        'original'
+      )
     ).toBeNull()
   })
 })

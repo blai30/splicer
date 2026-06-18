@@ -9,7 +9,13 @@ import {
   mkvCodec,
   webmCodec,
 } from '@/lib/store'
-import { MIME_TYPES, type AdvancedSegment, type ExportFormat, type Framerate, type Quality } from '@/lib/types'
+import {
+  MIME_TYPES,
+  type AdvancedSegment,
+  type ExportFormat,
+  type Framerate,
+  type Quality,
+} from '@/lib/types'
 import type { CompositorJob, WorkerResponse } from '@/lib/webcodecs/compositorProtocol'
 import type { JobSource } from '@/lib/webcodecs/protocol'
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { CompositorJob } from '@/lib/webcodecs/compositorProtocol'
 import { buildCompositorPlan } from '@/lib/webcodecs/compositorPlan'
+import type { CompositorJob } from '@/lib/webcodecs/compositorProtocol'
 
 function makeJob(overrides: Partial<CompositorJob> = {}): CompositorJob {
   return {
@@ -38,14 +38,17 @@ describe('buildCompositorPlan', () => {
   })
 
   it('computes layer output start from timelineStart', () => {
-    const plan = buildCompositorPlan(makeJob({ layers: [{ ...makeJob().layers[0], timelineStart: 2 }] }))
+    const plan = buildCompositorPlan(
+      makeJob({ layers: [{ ...makeJob().layers[0], timelineStart: 2 }] })
+    )
     expect(plan.layers[0].outStartUs).toBe(2_000_000)
   })
 
   it('reports audio output when a non-muted layer has audio', () => {
     expect(buildCompositorPlan(makeJob()).hasAudioOutput).toBe(true)
     expect(
-      buildCompositorPlan(makeJob({ layers: [{ ...makeJob().layers[0], muted: true }] })).hasAudioOutput
+      buildCompositorPlan(makeJob({ layers: [{ ...makeJob().layers[0], muted: true }] }))
+        .hasAudioOutput
     ).toBe(false)
   })
 })
