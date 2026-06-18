@@ -1,20 +1,14 @@
-import { recomputeAutoCanvas } from '@/lib/advanced/advancedEditing'
 import { consumeAdvancedGesture, recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
 import { ADV_MIN_SEGMENT_DURATION } from '@/lib/advanced/advancedTimelineDomain'
-import { fitRect } from '@/lib/advanced/fit'
-import {
-  advancedCanvas,
-  advancedSegments,
-  advancedSelectedId,
-  clips,
-  getClipById,
-} from '@/lib/store'
+import { advancedSegments, advancedSelectedId, clips, getClipById } from '@/lib/store'
 import type { Clip, CropParams, Transform } from '@/lib/types'
 
 export function addClipToTrack(clip: Clip, trackId: string, timelineStart: number): string {
   recordAdvancedHistory()
   if (!getClipById(clip.id)) clips.value = [...clips.value, clip]
-  const canvas = advancedCanvas.value
+  // Place the clip at its native pixel size with its top-left at the world
+  // origin. The infinite canvas has no fixed frame to fit into; the user
+  // repositions/resizes from there.
   const segment = {
     id: crypto.randomUUID(),
     clipId: clip.id,
@@ -22,11 +16,10 @@ export function addClipToTrack(clip: Clip, trackId: string, timelineStart: numbe
     timelineStart: Math.max(0, timelineStart),
     sourceStart: 0,
     sourceEnd: clip.duration,
-    transform: fitRect(clip.width, clip.height, canvas.width, canvas.height),
+    transform: { x: 0, y: 0, width: clip.width, height: clip.height },
   }
   advancedSegments.value = [...advancedSegments.value, segment]
   advancedSelectedId.value = segment.id
-  recomputeAutoCanvas()
   return segment.id
 }
 
@@ -43,7 +36,6 @@ export function removeAdvancedSegment(id: string): void {
   if (advancedSelectedId.value === id) {
     advancedSelectedId.value = advancedSegments.value[0]?.id ?? null
   }
-  recomputeAutoCanvas()
 }
 
 export function selectAdvancedSegment(id: string): void {
