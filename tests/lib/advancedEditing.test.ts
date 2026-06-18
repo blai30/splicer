@@ -23,7 +23,7 @@ describe('advancedEditing canvas', () => {
     expect(advancedCanvas.value).toEqual({ width: 1280, height: 7680 })
   })
 
-  it('scales placed segment transforms proportionally when the canvas changes', () => {
+  it('leaves placed segment transforms unchanged when the canvas changes', () => {
     const id = addClipToTrack(
       {
         id: 'a',
@@ -38,9 +38,11 @@ describe('advancedEditing canvas', () => {
       'track-1',
       0
     )
-    // Default canvas is 1920x1080; place an explicit transform, then halve the canvas.
+    // Resizing the canvas must not move or resize the placed clips; the user
+    // repositions them manually if desired.
     setSegmentTransform(id, { x: 100, y: 200, width: 800, height: 400 })
-    setCanvasSize(960, 540)
-    expect(advancedSegments.value[0].transform).toEqual({ x: 50, y: 100, width: 400, height: 200 })
+    setCanvasSize(3840, 1080)
+    expect(advancedCanvas.value).toEqual({ width: 3840, height: 1080 })
+    expect(advancedSegments.value[0].transform).toEqual({ x: 100, y: 200, width: 800, height: 400 })
   })
 })
