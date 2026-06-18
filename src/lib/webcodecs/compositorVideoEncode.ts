@@ -34,7 +34,9 @@ export async function encodeCompositedVideo(
   shouldCancel: () => boolean
 ): Promise<void> {
   const laneRank = new Map<string, number>()
-  plan.tracksOrder.forEach((trackId, index) => laneRank.set(trackId, plan.tracksOrder.length - index))
+  plan.tracksOrder.forEach((trackId, index) =>
+    laneRank.set(trackId, plan.tracksOrder.length - index)
+  )
   const ordered = [...decoders].sort(
     (first, second) =>
       (laneRank.get(first.layer.trackId) ?? 0) - (laneRank.get(second.layer.trackId) ?? 0)

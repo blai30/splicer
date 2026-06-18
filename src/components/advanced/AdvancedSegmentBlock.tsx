@@ -1,9 +1,13 @@
 import clsx from 'clsx/lite'
 import { useRef } from 'preact/hooks'
 
-import { formatTime } from '@/lib/format'
-import { trimSegmentEnd, trimSegmentStart, selectAdvancedSegment } from '@/lib/advanced/advancedSegmentEditing'
+import {
+  trimSegmentEnd,
+  trimSegmentStart,
+  selectAdvancedSegment,
+} from '@/lib/advanced/advancedSegmentEditing'
 import { segmentDuration } from '@/lib/advanced/advancedTimelineDomain'
+import { formatTime } from '@/lib/format'
 import { advancedSelectedId, clipColor, getClipById, pxPerSec } from '@/lib/store'
 import { createRafThrottler } from '@/lib/timelineDomain'
 import type { AdvancedSegment } from '@/lib/types'
@@ -59,7 +63,10 @@ export function AdvancedSegmentBlock({
     let moved = false
 
     function onMove(moveEvent: PointerEvent) {
-      if (!moved && Math.hypot(moveEvent.clientX - startClientX, moveEvent.clientY - startClientY) > 6) {
+      if (
+        !moved &&
+        Math.hypot(moveEvent.clientX - startClientX, moveEvent.clientY - startClientY) > 6
+      ) {
         moved = true
       }
     }
@@ -83,7 +90,9 @@ export function AdvancedSegmentBlock({
       data-advanced-segment
       class={clsx(
         'absolute top-1 bottom-1 flex cursor-grab items-center overflow-hidden rounded border select-none',
-        isSelected ? 'border-violet-400 ring-1 ring-violet-400' : 'border-black/10 dark:border-white/10',
+        isSelected
+          ? 'border-violet-400 ring-1 ring-violet-400'
+          : 'border-black/10 dark:border-white/10',
         clipColor(segment.clipId)
       )}
       style={{ left: `${left}px`, width: `${width}px` }}

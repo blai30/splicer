@@ -1,5 +1,5 @@
-import { fitRect } from '@/lib/advanced/fit'
 import { ADV_MIN_SEGMENT_DURATION } from '@/lib/advanced/advancedTimelineDomain'
+import { fitRect } from '@/lib/advanced/fit'
 import {
   advancedCanvas,
   advancedSegments,
@@ -28,9 +28,7 @@ export function addClipToTrack(clip: Clip, trackId: string, timelineStart: numbe
 
 export function moveSegment(id: string, trackId: string, timelineStart: number): void {
   advancedSegments.value = advancedSegments.value.map((segment) =>
-    segment.id === id
-      ? { ...segment, trackId, timelineStart: Math.max(0, timelineStart) }
-      : segment
+    segment.id === id ? { ...segment, trackId, timelineStart: Math.max(0, timelineStart) } : segment
   )
 }
 
@@ -66,7 +64,10 @@ export function trimSegmentEnd(id: string, nextSourceEnd: number): void {
     if (segment.id !== id) return segment
     const clip = getClipById(segment.clipId)
     const maxEnd = clip?.duration ?? segment.sourceEnd
-    const clamped = Math.min(maxEnd, Math.max(segment.sourceStart + ADV_MIN_SEGMENT_DURATION, nextSourceEnd))
+    const clamped = Math.min(
+      maxEnd,
+      Math.max(segment.sourceStart + ADV_MIN_SEGMENT_DURATION, nextSourceEnd)
+    )
     return { ...segment, sourceEnd: clamped }
   })
 }

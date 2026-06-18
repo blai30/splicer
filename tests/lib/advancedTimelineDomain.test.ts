@@ -33,7 +33,11 @@ describe('advancedTimelineDomain', () => {
 
   it('finds segments active at a time (inclusive start, exclusive end)', () => {
     const list = [seg('a', 'top', 0, 4), seg('b', 'bot', 3, 4)]
-    expect(segmentsActiveAt(list, 3.5).map((segment) => segment.id).sort()).toEqual(['a', 'b'])
+    expect(
+      segmentsActiveAt(list, 3.5)
+        .map((segment) => segment.id)
+        .sort()
+    ).toEqual(['a', 'b'])
     expect(segmentsActiveAt(list, 4).map((segment) => segment.id)).toEqual(['b'])
   })
 

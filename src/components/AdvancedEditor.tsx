@@ -1,8 +1,8 @@
 import { Upload } from 'lucide-preact'
 import { useRef } from 'preact/hooks'
 
-import { AdvancedPreview } from '@/components/AdvancedPreview'
 import { AdvancedTimeline } from '@/components/advanced/AdvancedTimeline'
+import { AdvancedPreview } from '@/components/AdvancedPreview'
 import { CanvasSizeControls } from '@/components/CanvasSizeControls'
 import { advancedSegments } from '@/lib/store'
 import { importIntoAdvanced } from '@/lib/videoImport'

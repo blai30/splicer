@@ -26,10 +26,7 @@ export function segmentsActiveAt(segments: AdvancedSegment[], time: number): Adv
 // Render order: lowest lane first (drawn underneath). Tracks are ordered
 // top-to-bottom in the UI, so the bottom lane is the last track. Within a lane,
 // array order breaks ties.
-export function orderedForRender(
-  segments: AdvancedSegment[],
-  tracks: Track[]
-): AdvancedSegment[] {
+export function orderedForRender(segments: AdvancedSegment[], tracks: Track[]): AdvancedSegment[] {
   const laneRank = new Map<string, number>()
   tracks.forEach((track, index) => laneRank.set(track.id, tracks.length - index))
   return [...segments].sort((first, second) => {

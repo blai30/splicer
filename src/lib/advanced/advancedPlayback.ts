@@ -1,6 +1,12 @@
 import { effect } from '@preact/signals'
 
 import {
+  orderedForRender,
+  projectDuration,
+  segmentDuration,
+  segmentsActiveAt,
+} from '@/lib/advanced/advancedTimelineDomain'
+import {
   advancedCanvas,
   advancedPlayhead,
   advancedPlaying,
@@ -10,12 +16,6 @@ import {
   previewMuted,
   previewVolume,
 } from '@/lib/store'
-import {
-  orderedForRender,
-  projectDuration,
-  segmentDuration,
-  segmentsActiveAt,
-} from '@/lib/advanced/advancedTimelineDomain'
 import type { AdvancedSegment } from '@/lib/types'
 
 const FRAME_STEP = 1 / 30

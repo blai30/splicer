@@ -82,7 +82,16 @@ async function runExport(job: CompositorJob): Promise<void> {
     decoders.push({ layer, reader: await openSource(job.sources[layer.sourceIndex].file) })
   }
 
-  await encodeCompositedVideo(decoders, plan, canvas, ctx, out, durationSec, onFrameEncoded, shouldCancel)
+  await encodeCompositedVideo(
+    decoders,
+    plan,
+    canvas,
+    ctx,
+    out,
+    durationSec,
+    onFrameEncoded,
+    shouldCancel
+  )
 
   if (canceled) {
     post({ type: 'canceled' })

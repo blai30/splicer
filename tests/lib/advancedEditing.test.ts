@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { addClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
 import { setCanvasSize } from '@/lib/advanced/advancedEditing'
+import { addClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
 import {
   advancedCanvas,
   advancedSegments,

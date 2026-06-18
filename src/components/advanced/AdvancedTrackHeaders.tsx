@@ -30,8 +30,15 @@ export function AdvancedTrackHeaders({ laneHeight }: { laneHeight: number }) {
           class="flex items-center gap-1 rounded bg-slate-100/60 px-2 dark:bg-slate-800/40"
           style={{ height: `${laneHeight}px` }}
         >
-          <span class="mr-auto truncate text-sm text-slate-700 dark:text-slate-200">{track.name}</span>
-          <button class={ICON_BUTTON} title="Move up" onClick={() => moveTrack(track.id, -1)} disabled={index === 0}>
+          <span class="mr-auto truncate text-sm text-slate-700 dark:text-slate-200">
+            {track.name}
+          </span>
+          <button
+            class={ICON_BUTTON}
+            title="Move up"
+            onClick={() => moveTrack(track.id, -1)}
+            disabled={index === 0}
+          >
             <ChevronUp class="h-4 w-4" />
           </button>
           <button
