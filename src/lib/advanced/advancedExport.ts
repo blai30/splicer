@@ -1,8 +1,11 @@
+import { mixAdvancedAudio } from '@/lib/advanced/advancedAudioMix'
+import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
 import { selectCodecs } from '@/lib/exportCodecs'
 import { EtaTracker } from '@/lib/exportEta'
 import {
   advancedCanvas,
   advancedSegments,
+  advancedTracks,
   exportEtaSeconds,
   exportProgress,
   getClipById,
@@ -53,6 +56,7 @@ export function buildCompositorJob(
       sourceStart: segment.sourceStart,
       sourceEnd: segment.sourceEnd,
       timelineStart: segment.timelineStart,
+      trackId: segment.trackId,
       transform: segment.transform,
       crop: segment.crop,
       muted: segment.muted === true,
@@ -66,6 +70,7 @@ export function buildCompositorJob(
     canvas,
     sources,
     layers: layers as CompositorJob['layers'],
+    tracksOrder: advancedTracks.value.map((track) => track.id),
     quality,
     fps,
     format,
@@ -127,17 +132,16 @@ export async function runAdvancedExport(
   fps: Framerate
 ): Promise<{ url: string; size: number; width: number; height: number; duration: number }> {
   const segments = advancedSegments.value
-  if (segments.length === 0) throw new Error('No clip to export')
+  if (segments.length === 0) throw new Error('No clips to export')
   const canvas = advancedCanvas.value
+  const duration = projectDuration(segments)
 
   const job = buildCompositorJob(segments, canvas, format, quality, fps)
   if (!job) throw new Error('Missing clip data for export')
 
+  job.mixedAudio = (await mixAdvancedAudio(segments, advancedTracks.value, duration)) ?? undefined
+
   const result = await runCompositorWorker(job)
-  const duration = segments.reduce(
-    (acc, segment) => acc + (segment.sourceEnd - segment.sourceStart),
-    0
-  )
   return { ...result, width: canvas.width, height: canvas.height, duration }
 }
 

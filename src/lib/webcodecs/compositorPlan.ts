@@ -17,6 +17,9 @@ export type CompositorPlan = {
   videoCodec: MbVideoCodec
   audioCodec: MbAudioCodec
   hasAudioOutput: boolean
+  hasMixedAudio: boolean
+  fpsGrid: number
+  tracksOrder: string[]
   layers: CompositorLayerPlan[]
 }
 
@@ -36,9 +39,8 @@ export function buildCompositorPlan(job: CompositorJob): CompositorPlan {
     outStartUs: Math.round(layer.timelineStart * 1_000_000),
   }))
 
-  const hasAudioOutput = job.layers.some(
-    (layer) => !layer.muted && job.sources[layer.sourceIndex]?.hasAudio === true
-  )
+  const fpsGrid = job.fps === 'original' ? 30 : Number(job.fps)
+  const hasMixedAudio = job.mixedAudio != null && job.mixedAudio.channelData.length > 0
 
   return {
     outputWidth,
@@ -49,7 +51,10 @@ export function buildCompositorPlan(job: CompositorJob): CompositorPlan {
     keyFrameIntervalUs: params.keyFrameIntervalUs,
     videoCodec: job.videoCodec,
     audioCodec: job.audioCodec,
-    hasAudioOutput,
+    hasAudioOutput: hasMixedAudio,
+    hasMixedAudio,
+    fpsGrid,
+    tracksOrder: job.tracksOrder,
     layers,
   }
 }

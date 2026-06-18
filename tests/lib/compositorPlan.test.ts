@@ -15,11 +15,13 @@ function makeJob(overrides: Partial<CompositorJob> = {}): CompositorJob {
         sourceStart: 0,
         sourceEnd: 4,
         timelineStart: 0,
+        trackId: 't',
         transform: { x: 0, y: 0, width: 1920, height: 1080 },
         muted: false,
         opacity: 1,
       },
     ],
+    tracksOrder: ['t'],
     quality: 'high',
     fps: 'original',
     format: 'mp4',
@@ -44,11 +46,17 @@ describe('buildCompositorPlan', () => {
     expect(plan.layers[0].outStartUs).toBe(2_000_000)
   })
 
-  it('reports audio output when a non-muted layer has audio', () => {
-    expect(buildCompositorPlan(makeJob()).hasAudioOutput).toBe(true)
+  it('reports audio output when mixedAudio is present', () => {
+    expect(buildCompositorPlan(makeJob()).hasAudioOutput).toBe(false)
     expect(
-      buildCompositorPlan(makeJob({ layers: [{ ...makeJob().layers[0], muted: true }] }))
-        .hasAudioOutput
-    ).toBe(false)
+      buildCompositorPlan(
+        makeJob({ mixedAudio: { sampleRate: 48000, channelData: [new Float32Array(10)] } })
+      ).hasAudioOutput
+    ).toBe(true)
+  })
+
+  it('resolves the fps grid (30 for original)', () => {
+    expect(buildCompositorPlan(makeJob()).fpsGrid).toBe(30)
+    expect(buildCompositorPlan(makeJob({ fps: '60' })).fpsGrid).toBe(60)
   })
 })

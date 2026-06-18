@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { buildCompositorJob } from '@/lib/advanced/advancedExport'
-import { clips } from '@/lib/store'
+import { advancedTracks, clips } from '@/lib/store'
 import type { AdvancedSegment, Clip } from '@/lib/types'
 
 function makeClip(id: string): Clip {
@@ -33,6 +33,7 @@ function makeSegment(clipId: string): AdvancedSegment {
 describe('buildCompositorJob', () => {
   beforeEach(() => {
     clips.value = [makeClip('a')]
+    advancedTracks.value = [{ id: 'track-1', name: 'Track 1' }]
   })
 
   it('builds a job with canvas dims, one source, and one layer', () => {
@@ -52,9 +53,12 @@ describe('buildCompositorJob', () => {
       sourceStart: 0,
       sourceEnd: 8,
       timelineStart: 0,
+      trackId: 'track-1',
       muted: false,
       opacity: 1,
     })
+    expect(job?.layers[0].trackId).toBe('track-1')
+    expect(job?.tracksOrder).toContain('track-1')
     expect(job?.container).toBe('mp4')
     expect(job?.videoCodec).toBe('avc')
     expect(job?.audioCodec).toBe('aac')
