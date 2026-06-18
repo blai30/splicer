@@ -1,4 +1,4 @@
-import { useSignal } from '@preact/signals'
+import { useSignal, useSignalEffect } from '@preact/signals'
 import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
@@ -18,19 +18,69 @@ import { advancedCanvas, advancedPlayhead, advancedPlaying, advancedSegments } f
 
 const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
+// Work-area sizing for the resizable canvas frame. The default width is derived
+// from a target height and the canvas aspect, so a fresh project gets a sensible
+// size; the user can drag the corner handle to enlarge the work area.
+const DEFAULT_PREVIEW_HEIGHT = 480
+const MIN_PREVIEW_WIDTH = 320
+const MAX_PREVIEW_WIDTH = 1600
+
 const TRANSPORT_BUTTON =
   'flex h-9 w-9 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
 
 export function AdvancedPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const hasManualResize = useRef(false)
   const playbackSpeed = useSignal(1)
   const cropMode = useSignal(false)
+  const previewWidth = useSignal(
+    Math.round(DEFAULT_PREVIEW_HEIGHT * (advancedCanvas.value.width / advancedCanvas.value.height))
+  )
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     return attachAdvancedPreview(canvas)
   }, [])
+
+  // Keep the default work-area width in step with the canvas aspect, until the
+  // user manually resizes the work area.
+  useSignalEffect(() => {
+    const current = advancedCanvas.value
+    if (hasManualResize.current) return
+    const aspect = current.width / current.height
+    previewWidth.value = Math.min(
+      MAX_PREVIEW_WIDTH,
+      Math.max(MIN_PREVIEW_WIDTH, Math.round(DEFAULT_PREVIEW_HEIGHT * aspect))
+    )
+  })
+
+  function onResizePointerDown(event: PointerEvent) {
+    event.stopPropagation()
+    const handle = event.currentTarget as HTMLElement
+    handle.setPointerCapture(event.pointerId)
+    const startX = event.clientX
+    const startY = event.clientY
+    const startWidth = wrapperRef.current?.offsetWidth ?? previewWidth.value
+
+    function onMove(moveEvent: PointerEvent) {
+      const delta = moveEvent.clientX - startX + (moveEvent.clientY - startY)
+      const newWidth = Math.max(MIN_PREVIEW_WIDTH, startWidth + delta)
+      if (wrapperRef.current) wrapperRef.current.style.width = `${newWidth}px`
+    }
+    function onUp() {
+      const finalWidth = wrapperRef.current?.offsetWidth
+      if (finalWidth) {
+        hasManualResize.current = true
+        previewWidth.value = finalWidth
+      }
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', onUp)
+    }
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', onUp)
+  }
 
   const canvas = advancedCanvas.value
   const segments = advancedSegments.value
@@ -48,11 +98,15 @@ export function AdvancedPreview() {
   return (
     <div class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       {/* Canvas stage */}
-      <div class="relative flex flex-1 items-center justify-center overflow-hidden bg-slate-200 p-4 dark:bg-slate-950">
+      <div class="group/preview relative flex flex-1 items-center justify-center overflow-hidden bg-slate-200 p-4 dark:bg-slate-950">
         <div
+          ref={wrapperRef}
           data-canvas-wrapper
-          class="relative max-h-[60vh] w-full max-w-3xl bg-black ring-1 ring-slate-500/60"
-          style={{ aspectRatio: `${canvas.width} / ${canvas.height}` }}
+          class="relative max-w-full shrink-0 bg-black ring-1 ring-slate-500/60"
+          style={{
+            width: `${previewWidth.value}px`,
+            aspectRatio: `${canvas.width} / ${canvas.height}`,
+          }}
         >
           <canvas
             ref={canvasRef}
@@ -61,6 +115,23 @@ export function AdvancedPreview() {
             class="absolute inset-0 h-full w-full object-contain"
           />
           <AdvancedTransformOverlay cropMode={cropMode.value} />
+          {/* Drag the corner to resize the work area (like the Basic preview). */}
+          <div
+            class="absolute right-0 bottom-0 z-20 flex h-12 w-12 cursor-nwse-resize items-end justify-end rounded-tl-md bg-linear-to-br from-transparent via-transparent to-black/30 p-2 opacity-0 transition-opacity group-hover/preview:opacity-100"
+            onPointerDown={onResizePointerDown}
+            title="Drag to resize the work area"
+          >
+            <svg
+              class="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            >
+              <path d="M2 10L10 2M6 10L10 6" />
+            </svg>
+          </div>
         </div>
       </div>
 
