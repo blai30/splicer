@@ -139,13 +139,9 @@ export function AdvancedPreview() {
     <div class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       {/* Infinite canvas stage */}
       <div
-        class="group/preview relative overflow-hidden bg-slate-950"
+        class="group/preview relative overflow-hidden bg-slate-100 bg-radial from-slate-600/50 from-[1px] to-transparent to-[1px] bg-size-[24px_24px] dark:bg-slate-950 dark:from-slate-400/30"
         onWheel={onWheel}
-        style={{
-          height: `${advancedStageHeight.value}px`,
-          backgroundImage: 'radial-gradient(rgba(148,163,184,0.18) 1px, transparent 1px)',
-          backgroundSize: '24px 24px',
-        }}
+        style={{ height: `${advancedStageHeight.value}px` }}
       >
         <div ref={wrapperRef} data-canvas-wrapper class="absolute inset-0">
           <canvas ref={canvasRef} class="absolute inset-0 h-full w-full" />
