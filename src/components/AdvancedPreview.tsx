@@ -126,7 +126,12 @@ export function AdvancedPreview() {
   const hasContent = segments.length > 0
   const totalDuration = projectDuration(segments)
   const progress = totalDuration > 0 ? Math.min(1, advancedPlayhead.value / totalDuration) : 0
-  const zoomPercent = Math.round(advancedViewport.value.zoom * 100)
+  const viewport = advancedViewport.value
+  const zoomPercent = Math.round(viewport.zoom * 100)
+  // The dot grid tracks the viewport so panning/zooming feels like moving through
+  // space rather than dragging the clips: spacing scales with zoom, and the grid
+  // origin is the world origin mapped to screen (worldToScreen of 0,0).
+  const gridSpacing = 24 * viewport.zoom
 
   function onSeekClick(event: MouseEvent) {
     if (!totalDuration) return
@@ -139,9 +144,13 @@ export function AdvancedPreview() {
     <div class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       {/* Infinite canvas stage */}
       <div
-        class="group/preview relative overflow-hidden bg-slate-100 bg-radial from-slate-600/50 from-[1px] to-transparent to-[1px] bg-size-[24px_24px] dark:bg-slate-950 dark:from-slate-400/30"
+        class="group/preview relative overflow-hidden bg-slate-100 bg-radial from-slate-600/30 from-[1px] to-transparent to-[1px] dark:bg-slate-950 dark:from-slate-400/30"
         onWheel={onWheel}
-        style={{ height: `${advancedStageHeight.value}px` }}
+        style={{
+          height: `${advancedStageHeight.value}px`,
+          backgroundSize: `${gridSpacing}px ${gridSpacing}px`,
+          backgroundPosition: `${-viewport.panX * viewport.zoom}px ${-viewport.panY * viewport.zoom}px`,
+        }}
       >
         <div ref={wrapperRef} data-canvas-wrapper class="absolute inset-0">
           <canvas ref={canvasRef} class="absolute inset-0 h-full w-full" />

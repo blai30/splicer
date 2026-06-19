@@ -56,3 +56,23 @@ test('drag the bottom handle to grow the work area vertically', async ({ page })
   const after = (await wrapper.boundingBox())?.height ?? 0
   expect(after).toBeGreaterThan(before + 100)
 })
+
+test('panning the canvas moves the dot grid with the content', async ({ page }) => {
+  await page.goto('/splicer/')
+  await page.getByRole('tab', { name: 'Advanced' }).click()
+  await page.locator('input[type="file"]').setInputFiles(fixture)
+
+  const stage = page.locator('div:has(> [data-canvas-wrapper])')
+  await stage.scrollIntoViewIfNeeded()
+  const wrapperBox = (await page.locator('[data-canvas-wrapper]').boundingBox())!
+  const before = await stage.evaluate((el) => (el as HTMLElement).style.backgroundPosition)
+
+  // Pan by dragging an empty corner of the canvas (outside the centered clip).
+  await page.mouse.move(wrapperBox.x + 6, wrapperBox.y + 6)
+  await page.mouse.down()
+  await page.mouse.move(wrapperBox.x + 140, wrapperBox.y + 110, { steps: 6 })
+  await page.mouse.up()
+
+  const after = await stage.evaluate((el) => (el as HTMLElement).style.backgroundPosition)
+  expect(after).not.toBe(before)
+})
