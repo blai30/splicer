@@ -14,9 +14,16 @@ import {
   togglePlay,
 } from '@/lib/advanced/advancedPlayback'
 import { computeContentBounds } from '@/lib/advanced/exportLayout'
+import { clampStageHeight } from '@/lib/advanced/stageHeight'
 import { clampZoom, fitToContent, zoomAtPoint } from '@/lib/advanced/viewportMath'
 import { formatTimecode } from '@/lib/format'
-import { advancedPlayhead, advancedPlaying, advancedSegments, advancedViewport } from '@/lib/store'
+import {
+  advancedPlayhead,
+  advancedPlaying,
+  advancedSegments,
+  advancedStageHeight,
+  advancedViewport,
+} from '@/lib/store'
 
 const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 const FIT_PADDING = 40
@@ -83,6 +90,23 @@ export function AdvancedPreview() {
     )
   }
 
+  function onResizeHandlePointerDown(event: PointerEvent) {
+    event.preventDefault()
+    const handle = event.currentTarget as HTMLElement
+    handle.setPointerCapture(event.pointerId)
+    const startY = event.clientY
+    const startHeight = advancedStageHeight.value
+    function onMove(moveEvent: PointerEvent) {
+      advancedStageHeight.value = clampStageHeight(startHeight + (moveEvent.clientY - startY))
+    }
+    function onUp() {
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', onUp)
+    }
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', onUp)
+  }
+
   function onWheel(event: WheelEvent) {
     if (!(event.ctrlKey || event.metaKey)) return
     event.preventDefault()
@@ -115,9 +139,10 @@ export function AdvancedPreview() {
     <div class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       {/* Infinite canvas stage */}
       <div
-        class="group/preview relative h-[480px] overflow-hidden bg-slate-950"
+        class="group/preview relative overflow-hidden bg-slate-950"
         onWheel={onWheel}
         style={{
+          height: `${advancedStageHeight.value}px`,
           backgroundImage: 'radial-gradient(rgba(148,163,184,0.18) 1px, transparent 1px)',
           backgroundSize: '24px 24px',
         }}
@@ -140,6 +165,14 @@ export function AdvancedPreview() {
           <button class={ZOOM_BUTTON} onClick={fitView} title="Fit to content">
             <Maximize class="h-4 w-4" />
           </button>
+        </div>
+        {/* Drag the bottom edge to resize the work area vertically. */}
+        <div
+          class="absolute right-0 bottom-0 left-0 z-30 flex h-2.5 cursor-ns-resize items-center justify-center opacity-0 transition-opacity group-hover/preview:opacity-100"
+          onPointerDown={onResizeHandlePointerDown}
+          title="Drag to resize the work area"
+        >
+          <div class="h-1 w-10 rounded-full bg-slate-400/70" />
         </div>
       </div>
 

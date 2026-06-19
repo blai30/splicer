@@ -34,3 +34,25 @@ test('infinite canvas: pan/zoom controls and output sizing', async ({ page }) =>
   await page.getByRole('button', { name: '720p' }).click()
   await expect(page.getByText(/Output:\s*1280x720/)).toBeVisible()
 })
+
+test('drag the bottom handle to grow the work area vertically', async ({ page }) => {
+  await page.goto('/splicer/')
+  await page.getByRole('tab', { name: 'Advanced' }).click()
+  await page.locator('input[type="file"]').setInputFiles(fixture)
+
+  const wrapper = page.locator('[data-canvas-wrapper]')
+  const before = (await wrapper.boundingBox())?.height ?? 0
+
+  // Hover the handle first so it is scrolled into view, then drag it down.
+  const handle = page.getByTitle('Drag to resize the work area')
+  await handle.hover({ force: true })
+  const handleBox = await handle.boundingBox()
+  const startX = handleBox!.x + handleBox!.width / 2
+  const startY = handleBox!.y + handleBox!.height / 2
+  await page.mouse.down()
+  await page.mouse.move(startX, startY + 150, { steps: 6 })
+  await page.mouse.up()
+
+  const after = (await wrapper.boundingBox())?.height ?? 0
+  expect(after).toBeGreaterThan(before + 100)
+})

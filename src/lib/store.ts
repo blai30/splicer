@@ -1,6 +1,7 @@
 import type { Signal } from '@preact/signals'
 import { effect, signal } from '@preact/signals'
 
+import { STAGE_DEFAULT_HEIGHT } from '@/lib/advanced/stageHeight'
 import type {
   AdvancedSegment,
   CanvasSize,
@@ -135,6 +136,11 @@ export const advancedOutputLock = signal<CanvasSize | null>(
 // Pan/zoom of the infinite-canvas viewport. View state only (not persisted);
 // reset to fit-content when the preview mounts.
 export const advancedViewport = signal<Viewport>({ panX: 0, panY: 0, zoom: 1 })
+// Height of the resizable Advanced preview work area (CSS px). Persisted as a
+// workspace preference; the user drags the stage's bottom edge to change it.
+export const advancedStageHeight = signal<number>(
+  loadFromStorage('advancedStageHeight', STAGE_DEFAULT_HEIGHT)
+)
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])
 export const advancedSelectedId = signal<string | null>(null)
@@ -156,6 +162,7 @@ persistSignal('previewMuted', previewMuted)
 persistSignal('logPanelVisible', logPanelVisible)
 persistSignal('appMode', appMode)
 persistSignal('advancedOutputLock', advancedOutputLock)
+persistSignal('advancedStageHeight', advancedStageHeight)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200
