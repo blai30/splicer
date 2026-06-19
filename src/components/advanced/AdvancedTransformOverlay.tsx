@@ -22,7 +22,7 @@ import {
   advancedViewport,
   getClipById,
 } from '@/lib/store'
-import type { Transform } from '@/lib/types'
+import type { AdvancedSegment, Transform } from '@/lib/types'
 
 const SNAP_THRESHOLD = 12
 
@@ -52,8 +52,48 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
   const selected = advancedSegments.value.find((segment) => segment.id === selectedId) ?? null
   const frame = computeFrameRect(advancedSegments.value, advancedOutputLock.value)
 
-  // Click on empty canvas selects the top-most active clip under the pointer;
-  // dragging empty canvas pans the viewport.
+  // Begin moving a segment with the pointer captured on `captureElement`. Used by
+  // both the selection box (press the already-selected clip) and a press on an
+  // unselected clip in the background, so the move starts in the same gesture.
+  function beginMove(segment: AdvancedSegment, captureElement: HTMLElement, event: PointerEvent) {
+    captureElement.setPointerCapture(event.pointerId)
+    // One undo entry per move gesture, consumed by the first transform update.
+    beginAdvancedGesture()
+    const startX = event.clientX
+    const startY = event.clientY
+    const startTransform = segment.transform
+    const zoom = advancedViewport.value.zoom
+    const others = advancedSegments.value
+      .filter((other) => other.id !== segment.id)
+      .map((other) => other.transform)
+    const candidates = snapCandidates(others)
+
+    function onMove(moveEvent: PointerEvent) {
+      const dx = screenDeltaToWorld(moveEvent.clientX - startX, zoom)
+      const dy = screenDeltaToWorld(moveEvent.clientY - startY, zoom)
+      const moved: Transform = {
+        ...startTransform,
+        x: startTransform.x + dx,
+        y: startTransform.y + dy,
+      }
+      // Keep the snap distance constant on screen regardless of zoom.
+      const snapped = snapMove(moved, candidates, SNAP_THRESHOLD / zoom)
+      guideX.value = snapped.guideX
+      guideY.value = snapped.guideY
+      setSegmentTransform(segment.id, { ...moved, x: snapped.x, y: snapped.y })
+    }
+    function onUp() {
+      guideX.value = null
+      guideY.value = null
+      captureElement.removeEventListener('pointermove', onMove)
+      captureElement.removeEventListener('pointerup', onUp)
+    }
+    captureElement.addEventListener('pointermove', onMove)
+    captureElement.addEventListener('pointerup', onUp)
+  }
+
+  // Pressing the canvas: a press on a clip selects it and starts moving it in the
+  // same gesture; a press on empty space deselects and pans the viewport.
   function onBackgroundPointerDown(event: PointerEvent) {
     const wrapper = event.currentTarget as HTMLElement
     const rect = wrapper.getBoundingClientRect()
@@ -66,6 +106,8 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
     const hit = topFirst.find((segment) => pointInTransform(world.x, world.y, segment.transform))
     if (hit) {
       selectAdvancedSegment(hit.id)
+      // In crop mode the body is not draggable; just select so the crop handles show.
+      if (!cropMode) beginMove(hit, wrapper, event)
       return
     }
     selectAdvancedSegment('')
@@ -91,43 +133,8 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
 
   function startMove(event: PointerEvent) {
     if (!selected || cropMode) return
-    const active = selected
     event.stopPropagation()
-    const element = event.currentTarget as HTMLElement
-    element.setPointerCapture(event.pointerId)
-    // One undo entry per move gesture, consumed by the first transform update.
-    beginAdvancedGesture()
-    const startX = event.clientX
-    const startY = event.clientY
-    const startTransform = active.transform
-    const zoom = advancedViewport.value.zoom
-    const others = advancedSegments.value
-      .filter((segment) => segment.id !== active.id)
-      .map((segment) => segment.transform)
-    const candidates = snapCandidates(others)
-
-    function onMove(moveEvent: PointerEvent) {
-      const dx = screenDeltaToWorld(moveEvent.clientX - startX, zoom)
-      const dy = screenDeltaToWorld(moveEvent.clientY - startY, zoom)
-      const moved: Transform = {
-        ...startTransform,
-        x: startTransform.x + dx,
-        y: startTransform.y + dy,
-      }
-      // Keep the snap distance constant on screen regardless of zoom.
-      const snapped = snapMove(moved, candidates, SNAP_THRESHOLD / zoom)
-      guideX.value = snapped.guideX
-      guideY.value = snapped.guideY
-      setSegmentTransform(active.id, { ...moved, x: snapped.x, y: snapped.y })
-    }
-    function onUp() {
-      guideX.value = null
-      guideY.value = null
-      element.removeEventListener('pointermove', onMove)
-      element.removeEventListener('pointerup', onUp)
-    }
-    element.addEventListener('pointermove', onMove)
-    element.addEventListener('pointerup', onUp)
+    beginMove(selected, event.currentTarget as HTMLElement, event)
   }
 
   function startResize(handle: ResizeHandle) {
