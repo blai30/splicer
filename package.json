@@ -2,7 +2,7 @@
   "name": "splicer",
   "type": "module",
   "version": "0.0.1",
-  "packageManager": "pnpm@11.5.2",
+  "packageManager": "pnpm@11.7.0",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -22,28 +22,28 @@
     "check": "pnpm lint && pnpm fmt && pnpm typecheck && pnpm build"
   },
   "dependencies": {
-    "@astrojs/preact": "^5.0.0-beta.5",
-    "@astrojs/sitemap": "^3.6.1-beta.3",
-    "@mediabunny/aac-encoder": "^1.46.0",
-    "@preact/signals": "^2.9.1",
-    "@tailwindcss/vite": "^4.3.0",
-    "astro": "^7.0.0-beta.3",
+    "@astrojs/preact": "^5.1.5",
+    "@astrojs/sitemap": "^3.7.3",
+    "@mediabunny/aac-encoder": "^1.48.1",
+    "@preact/signals": "^2.9.2",
+    "@tailwindcss/vite": "^4.3.1",
+    "astro": "7.0.0-beta.4",
     "clsx": "^2.1.1",
-    "lucide-preact": "^1.17.0",
-    "mediabunny": "^1.46.0",
+    "lucide-preact": "^1.20.0",
+    "mediabunny": "^1.48.1",
     "preact": "^10.29.2",
-    "tailwindcss": "^4.3.0"
+    "tailwindcss": "^4.3.1"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.7-beta.1",
-    "@playwright/test": "^1.60.0",
-    "@types/node": "^25.9.2",
-    "happy-dom": "^20.10.2",
-    "oxfmt": "^0.54.0",
-    "oxlint": "^1.69.0",
-    "playwright": "^1.60.0",
+    "@astrojs/check": "^0.9.9",
+    "@playwright/test": "^1.61.0",
+    "@types/node": "^25.9.3",
+    "happy-dom": "^20.10.6",
+    "oxfmt": "^0.55.0",
+    "oxlint": "^1.70.0",
+    "playwright": "^1.61.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   }
 }
