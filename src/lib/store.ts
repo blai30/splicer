@@ -1,6 +1,7 @@
 import type { Signal } from '@preact/signals'
 import { effect, signal } from '@preact/signals'
 
+import { STAGE_DEFAULT_HEIGHT } from '@/lib/advanced/stageHeight'
 import type {
   AdvancedSegment,
   CanvasSize,
@@ -13,6 +14,7 @@ import type {
   Quality,
   Segment,
   Track,
+  Viewport,
   WebmCodec,
 } from '@/lib/types'
 
@@ -123,10 +125,22 @@ export const theme = signal<'light' | 'dark'>(
 export const appMode = signal<'basic' | 'advanced'>(loadFromStorage('appMode', 'basic'))
 
 // Advanced (multi-track compositor) project state, kept separate from Basic's
-// `timeline`. Only the canvas size persists; placed clips reference Files that
+// `timeline`. Only the output lock persists; placed clips reference Files that
 // cannot be rehydrated across reloads (same as Basic's in-memory timeline).
-export const DEFAULT_CANVAS: CanvasSize = { width: 1920, height: 1080 }
-export const advancedCanvas = signal<CanvasSize>(loadFromStorage('advancedCanvas', DEFAULT_CANVAS))
+// Output-size lock for the Advanced infinite canvas. null = Auto (export the
+// bounding box of placed clips). A CanvasSize locks the output to that size,
+// contain-fitting and letterboxing the content at export.
+export const advancedOutputLock = signal<CanvasSize | null>(
+  loadFromStorage('advancedOutputLock', null)
+)
+// Pan/zoom of the infinite-canvas viewport. View state only (not persisted);
+// reset to fit-content when the preview mounts.
+export const advancedViewport = signal<Viewport>({ panX: 0, panY: 0, zoom: 1 })
+// Height of the resizable Advanced preview work area (CSS px). Persisted as a
+// workspace preference; the user drags the stage's bottom edge to change it.
+export const advancedStageHeight = signal<number>(
+  loadFromStorage('advancedStageHeight', STAGE_DEFAULT_HEIGHT)
+)
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])
 export const advancedSelectedId = signal<string | null>(null)
@@ -147,7 +161,8 @@ persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
 persistSignal('logPanelVisible', logPanelVisible)
 persistSignal('appMode', appMode)
-persistSignal('advancedCanvas', advancedCanvas)
+persistSignal('advancedOutputLock', advancedOutputLock)
+persistSignal('advancedStageHeight', advancedStageHeight)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200

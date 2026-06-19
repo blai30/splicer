@@ -1,17 +1,22 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { redoAdvanced, resetAdvancedHistory, undoAdvanced } from '@/lib/advanced/advancedHistory'
+import { setOutputLock } from '@/lib/advanced/advancedEditing'
+import {
+  recordAdvancedHistory,
+  redoAdvanced,
+  resetAdvancedHistory,
+  undoAdvanced,
+} from '@/lib/advanced/advancedHistory'
 import { addClipToTrack, toggleSegmentMute } from '@/lib/advanced/advancedSegmentEditing'
 import { deleteAdvancedSelected, setAdvancedInPoint } from '@/lib/advanced/advancedTimelineEditing'
 import { addTrack } from '@/lib/advanced/advancedTrackEditing'
 import {
-  advancedCanvas,
+  advancedOutputLock,
   advancedPlayhead,
   advancedSegments,
   advancedSelectedId,
   advancedTracks,
   clips,
-  DEFAULT_CANVAS,
 } from '@/lib/store'
 import type { Clip } from '@/lib/types'
 
@@ -35,7 +40,7 @@ describe('advancedHistory', () => {
     advancedTracks.value = []
     advancedSelectedId.value = null
     advancedPlayhead.value = 0
-    advancedCanvas.value = DEFAULT_CANVAS
+    advancedOutputLock.value = null
     resetAdvancedHistory()
   })
 
@@ -81,6 +86,19 @@ describe('advancedHistory', () => {
     expect(advancedTracks.value).toHaveLength(1)
     undoAdvanced()
     expect(advancedTracks.value).toHaveLength(0)
+  })
+
+  it('undo/redo restores the output lock', () => {
+    advancedOutputLock.value = null
+    recordAdvancedHistory()
+    setOutputLock(1280, 720)
+    expect(advancedOutputLock.value).toEqual({ width: 1280, height: 720 })
+
+    undoAdvanced()
+    expect(advancedOutputLock.value).toBeNull()
+
+    redoAdvanced()
+    expect(advancedOutputLock.value).toEqual({ width: 1280, height: 720 })
   })
 
   it('a new edit clears the redo stack', () => {

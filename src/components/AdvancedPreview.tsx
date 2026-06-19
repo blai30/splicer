@@ -1,5 +1,5 @@
 import { useSignal, useSignalEffect } from '@preact/signals'
-import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
+import { Maximize, Minus, Pause, Play, Plus, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { AdvancedSelectionToolbar } from '@/components/advanced/AdvancedSelectionToolbar'
@@ -13,30 +13,34 @@ import {
   stepFrame,
   togglePlay,
 } from '@/lib/advanced/advancedPlayback'
+import { computeContentBounds } from '@/lib/advanced/exportLayout'
+import { clampStageHeight } from '@/lib/advanced/stageHeight'
+import { clampZoom, fitToContent, zoomAtPoint } from '@/lib/advanced/viewportMath'
 import { formatTimecode } from '@/lib/format'
-import { advancedCanvas, advancedPlayhead, advancedPlaying, advancedSegments } from '@/lib/store'
+import {
+  advancedPlayhead,
+  advancedPlaying,
+  advancedSegments,
+  advancedStageHeight,
+  advancedViewport,
+} from '@/lib/store'
 
 const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
-
-// Work-area sizing for the resizable canvas frame. The default width is derived
-// from a target height and the canvas aspect, so a fresh project gets a sensible
-// size; the user can drag the corner handle to enlarge the work area.
-const DEFAULT_PREVIEW_HEIGHT = 480
-const MIN_PREVIEW_WIDTH = 320
-const MAX_PREVIEW_WIDTH = 1600
+const FIT_PADDING = 40
 
 const TRANSPORT_BUTTON =
   'flex h-9 w-9 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
 
+const ZOOM_BUTTON =
+  'flex h-7 w-7 items-center justify-center rounded bg-slate-900/70 text-slate-100 transition-colors hover:bg-slate-900 hover:duration-0'
+
 export function AdvancedPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
-  const hasManualResize = useRef(false)
+  const didFit = useRef(false)
   const playbackSpeed = useSignal(1)
   const cropMode = useSignal(false)
-  const previewWidth = useSignal(
-    Math.round(DEFAULT_PREVIEW_HEIGHT * (advancedCanvas.value.width / advancedCanvas.value.height))
-  )
+  const stageSize = useSignal({ width: 0, height: 0 })
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -44,37 +48,58 @@ export function AdvancedPreview() {
     return attachAdvancedPreview(canvas)
   }, [])
 
-  // Keep the default work-area width in step with the canvas aspect, until the
-  // user manually resizes the work area.
+  // Track the stage size. A resize while paused needs an explicit redraw, since
+  // the playback redraw effect watches the viewport, not the stage size; nudge
+  // the viewport signal once we have already framed the content.
+  useEffect(() => {
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0].contentRect
+      stageSize.value = { width: rect.width, height: rect.height }
+      if (didFit.current) advancedViewport.value = { ...advancedViewport.value }
+    })
+    observer.observe(wrapper)
+    return () => observer.disconnect()
+  }, [])
+
+  // Fit-to-content the first time the stage is measured and a clip is present
+  // (the preview mounts before any clip is added, so fitting must wait for one).
   useSignalEffect(() => {
-    const current = advancedCanvas.value
-    if (hasManualResize.current) return
-    const aspect = current.width / current.height
-    previewWidth.value = Math.min(
-      MAX_PREVIEW_WIDTH,
-      Math.max(MIN_PREVIEW_WIDTH, Math.round(DEFAULT_PREVIEW_HEIGHT * aspect))
-    )
+    const size = stageSize.value
+    const segments = advancedSegments.value
+    if (didFit.current || size.width <= 0 || size.height <= 0 || segments.length === 0) return
+    didFit.current = true
+    advancedViewport.value = fitToContent(computeContentBounds(segments), size, FIT_PADDING)
   })
 
-  function onResizePointerDown(event: PointerEvent) {
-    event.stopPropagation()
+  function fitView() {
+    advancedViewport.value = fitToContent(
+      computeContentBounds(advancedSegments.value),
+      stageSize.value,
+      FIT_PADDING
+    )
+  }
+
+  function zoomByFactor(factor: number) {
+    const center = { x: stageSize.value.width / 2, y: stageSize.value.height / 2 }
+    advancedViewport.value = zoomAtPoint(
+      advancedViewport.value,
+      center,
+      advancedViewport.value.zoom * factor
+    )
+  }
+
+  function onResizeHandlePointerDown(event: PointerEvent) {
+    event.preventDefault()
     const handle = event.currentTarget as HTMLElement
     handle.setPointerCapture(event.pointerId)
-    const startX = event.clientX
     const startY = event.clientY
-    const startWidth = wrapperRef.current?.offsetWidth ?? previewWidth.value
-
+    const startHeight = advancedStageHeight.value
     function onMove(moveEvent: PointerEvent) {
-      const delta = moveEvent.clientX - startX + (moveEvent.clientY - startY)
-      const newWidth = Math.max(MIN_PREVIEW_WIDTH, startWidth + delta)
-      if (wrapperRef.current) wrapperRef.current.style.width = `${newWidth}px`
+      advancedStageHeight.value = clampStageHeight(startHeight + (moveEvent.clientY - startY))
     }
     function onUp() {
-      const finalWidth = wrapperRef.current?.offsetWidth
-      if (finalWidth) {
-        hasManualResize.current = true
-        previewWidth.value = finalWidth
-      }
       handle.removeEventListener('pointermove', onMove)
       handle.removeEventListener('pointerup', onUp)
     }
@@ -82,11 +107,31 @@ export function AdvancedPreview() {
     handle.addEventListener('pointerup', onUp)
   }
 
-  const canvas = advancedCanvas.value
+  function onWheel(event: WheelEvent) {
+    if (!(event.ctrlKey || event.metaKey)) return
+    event.preventDefault()
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    const rect = wrapper.getBoundingClientRect()
+    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    const factor = Math.exp(-event.deltaY * 0.0015)
+    advancedViewport.value = zoomAtPoint(
+      advancedViewport.value,
+      point,
+      clampZoom(advancedViewport.value.zoom * factor)
+    )
+  }
+
   const segments = advancedSegments.value
   const hasContent = segments.length > 0
   const totalDuration = projectDuration(segments)
   const progress = totalDuration > 0 ? Math.min(1, advancedPlayhead.value / totalDuration) : 0
+  const viewport = advancedViewport.value
+  const zoomPercent = Math.round(viewport.zoom * 100)
+  // The dot grid tracks the viewport so panning/zooming feels like moving through
+  // space rather than dragging the clips: spacing scales with zoom, and the grid
+  // origin is the world origin mapped to screen (worldToScreen of 0,0).
+  const gridSpacing = 24 * viewport.zoom
 
   function onSeekClick(event: MouseEvent) {
     if (!totalDuration) return
@@ -97,44 +142,42 @@ export function AdvancedPreview() {
 
   return (
     <div class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
-      {/* Canvas stage */}
-      <div class="group/preview relative flex flex-1 items-center justify-center overflow-hidden bg-slate-200 p-4 dark:bg-slate-950">
-        <div
-          ref={wrapperRef}
-          data-canvas-wrapper
-          class="relative max-w-full shrink-0 ring-1 ring-slate-500/60"
-          style={{
-            width: `${previewWidth.value}px`,
-            aspectRatio: `${canvas.width} / ${canvas.height}`,
-            backgroundColor: '#2a2a2a',
-            backgroundImage: 'repeating-conic-gradient(#3b3b3b 0% 25%, #2a2a2a 0% 50%)',
-            backgroundSize: '48px 48px',
-          }}
-        >
-          <canvas
-            ref={canvasRef}
-            width={canvas.width}
-            height={canvas.height}
-            class="absolute inset-0 h-full w-full object-contain"
-          />
+      {/* Infinite canvas stage */}
+      <div
+        class="group/preview relative overflow-hidden bg-slate-100 bg-radial from-slate-600/30 from-[1px] to-transparent to-[1px] dark:bg-slate-950 dark:from-slate-400/30"
+        onWheel={onWheel}
+        style={{
+          height: `${advancedStageHeight.value}px`,
+          backgroundSize: `${gridSpacing}px ${gridSpacing}px`,
+          backgroundPosition: `${-viewport.panX * viewport.zoom}px ${-viewport.panY * viewport.zoom}px`,
+        }}
+      >
+        <div ref={wrapperRef} data-canvas-wrapper class="absolute inset-0">
+          <canvas ref={canvasRef} class="absolute inset-0 h-full w-full" />
           <AdvancedTransformOverlay cropMode={cropMode.value} />
-          {/* Drag the corner to resize the work area (like the Basic preview). */}
-          <div
-            class="absolute right-0 bottom-0 z-20 flex h-12 w-12 cursor-nwse-resize items-end justify-end rounded-tl-md bg-linear-to-br from-transparent via-transparent to-black/30 p-2 opacity-0 transition-opacity group-hover/preview:opacity-100"
-            onPointerDown={onResizePointerDown}
-            title="Drag to resize the work area"
-          >
-            <svg
-              class="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]"
-              viewBox="0 0 12 12"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            >
-              <path d="M2 10L10 2M6 10L10 6" />
-            </svg>
-          </div>
+        </div>
+        {/* Zoom controls */}
+        <div class="absolute right-3 bottom-3 z-30 flex items-center gap-1">
+          <button class={ZOOM_BUTTON} onClick={() => zoomByFactor(1 / 1.2)} title="Zoom out">
+            <Minus class="h-4 w-4" />
+          </button>
+          <span class="min-w-12 rounded bg-slate-900/70 px-2 py-1 text-center text-xs font-medium text-slate-100 tabular-nums">
+            {zoomPercent}%
+          </span>
+          <button class={ZOOM_BUTTON} onClick={() => zoomByFactor(1.2)} title="Zoom in">
+            <Plus class="h-4 w-4" />
+          </button>
+          <button class={ZOOM_BUTTON} onClick={fitView} title="Fit to content">
+            <Maximize class="h-4 w-4" />
+          </button>
+        </div>
+        {/* Drag the bottom edge to resize the work area vertically. */}
+        <div
+          class="absolute right-0 bottom-0 left-0 z-30 flex h-2.5 cursor-ns-resize items-center justify-center opacity-0 transition-opacity group-hover/preview:opacity-100"
+          onPointerDown={onResizeHandlePointerDown}
+          title="Drag to resize the work area"
+        >
+          <div class="h-1 w-10 rounded-full bg-slate-400/70" />
         </div>
       </div>
 
@@ -199,7 +242,7 @@ export function AdvancedPreview() {
             >
               {PLAYBACK_SPEED_OPTIONS.map((speed) => (
                 <option key={speed} value={speed}>
-                  {speed}×
+                  {speed}x
                 </option>
               ))}
             </select>

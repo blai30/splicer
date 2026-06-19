@@ -1,4 +1,9 @@
-import { advancedCanvas, advancedPlayhead, advancedSegments, advancedSelectedId } from '@/lib/store'
+import {
+  advancedOutputLock,
+  advancedPlayhead,
+  advancedSegments,
+  advancedSelectedId,
+} from '@/lib/store'
 
 export const CANVAS_MIN = 16
 export const CANVAS_MAX = 7680
@@ -9,11 +14,14 @@ function clampDimension(value: number): number {
   return bounded % 2 === 0 ? bounded : bounded - 1
 }
 
-// Resize the output canvas. Placed clips keep their transforms (absolute canvas
-// pixels), so changing the canvas does not move or resize them; the user
-// repositions clips manually if desired.
-export function setCanvasSize(width: number, height: number): void {
-  advancedCanvas.value = { width: clampDimension(width), height: clampDimension(height) }
+// Lock the export output to a fixed size (Auto off). Clamped to even integers.
+export function setOutputLock(width: number, height: number): void {
+  advancedOutputLock.value = { width: clampDimension(width), height: clampDimension(height) }
+}
+
+// Return to Auto (output = bounding box of placed clips).
+export function clearOutputLock(): void {
+  advancedOutputLock.value = null
 }
 
 export function clearAdvancedClip(): void {

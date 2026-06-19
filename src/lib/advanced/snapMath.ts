@@ -1,4 +1,4 @@
-import type { CanvasSize, Transform } from '@/lib/types'
+import type { Transform } from '@/lib/types'
 
 export type SnapResult = {
   x: number
@@ -7,14 +7,14 @@ export type SnapResult = {
   guideY: number | null
 }
 
-// Candidate snap lines: canvas left/center/right and top/center/bottom, plus
-// every other box's left/center/right and top/center/bottom.
-export function snapCandidates(
-  canvas: CanvasSize,
-  others: Transform[]
-): { vertical: number[]; horizontal: number[] } {
-  const vertical = [0, canvas.width / 2, canvas.width]
-  const horizontal = [0, canvas.height / 2, canvas.height]
+// Candidate snap lines on the infinite canvas: the world origin on each axis,
+// plus every other box's left/center/right and top/center/bottom.
+export function snapCandidates(others: Transform[]): {
+  vertical: number[]
+  horizontal: number[]
+} {
+  const vertical = [0]
+  const horizontal = [0]
   for (const box of others) {
     vertical.push(box.x, box.x + box.width / 2, box.x + box.width)
     horizontal.push(box.y, box.y + box.height / 2, box.y + box.height)

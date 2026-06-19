@@ -10,13 +10,7 @@ import {
   trimSegmentEnd,
   trimSegmentStart,
 } from '@/lib/advanced/advancedSegmentEditing'
-import {
-  advancedCanvas,
-  advancedSegments,
-  advancedSelectedId,
-  clips,
-  DEFAULT_CANVAS,
-} from '@/lib/store'
+import { advancedSegments, advancedSelectedId, clips } from '@/lib/store'
 import type { Clip } from '@/lib/types'
 
 function makeClip(id: string): Clip {
@@ -37,16 +31,15 @@ describe('advancedSegmentEditing', () => {
     clips.value = []
     advancedSegments.value = []
     advancedSelectedId.value = null
-    advancedCanvas.value = DEFAULT_CANVAS
   })
 
-  it('adds multiple clips as separate segments with fit transforms', () => {
+  it('adds multiple clips as separate segments at native size at the world origin', () => {
     const first = addClipToTrack(makeClip('a'), 'track-1', 0)
     addClipToTrack(makeClip('b'), 'track-1', 6)
     expect(advancedSegments.value).toHaveLength(2)
     expect(advancedSelectedId.value).toBe(advancedSegments.value[1].id)
     const segment = advancedSegments.value.find((entry) => entry.id === first)
-    expect(segment?.transform).toEqual({ x: 0, y: 0, width: 1920, height: 1080 })
+    expect(segment?.transform).toEqual({ x: 0, y: 0, width: 1280, height: 720 })
     expect(segment?.timelineStart).toBe(0)
   })
 
@@ -70,7 +63,6 @@ describe('advancedSegmentEditing trim and split', () => {
     clips.value = []
     advancedSegments.value = []
     advancedSelectedId.value = null
-    advancedCanvas.value = DEFAULT_CANVAS
   })
 
   it('trims the end without moving timelineStart', () => {

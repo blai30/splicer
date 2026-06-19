@@ -1,5 +1,11 @@
-import { advancedSegments, advancedSelectedId, advancedTracks, clips } from '@/lib/store'
-import type { AdvancedSegment, Clip, Track } from '@/lib/types'
+import {
+  advancedOutputLock,
+  advancedSegments,
+  advancedSelectedId,
+  advancedTracks,
+  clips,
+} from '@/lib/store'
+import type { AdvancedSegment, CanvasSize, Clip, Track } from '@/lib/types'
 
 // Every advanced edit routes a snapshot through this module so undo/redo see all
 // of them: imports, moves, trims, cuts, in/out, mutes, deletes, transforms,
@@ -13,6 +19,7 @@ type AdvancedHistoryEntry = {
   tracks: Track[]
   selectedId: string | null
   clips: Clip[]
+  outputLock: CanvasSize | null
 }
 
 const history: AdvancedHistoryEntry[] = []
@@ -24,6 +31,7 @@ function captureEntry(): AdvancedHistoryEntry {
     tracks: advancedTracks.value,
     selectedId: advancedSelectedId.value,
     clips: clips.value,
+    outputLock: advancedOutputLock.value,
   }
 }
 
@@ -76,6 +84,7 @@ function restoreEntry(entry: AdvancedHistoryEntry) {
   advancedSegments.value = entry.segments
   advancedTracks.value = entry.tracks
   clips.value = restoredClips
+  advancedOutputLock.value = entry.outputLock
   advancedSelectedId.value =
     entry.selectedId && entry.segments.some((segment) => segment.id === entry.selectedId)
       ? entry.selectedId

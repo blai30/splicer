@@ -62,6 +62,12 @@ export type Transform = {
   height: number
 }
 
+export type Viewport = {
+  panX: number
+  panY: number
+  zoom: number
+}
+
 export type Track = {
   id: string
   name: string

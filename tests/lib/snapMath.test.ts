@@ -4,12 +4,12 @@ import { snapCandidates, snapMove } from '@/lib/advanced/snapMath'
 import type { Transform } from '@/lib/types'
 
 describe('snapMath', () => {
-  it('builds candidate lines from canvas edges, center, and other boxes', () => {
-    const others: Transform[] = [{ x: 200, y: 0, width: 100, height: 100 }]
-    const candidates = snapCandidates({ width: 1000, height: 800 }, others)
-    // canvas verticals: 0, 500, 1000; other box: left 200, center 250, right 300
-    expect(candidates.vertical).toEqual(expect.arrayContaining([0, 500, 1000, 200, 250, 300]))
-    expect(candidates.horizontal).toEqual(expect.arrayContaining([0, 400, 800, 0, 50, 100]))
+  it('builds candidate lines from the world origin and other boxes, no canvas lines', () => {
+    const others: Transform[] = [{ x: 100, y: 200, width: 400, height: 200 }]
+    const candidates = snapCandidates(others)
+    // origin 0 plus the box left/center/right and top/center/bottom.
+    expect(candidates.vertical).toEqual([0, 100, 300, 500])
+    expect(candidates.horizontal).toEqual([0, 200, 300, 400])
   })
 
   it('snaps the left edge to a nearby candidate within threshold', () => {
