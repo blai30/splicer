@@ -22,7 +22,7 @@
     "check": "pnpm lint && pnpm fmt && pnpm typecheck && pnpm build"
   },
   "dependencies": {
-    "@astrojs/preact": "^5.1.5",
+    "@astrojs/preact": "^6.0.0",
     "@astrojs/sitemap": "^3.7.3",
     "@mediabunny/aac-encoder": "^1.48.1",
     "@preact/signals": "^2.9.2",
@@ -37,9 +37,9 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
     "@playwright/test": "^1.61.0",
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.0",
     "happy-dom": "^20.10.6",
-    "oxfmt": "^0.55.0",
+    "oxfmt": "^0.56.0",
     "oxlint": "^1.70.0",
     "playwright": "^1.61.0",
     "typescript": "^6.0.3",
