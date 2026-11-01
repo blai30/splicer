@@ -1,62 +1,128 @@
+import { ALL_FORMATS, AudioSampleSink, BlobSource, Input } from 'mediabunny'
+
 import { addClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
 import { info, warn, error as logError } from '@/lib/logger'
-import { advancedTracks, clips, getClipById, importing } from '@/lib/store'
+import { advancedTracks, clips, getClipById, importErrors, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
 import type { Clip } from '@/lib/types'
 
 export const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm']
+const ACCEPTED_EXTENSIONS = /\.(mp4|m4v|mkv|mov|webm)$/i
+export const FILE_INPUT_ACCEPT = 'video/*,.mp4,.m4v,.mkv,.mov,.webm'
 
-export function isVideoFile(file: File): boolean {
-  return ACCEPTED.includes(file.type) || /\.(mp4|mkv|mov|webm)$/i.test(file.name)
+const METADATA_TIMEOUT_MS = 15_000
+const DEFAULT_FRAME_RATE = 30
+
+class ImportError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ImportError'
+  }
 }
 
-export function getVideoMetadata(
-  url: string
-): Promise<{ duration: number; width: number; height: number }> {
+export function isVideoFile(file: File): boolean {
+  return ACCEPTED.includes(file.type) || ACCEPTED_EXTENSIONS.test(file.name)
+}
+
+export type MediaProbe = {
+  duration: number
+  width: number
+  height: number
+  frameRate: number
+  hasAudio: boolean
+}
+
+// Read the container with mediabunny (the same demuxer/decoders the exporter
+// uses), so anything that imports is also exportable. Width/height are display
+// dimensions: pixel aspect ratio and rotation metadata are already applied.
+export async function probeMedia(file: File): Promise<MediaProbe> {
+  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) })
+  try {
+    const videoTrack = await input.getPrimaryVideoTrack()
+    if (!videoTrack) throw new ImportError(`"${file.name}" has no video track.`)
+    if (!(await videoTrack.canDecode())) {
+      throw new ImportError(
+        `"${file.name}" uses a video codec (${videoTrack.codec ?? 'unknown'}) this browser cannot decode.`
+      )
+    }
+    const audioTrack = await input.getPrimaryAudioTrack()
+    const hasAudio = audioTrack ? await audioTrack.canDecode() : false
+    const tracks = audioTrack && hasAudio ? [videoTrack, audioTrack] : [videoTrack]
+    const duration = await input.computeDuration(tracks)
+    let frameRate = DEFAULT_FRAME_RATE
+    try {
+      const stats = await videoTrack.computePacketStats(120)
+      if (Number.isFinite(stats.averagePacketRate) && stats.averagePacketRate > 0) {
+        frameRate = stats.averagePacketRate
+      }
+    } catch {
+      // Frame rate is only used for frame stepping; fall back to the default.
+    }
+    return {
+      duration,
+      width: videoTrack.displayWidth,
+      height: videoTrack.displayHeight,
+      frameRate,
+      hasAudio,
+    }
+  } catch (err) {
+    if (err instanceof ImportError) throw err
+    throw new ImportError(
+      `Could not read "${file.name}". The file may be damaged or in an unsupported format.`
+    )
+  } finally {
+    input.dispose()
+  }
+}
+
+// Confirm the browser's own <video> element can play the file: the preview
+// depends on it. Resolves with the element-reported duration.
+export function checkPlayable(url: string, timeoutMs = METADATA_TIMEOUT_MS): Promise<number> {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video')
     video.preload = 'metadata'
+    video.muted = true
 
-    const cleanup = () => {
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(new ImportError('Timed out reading video metadata.'))
+    }, timeoutMs)
+
+    function cleanup() {
+      clearTimeout(timer)
       video.onloadedmetadata = null
       video.ondurationchange = null
       video.onerror = null
-      video.src = ''
+      video.removeAttribute('src')
       video.load()
-    }
-
-    const finish = () => {
-      const metadata = {
-        duration: video.duration,
-        width: video.videoWidth,
-        height: video.videoHeight,
-      }
-      cleanup()
-      resolve(metadata)
     }
 
     video.onloadedmetadata = () => {
       // MediaRecorder output (e.g. screen recordings) can report Infinity;
-      // seeking far past the end forces the browser to compute the real
-      // duration and fire durationchange.
+      // seeking far past the end forces the browser to compute the duration.
       if (!Number.isFinite(video.duration)) {
         video.ondurationchange = () => {
-          if (Number.isFinite(video.duration)) finish()
+          if (!Number.isFinite(video.duration)) return
+          const duration = video.duration
+          cleanup()
+          resolve(duration)
         }
         video.currentTime = Number.MAX_SAFE_INTEGER
         return
       }
-      finish()
+      const duration = video.duration
+      cleanup()
+      resolve(duration)
     }
     video.onerror = () => {
       cleanup()
-      reject(new Error('Failed to read video metadata'))
+      reject(new ImportError('This browser cannot play the file for preview.'))
     }
-
     video.src = url
   })
 }
 
+// Max-abs peaks of `samples` in `peakCount` equal buckets (at least 64).
 export function getPeaksFromSamples(samples: Float32Array, peakCount: number): number[] {
   if (samples.length === 0) return []
   const target = Math.max(64, Math.floor(peakCount))
@@ -76,47 +142,47 @@ export function getPeaksFromSamples(samples: Float32Array, peakCount: number): n
   return peaks
 }
 
-async function extractWaveformPeaksWithAudioContext(
+// Stream-decode the audio track and fold it into `peakCount` max-abs buckets
+// spread over `duration`. Memory stays bounded by one decoded sample at a time,
+// so arbitrarily long files are fine. Returns [] when there is no audio.
+export async function extractWaveformPeaks(
   file: File,
+  duration: number,
   peakCount = 2000
 ): Promise<number[]> {
-  if (typeof window === 'undefined') return []
-
-  const AudioCtx =
-    window.AudioContext ||
-    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-  if (!AudioCtx) return []
-
-  const ctx = new AudioCtx()
+  if (!(duration > 0)) return []
+  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) })
   try {
-    const buffer = await file.arrayBuffer()
-    const decoded = await ctx.decodeAudioData(buffer)
-    const channels = decoded.numberOfChannels
-    const totalSamples = decoded.length
-    if (!channels || !totalSamples) return []
-
-    const merged = new Float32Array(totalSamples)
-    for (let channel = 0; channel < channels; channel++) {
-      const data = decoded.getChannelData(channel)
-      for (let i = 0; i < totalSamples; i++) {
-        const amp = Math.abs(data[i])
-        if (amp > merged[i]) merged[i] = amp
+    const track = await input.getPrimaryAudioTrack()
+    if (!track || !(await track.canDecode())) return []
+    const peaks = new Float32Array(peakCount)
+    const sink = new AudioSampleSink(track)
+    let scratch = new Float32Array(0)
+    for await (const sample of sink.samples()) {
+      try {
+        const frames = sample.numberOfFrames
+        if (scratch.length < frames) scratch = new Float32Array(frames)
+        const secondsPerFrame = 1 / sample.sampleRate
+        for (let channel = 0; channel < sample.numberOfChannels; channel++) {
+          sample.copyTo(scratch, { planeIndex: channel, format: 'f32-planar' })
+          for (let frame = 0; frame < frames; frame++) {
+            const time = sample.timestamp + frame * secondsPerFrame
+            const bucket = Math.floor((time / duration) * peakCount)
+            if (bucket < 0 || bucket >= peakCount) continue
+            const amp = Math.abs(scratch[frame])
+            if (amp > peaks[bucket]) peaks[bucket] = amp
+          }
+        }
+      } finally {
+        sample.close()
       }
     }
-
-    return getPeaksFromSamples(merged, peakCount)
+    return Array.from(peaks)
   } catch {
     return []
   } finally {
-    void ctx.close()
+    input.dispose()
   }
-}
-
-export async function extractWaveformPeaks(file: File, peakCount = 2000): Promise<number[]> {
-  // WebAudio decodeAudioData is the only extraction path now that FFmpeg is
-  // removed. Files the browser cannot decode yield no peaks and are treated as
-  // having no audio.
-  return extractWaveformPeaksWithAudioContext(file, peakCount)
 }
 
 const waveformPending = new Set<string>()
@@ -124,76 +190,81 @@ const waveformPending = new Set<string>()
 export async function ensureClipWaveform(clipId: string): Promise<void> {
   const clip = getClipById(clipId)
   if (!clip || (clip.waveformPeaks?.length ?? 0) > 0) return
-  // hasAudio set with empty peaks means a completed probe found no audio
-  // stream; do not re-decode the file on every segment mount.
-  if (clip.hasAudio !== undefined) return
+  // A probe that found no decodable audio: nothing to draw.
+  if (clip.hasAudio === false) return
   if (waveformPending.has(clipId)) return
 
   waveformPending.add(clipId)
   try {
-    const peaks = await extractWaveformPeaks(clip.file)
-    // No extractable peaks from either decoder means the file has no audio
-    // stream; the export planner uses this to substitute silent audio.
-    clips.value = clips.value.map((clip) =>
-      clip.id === clipId
-        ? {
-            ...clip,
-            waveformPeaks: peaks,
-            hasAudio: peaks.length > 0,
-          }
-        : clip
+    const peaks = await extractWaveformPeaks(clip.file, clip.duration)
+    clips.value = clips.value.map((entry) =>
+      entry.id === clipId
+        ? { ...entry, waveformPeaks: peaks, hasAudio: entry.hasAudio ?? peaks.length > 0 }
+        : entry
     )
   } finally {
     waveformPending.delete(clipId)
   }
 }
 
-// Probe metadata and build a Clip from a file. Returns null when the file is
-// not a video or its metadata cannot be read (logging the reason). Does not
-// place the clip anywhere. On success the caller owns the object URL via the
-// returned clip; on failure the URL is revoked here.
+// Probe a file and build a Clip. Returns null when the file is not a usable
+// video (logging a user-facing reason). Does not place the clip anywhere. On
+// success the caller owns the object URL via the returned clip.
 export async function createClip(file: File): Promise<Clip | null> {
   if (!isVideoFile(file)) {
-    warn('Skipped non-video file', { name: file.name, type: file.type })
+    warn(`Skipped "${file.name}": not a supported video file (MP4, MOV, MKV, WebM).`)
     return null
   }
 
   const objectUrl = URL.createObjectURL(file)
   try {
-    info('Importing file', { name: file.name })
-    const { duration, width, height } = await getVideoMetadata(objectUrl)
+    info('Importing file', { name: file.name, size: file.size })
+    const [probe, playableDuration] = await Promise.all([
+      probeMedia(file),
+      checkPlayable(objectUrl),
+    ])
+    const duration =
+      Number.isFinite(probe.duration) && probe.duration > 0 ? probe.duration : playableDuration
     if (!Number.isFinite(duration) || duration <= 0) {
-      throw new Error('Invalid video duration')
+      throw new ImportError(`"${file.name}" reports no playable duration.`)
     }
-    // Defer waveform extraction to avoid blocking import. Waveform will be
-    // generated lazily when the segment's view mounts (see SegmentBlock).
+    if (probe.width <= 0 || probe.height <= 0) {
+      throw new ImportError(`"${file.name}" reports invalid video dimensions.`)
+    }
     return {
       id: crypto.randomUUID(),
       file,
       name: file.name.replace(/\.[^.]+$/, ''),
       duration,
-      width,
-      height,
+      width: probe.width,
+      height: probe.height,
+      frameRate: probe.frameRate,
       objectUrl,
       waveformPeaks: [],
+      hasAudio: probe.hasAudio,
     }
   } catch (err) {
     URL.revokeObjectURL(objectUrl)
-    const rawMessage = err instanceof Error ? err.message : String(err)
-    const friendly = /metadata/i.test(rawMessage)
-      ? `Could not read "${file.name}". The codec (e.g. AV1) may not be supported by this browser.`
-      : rawMessage
-    logError('Import failed', { name: file.name, message: friendly })
+    const message =
+      err instanceof ImportError
+        ? err.message
+        : `Could not import "${file.name}": ${err instanceof Error ? err.message : String(err)}`
+    logError('Import failed', { name: file.name, message })
+    importErrors.value = [...importErrors.value, message]
     return null
   }
 }
 
-export async function importAndAppend(file: File): Promise<void> {
+// Import several files in order. The `importing` flag stays raised for the
+// whole batch rather than flickering per file.
+async function importBatch(files: File[], place: (clip: Clip) => void): Promise<void> {
+  if (files.length === 0) return
   importing.value = true
   try {
-    const clip = await createClip(file)
-    if (clip) {
-      appendClipToTimeline(clip)
+    for (const file of files) {
+      const clip = await createClip(file)
+      if (!clip) continue
+      place(clip)
       info('Import succeeded', { name: file.name, duration: clip.duration })
     }
   } finally {
@@ -201,20 +272,21 @@ export async function importAndAppend(file: File): Promise<void> {
   }
 }
 
-export async function importIntoAdvanced(
-  file: File,
-  trackId?: string,
-  timelineStart = 0
-): Promise<void> {
-  importing.value = true
-  try {
-    const clip = await createClip(file)
-    if (clip) {
-      const targetTrack = trackId ?? advancedTracks.value[0]?.id ?? 'track-1'
-      addClipToTrack(clip, targetTrack, timelineStart)
-      info('Advanced import succeeded', { name: file.name, duration: clip.duration })
-    }
-  } finally {
-    importing.value = false
-  }
+export function importFiles(files: File[]): Promise<void> {
+  return importBatch(files, appendClipToTimeline)
+}
+
+export function importFilesIntoAdvanced(files: File[], trackId?: string): Promise<void> {
+  return importBatch(files, (clip) => {
+    const targetTrack = trackId ?? advancedTracks.value[0]?.id
+    if (targetTrack) addClipToTrack(clip, targetTrack, 0)
+  })
+}
+
+export async function importAndAppend(file: File): Promise<void> {
+  return importFiles([file])
+}
+
+export async function importIntoAdvanced(file: File, trackId?: string): Promise<void> {
+  return importFilesIntoAdvanced([file], trackId)
 }

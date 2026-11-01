@@ -47,6 +47,8 @@ export const clips = signal<Clip[]>([])
 export const timeline = signal<Segment[]>([])
 export const playheadTime = signal<number>(0)
 export const selectedSegmentId = signal<string | null>(null)
+// True while an export worker is running (either editor).
+export const exporting = signal(false)
 export const exportProgress = signal<number>(0)
 
 // ETA in seconds during an active export (null when unknown).
@@ -166,12 +168,15 @@ persistSignal('advancedStageHeight', advancedStageHeight)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200
+// Must match the timeline track's DOM: gap-1 between blocks, px-4 padding.
 export const GAP_PX = 4
-export const PADDING_PX = 12
+export const PADDING_PX = 16
 
 export const pxPerSec = signal(80)
 export const dragState = signal<DragState | null>(null)
 export const importing = signal(false)
+// User-facing import failures, shown as a dismissible notice.
+export const importErrors = signal<string[]>([])
 
 export function clipColor(clipId: string): string {
   const colors = ['bg-violet-700', 'bg-teal-700', 'bg-cyan-700', 'bg-emerald-700', 'bg-sky-700']

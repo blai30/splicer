@@ -5,6 +5,9 @@ export type Clip = {
   duration: number
   width: number
   height: number
+  // Average frames per second, used for frame stepping. Absent on clips
+  // created before probing recorded it.
+  frameRate?: number
   objectUrl: string
   waveformPeaks: number[]
   // Set after waveform extraction; undefined means not yet probed.
