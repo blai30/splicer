@@ -10,7 +10,7 @@ import {
   type Segment,
 } from '@/lib/types'
 import { outputDimensions } from '@/lib/webcodecs/editPlan'
-import type { ExportJob, JobSource } from '@/lib/webcodecs/protocol'
+import { jobSourceFromClip, type ExportJob, type JobSource } from '@/lib/webcodecs/protocol'
 
 // Resolve the timeline into a serializable job: one source per distinct clip,
 // each segment mapped to a slice referencing its source. Returns null when any
@@ -31,13 +31,7 @@ export function buildJob(
     if (sourceIndex === undefined) {
       sourceIndex = sources.length
       indexByClip.set(segment.clipId, sourceIndex)
-      sources.push({
-        file: clip.file,
-        width: clip.width,
-        height: clip.height,
-        hasAudio: clip.hasAudio !== false,
-        frameRate: clip.frameRate,
-      })
+      sources.push(jobSourceFromClip(clip))
     }
     return {
       sourceIndex,

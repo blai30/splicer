@@ -1,5 +1,15 @@
 import type { MbAudioCodec, MbVideoCodec } from '../exportCodecs'
 import type { Framerate, Quality } from '../types'
+import {
+  coveredSourceBytes,
+  sourceEquivalentBitrate,
+  targetAudioBitrate,
+  targetVideoBitrate,
+  type SizeBasis,
+  type SourceAudio,
+  type SourceEquivalent,
+  type SourceSlice,
+} from './bitrateModel'
 import type { ExportJob, JobSlice } from './protocol'
 
 export type EditSlice = JobSlice & {
@@ -21,6 +31,9 @@ export type EditPlan = {
   videoCodec: MbVideoCodec
   audioCodec: MbAudioCodec
   hasAudioOutput: boolean
+  // Average rate frames reach the encoder at ("original" resolved).
+  nominalFrameRate: number
+  sizeBasis: SizeBasis
 }
 
 const FPS_BY_PRESET: Record<Exclude<Framerate, 'original'>, number> = {
@@ -29,26 +42,8 @@ const FPS_BY_PRESET: Record<Exclude<Framerate, 'original'>, number> = {
   '24': 24,
 }
 
-// 1080p reference video bitrates (bits/sec), scaled linearly by pixel count.
-// These are tunable starting points; tests assert ordering and scaling, not
-// exact magnitudes.
-const VIDEO_BITRATE_1080P: Record<Quality, number> = {
-  lossless: 40_000_000,
-  high: 12_000_000,
-  medium: 6_000_000,
-  low: 2_500_000,
-}
-
-const AUDIO_BITRATE: Record<Quality, number> = {
-  lossless: 128_000,
-  high: 128_000,
-  medium: 96_000,
-  low: 64_000,
-}
-
 const KEYFRAME_INTERVAL_US = 2_000_000
-const REF_PIXELS = 1920 * 1080
-const MIN_VIDEO_BITRATE = 100_000
+const DEFAULT_FRAME_RATE = 30
 
 export type EncodeParams = {
   frameDurationUs: number | null
@@ -58,26 +53,40 @@ export type EncodeParams = {
   keyFrameIntervalUs: number
 }
 
+export type EncodeOptions = {
+  videoCodec?: MbVideoCodec
+  audioCodec?: MbAudioCodec
+  // Null or absent: no usable source stats, so the codec-adjusted table applies.
+  sourceEquivalent?: SourceEquivalent | null
+  sourceAudio?: SourceAudio[]
+}
+
 // Shared encode parameters derived from output dimensions, fps, and quality.
 // Used by both the Basic edit plan and the Advanced compositor plan.
 export function computeEncodeParams(
   width: number,
   height: number,
   fps: Framerate,
-  quality: Quality
+  quality: Quality,
+  options: EncodeOptions = {}
 ): EncodeParams {
   const frameRate = fps === 'original' ? null : FPS_BY_PRESET[fps]
   const frameDurationUs = frameRate === null ? null : Math.round(1_000_000 / frameRate)
-  const pixelRatio = (width * height) / REF_PIXELS
-  const videoBitrate = Math.max(
-    MIN_VIDEO_BITRATE,
-    Math.round(VIDEO_BITRATE_1080P[quality] * pixelRatio)
-  )
   return {
     frameDurationUs,
     frameRate,
-    videoBitrate,
-    audioBitrate: AUDIO_BITRATE[quality],
+    videoBitrate: targetVideoBitrate(
+      width,
+      height,
+      quality,
+      options.videoCodec ?? 'avc',
+      options.sourceEquivalent ?? null
+    ),
+    audioBitrate: targetAudioBitrate(
+      quality,
+      options.audioCodec ?? 'aac',
+      options.sourceAudio ?? []
+    ),
     keyFrameIntervalUs: KEYFRAME_INTERVAL_US,
   }
 }
@@ -119,6 +128,43 @@ export function outputDimensions(job: ExportJob): { width: number; height: numbe
   return { width: evenFloor(best.width), height: evenFloor(best.height) }
 }
 
+function sliceDurationSec(slice: JobSlice): number {
+  return Math.max(0, slice.sourceEnd - slice.sourceStart)
+}
+
+// Each slice is contain-fitted into the output, so its picture covers the
+// fitted area, not the whole frame.
+function sourceSlices(job: ExportJob, width: number, height: number): SourceSlice[] {
+  return job.slices.map((slice) => {
+    const source = job.sources[slice.sourceIndex]
+    const frame = sliceFrameSize(job, slice)
+    const fit =
+      frame.width > 0 && frame.height > 0 ? Math.min(width / frame.width, height / frame.height) : 0
+    return {
+      durationSec: sliceDurationSec(slice),
+      displayedPixels: frame.width * frame.height * fit * fit,
+      sourceWidth: source?.width ?? 0,
+      sourceHeight: source?.height ?? 0,
+      videoBitrate: source?.videoBitrate,
+      videoCodec: source?.videoCodec,
+    }
+  })
+}
+
+// "Original" passes source timing through, so on average frames arrive at the
+// duration-weighted mean source rate.
+function meanSourceFrameRate(job: ExportJob): number {
+  let weighted = 0
+  let measuredDuration = 0
+  for (const slice of job.slices) {
+    const rate = job.sources[slice.sourceIndex]?.frameRate ?? 0
+    if (!(Number.isFinite(rate) && rate > 0)) continue
+    weighted += rate * sliceDurationSec(slice)
+    measuredDuration += sliceDurationSec(slice)
+  }
+  return measuredDuration > 0 ? weighted / measuredDuration : DEFAULT_FRAME_RATE
+}
+
 export function buildEditPlan(job: ExportJob): EditPlan {
   const { width, height } = outputDimensions(job)
 
@@ -130,11 +176,25 @@ export function buildEditPlan(job: ExportJob): EditPlan {
     return withStart
   })
 
-  const params = computeEncodeParams(width, height, job.fps, job.quality)
+  const audibleSources: SourceAudio[] = job.slices
+    .filter((slice) => !slice.muted && job.sources[slice.sourceIndex]?.hasAudio === true)
+    .map((slice) => {
+      const source = job.sources[slice.sourceIndex]
+      return { bitrate: source?.audioBitrate, codec: source?.audioCodec }
+    })
+  const sourceEquivalent = sourceEquivalentBitrate(sourceSlices(job, width, height), job.videoCodec)
+  const params = computeEncodeParams(width, height, job.fps, job.quality, {
+    videoCodec: job.videoCodec,
+    audioCodec: job.audioCodec,
+    sourceEquivalent,
+    sourceAudio: audibleSources,
+  })
 
   const hasAudioOutput = job.slices.some(
     (slice) => job.sources[slice.sourceIndex]?.hasAudio === true
   )
+
+  const nominalFrameRate = params.frameRate ?? meanSourceFrameRate(job)
 
   return {
     outputWidth: width,
@@ -148,5 +208,21 @@ export function buildEditPlan(job: ExportJob): EditPlan {
     videoCodec: job.videoCodec,
     audioCodec: job.audioCodec,
     hasAudioOutput,
+    nominalFrameRate,
+    sizeBasis: {
+      durationSec: job.slices.reduce((sum, slice) => sum + sliceDurationSec(slice), 0),
+      frameRate: nominalFrameRate,
+      sourceEquivalent,
+      sourceBytes: coveredSourceBytes(
+        job.slices.map((slice) => {
+          const source = job.sources[slice.sourceIndex]
+          return {
+            durationSec: sliceDurationSec(slice),
+            fileBytes: source?.file.size ?? 0,
+            sourceDurationSec: source?.durationSec,
+          }
+        })
+      ),
+    },
   }
 }

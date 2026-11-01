@@ -1,7 +1,22 @@
+import { readFileSync } from 'node:fs'
+
+import { ALL_FORMATS, BlobSource, Input } from 'mediabunny'
 import { describe, expect, it } from 'vitest'
 
 import { advancedSegments } from '@/lib/store'
-import { createClip, getPeaksFromSamples, importIntoAdvanced, isVideoFile } from '@/lib/videoImport'
+import {
+  createClip,
+  getPeaksFromSamples,
+  hasPacketIndex,
+  importIntoAdvanced,
+  isVideoFile,
+  measureStreamStats,
+} from '@/lib/videoImport'
+
+function openFixture(name: string): Input {
+  const bytes = readFileSync(new URL(`../fixtures/${name}`, import.meta.url))
+  return new Input({ formats: ALL_FORMATS, source: new BlobSource(new Blob([bytes])) })
+}
 
 describe('isVideoFile', () => {
   it('accepts supported video files', () => {
@@ -40,5 +55,39 @@ describe('importIntoAdvanced', () => {
 
   it('exposes createClip', () => {
     expect(typeof createClip).toBe('function')
+  })
+})
+
+describe('measureStreamStats', () => {
+  it('reads bitrates and codecs from packet metadata over the whole MP4 index', async () => {
+    const input = openFixture('tiny.mp4')
+    try {
+      expect(await hasPacketIndex(input)).toBe(true)
+      const video = await input.getPrimaryVideoTrack()
+      const audio = await input.getPrimaryAudioTrack()
+      const stats = await measureStreamStats(video!, audio, true)
+      expect(stats.videoCodec).toBe('avc')
+      expect(stats.audioCodec).toBe('aac')
+      // ffprobe reports about 46 kbps video and 70 kbps audio for this file.
+      expect(stats.videoBitrate).toBeGreaterThan(35_000)
+      expect(stats.videoBitrate).toBeLessThan(60_000)
+      expect(stats.audioBitrate).toBeGreaterThan(55_000)
+      expect(stats.audioBitrate).toBeLessThan(85_000)
+      expect(stats.frameRate).toBeGreaterThan(0)
+    } finally {
+      input.dispose()
+    }
+  })
+
+  it('leaves audio stats out for a silent clip', async () => {
+    const input = openFixture('tall-silent.mp4')
+    try {
+      const video = await input.getPrimaryVideoTrack()
+      const stats = await measureStreamStats(video!, null, true)
+      expect(stats.videoBitrate).toBeGreaterThan(0)
+      expect(stats.audioBitrate).toBeUndefined()
+    } finally {
+      input.dispose()
+    }
   })
 })

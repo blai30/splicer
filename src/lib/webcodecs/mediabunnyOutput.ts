@@ -26,6 +26,8 @@ export type OutputParams = {
   keyFrameIntervalUs: number
   // Exact constant output frame rate; null passes source timing through.
   frameRate: number | null
+  // The rate frames arrive at on average, for the encoder's rate control.
+  nominalFrameRate: number
   hasAudioOutput: boolean
   audioCodec: MbAudioCodec
   audioBitrate: number
@@ -66,6 +68,14 @@ export function createOutput(plan: OutputParams, container: MbContainer): Output
     // Frames are always drawn at the output size, but guard against drift.
     sizeChangeBehavior: 'contain',
     transform: plan.frameRate ? { frameRate: plan.frameRate } : undefined,
+    // mediabunny only tells the encoder a frame rate when the track metadata
+    // has one, and that also snaps timestamps (unsafe for variable-rate
+    // sources). Without it, Chromium's software encoders assume 30 fps and
+    // miss the bitrate by fps/30 (half the size at 15 fps, double at 60).
+    // mediabunny configures the encoder with this same config object.
+    onEncoderConfig: (config) => {
+      config.framerate ??= plan.nominalFrameRate
+    },
   })
   output.addVideoTrack(videoSource)
 

@@ -1,4 +1,12 @@
-import { ALL_FORMATS, AudioSampleSink, BlobSource, Input } from 'mediabunny'
+import {
+  ALL_FORMATS,
+  AudioSampleSink,
+  BlobSource,
+  Input,
+  IsobmffInputFormat,
+  type InputAudioTrack,
+  type InputVideoTrack,
+} from 'mediabunny'
 
 import { addClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
 import { info, warn, error as logError } from '@/lib/logger'
@@ -12,6 +20,9 @@ export const FILE_INPUT_ACCEPT = 'video/*,.mp4,.m4v,.mkv,.mov,.webm'
 
 const METADATA_TIMEOUT_MS = 15_000
 const DEFAULT_FRAME_RATE = 30
+// Packets sampled when the container has no up-front index (MKV/WebM). Enough
+// to get past a high-bitrate opening GOP without scanning a long file.
+const SAMPLED_PACKET_COUNT = 600
 
 class ImportError extends Error {
   constructor(message: string) {
@@ -24,12 +35,60 @@ export function isVideoFile(file: File): boolean {
   return ACCEPTED.includes(file.type) || ACCEPTED_EXTENSIONS.test(file.name)
 }
 
-export type MediaProbe = {
+export type StreamStats = {
+  frameRate?: number
+  videoBitrate?: number
+  videoCodec?: string
+  audioBitrate?: number
+  audioCodec?: string
+}
+
+export type MediaProbe = StreamStats & {
   duration: number
   width: number
   height: number
   frameRate: number
   hasAudio: boolean
+}
+
+function positive(value: number): number | undefined {
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+// MP4/MOV keep a full sample table in metadata, so stats over every packet are
+// cheap and immune to an unrepresentative opening. Other containers would have
+// to scan the whole file, so they are sampled.
+export async function hasPacketIndex(input: Input): Promise<boolean> {
+  return (await input.getFormat()) instanceof IsobmffInputFormat
+}
+
+// Frame rate, bitrates, and codecs from packet metadata (no decoding). Each
+// value is left out when it cannot be measured.
+export async function measureStreamStats(
+  videoTrack: InputVideoTrack,
+  audioTrack: InputAudioTrack | null,
+  fullIndex: boolean
+): Promise<StreamStats> {
+  const packetCount = fullIndex ? undefined : SAMPLED_PACKET_COUNT
+  const stats: StreamStats = {}
+  try {
+    const video = await videoTrack.computePacketStats(packetCount)
+    stats.frameRate = positive(video.averagePacketRate)
+    stats.videoBitrate = positive(video.averageBitrate)
+    stats.videoCodec = (await videoTrack.getCodec()) ?? undefined
+  } catch {
+    // Stats only tune the export; a source without them still imports.
+  }
+  if (audioTrack) {
+    try {
+      const audio = await audioTrack.computePacketStats(packetCount)
+      stats.audioBitrate = positive(audio.averageBitrate)
+      stats.audioCodec = (await audioTrack.getCodec()) ?? undefined
+    } catch {
+      // As above.
+    }
+  }
+  return stats
 }
 
 // Read the container with mediabunny (the same demuxer/decoders the exporter
@@ -49,20 +108,18 @@ export async function probeMedia(file: File): Promise<MediaProbe> {
     const hasAudio = audioTrack ? await audioTrack.canDecode() : false
     const tracks = audioTrack && hasAudio ? [videoTrack, audioTrack] : [videoTrack]
     const duration = await input.computeDuration(tracks)
-    let frameRate = DEFAULT_FRAME_RATE
-    try {
-      const stats = await videoTrack.computePacketStats(120)
-      if (Number.isFinite(stats.averagePacketRate) && stats.averagePacketRate > 0) {
-        frameRate = stats.averagePacketRate
-      }
-    } catch {
-      // Frame rate is only used for frame stepping; fall back to the default.
-    }
+    const stats = await measureStreamStats(
+      videoTrack,
+      audioTrack && hasAudio ? audioTrack : null,
+      await hasPacketIndex(input)
+    )
     return {
+      ...stats,
       duration,
       width: videoTrack.displayWidth,
       height: videoTrack.displayHeight,
-      frameRate,
+      // Frame stepping needs some rate; the default stands in when unmeasured.
+      frameRate: stats.frameRate ?? DEFAULT_FRAME_RATE,
       hasAudio,
     }
   } catch (err) {
@@ -244,6 +301,10 @@ export async function createClip(file: File): Promise<Clip | null> {
       objectUrl,
       waveformPeaks: [],
       hasAudio: probe.hasAudio,
+      videoBitrate: probe.videoBitrate,
+      videoCodec: probe.videoCodec,
+      audioBitrate: probe.audioBitrate,
+      audioCodec: probe.audioCodec,
     }
   } catch (err) {
     URL.revokeObjectURL(objectUrl)
@@ -272,7 +333,12 @@ function importBatch(files: File[], place: (clip: Clip) => void): Promise<void> 
       const clip = await createClip(file)
       if (!clip) continue
       place(clip)
-      info('Import succeeded', { name: file.name, duration: clip.duration })
+      info('Import succeeded', {
+        name: file.name,
+        duration: clip.duration,
+        videoBitrate: clip.videoBitrate,
+        videoCodec: clip.videoCodec,
+      })
     }
   }
   const batch = importQueue.then(run).finally(() => {

@@ -1,5 +1,5 @@
 import type { MbAudioCodec, MbContainer, MbVideoCodec } from '../exportCodecs'
-import type { CropParams, ExportFormat, Framerate, Quality } from '../types'
+import type { Clip, CropParams, ExportFormat, Framerate, Quality } from '../types'
 
 // One distinct source file referenced by the timeline.
 export type JobSource = {
@@ -9,6 +9,28 @@ export type JobSource = {
   hasAudio: boolean
   // Average source frame rate, when known.
   frameRate?: number
+  // Probed source stats, when known. They let the bitrate model aim relative
+  // to the source instead of a fixed table, and let the UI compare sizes.
+  durationSec?: number
+  videoBitrate?: number
+  videoCodec?: string
+  audioBitrate?: number
+  audioCodec?: string
+}
+
+export function jobSourceFromClip(clip: Clip): JobSource {
+  return {
+    file: clip.file,
+    width: clip.width,
+    height: clip.height,
+    hasAudio: clip.hasAudio !== false,
+    frameRate: clip.frameRate,
+    durationSec: clip.duration,
+    videoBitrate: clip.videoBitrate,
+    videoCodec: clip.videoCodec,
+    audioBitrate: clip.audioBitrate,
+    audioCodec: clip.audioCodec,
+  }
 }
 
 // One timeline segment resolved against its source. sourceStart/sourceEnd are

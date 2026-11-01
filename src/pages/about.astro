@@ -109,10 +109,11 @@ const pageDescription =
           What the quality presets do
         </h2>
         <p class="leading-relaxed text-slate-700 dark:text-slate-300">
-          The Lossless, High, Medium, and Low presets set the target bitrate for the re-encode,
-          from highest to lowest. More bitrate means better quality and a larger file. One
-          important caveat: &ldquo;Lossless&rdquo; targets a very high bitrate for near-transparent
-          quality, but it is not mathematically lossless. If your goal is to keep every pixel
+          The Maximum, High, Medium, and Low presets set the target bitrate relative to your
+          source, scaled to the output size: Maximum aims up to 1.5&times; the source bitrate,
+          High about the same as the source, Medium about 60%, and Low about 35%. When the source
+          bitrate cannot be measured, they fall back to fixed bitrates for the output size.
+          &ldquo;Maximum&rdquo; is not mathematically lossless. If your goal is to keep every pixel
           identical, a re-encode is not the way to do it.
         </p>
       </section>
@@ -123,9 +124,9 @@ const pageDescription =
         </h2>
         <p class="leading-relaxed text-slate-700 dark:text-slate-300">
           Export to the <span class="font-medium">same format as your source</span>, at
-          <span class="font-medium">Lossless</span> quality, with FPS left on
+          <span class="font-medium">Maximum</span> quality, with FPS left on
           <span class="font-medium">Original</span>. Every export re-encodes, so this will not be a
-          perfect copy, but Lossless targets a very high bitrate for near-transparent quality.
+          perfect copy, but Maximum aims above the source bitrate to keep generation loss small.
           Changing the format, lowering the quality, or reducing the FPS increases the amount of
           quality lost.
         </p>
@@ -136,10 +137,13 @@ const pageDescription =
           Will exporting make my file smaller?
         </h2>
         <p class="leading-relaxed text-slate-700 dark:text-slate-300">
-          Only sometimes. If your source was encoded inefficiently (a high bitrate for its
-          content) and you re-encode it with an efficient codec like VP9, you can get a smaller
-          file that looks nearly identical. If your source is already well compressed, re-encoding
-          it may make it larger, not smaller.
+          Usually, if you ask for it. High aims at the source bitrate, and Medium and Low aim
+          below it, so they come out about the size of the source or smaller. VP9 needs fewer bits
+          than H.264 for the same quality, and the presets account for that. The export panel
+          shows an estimated size with a likely range next to your source size. One limit: the
+          browser encoder cannot go below a minimum bitrate for a given resolution, so a source
+          that is already very compressed (common for screen recordings) can come out larger at
+          any quality. The panel says so when that happens.
         </p>
       </section>
 
@@ -147,7 +151,7 @@ const pageDescription =
         <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">Recommendations</h2>
         <ul class="flex flex-col gap-1.5 pl-5 text-slate-700 dark:text-slate-300">
           <li class="list-disc leading-relaxed">
-            Want the highest quality? Export to the same format as your source at Lossless quality
+            Want the highest quality? Export to the same format as your source at Maximum quality
             with Original FPS.
           </li>
           <li class="list-disc leading-relaxed">

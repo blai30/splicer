@@ -12,6 +12,12 @@ export type Clip = {
   waveformPeaks: number[]
   // Set after waveform extraction; undefined means not yet probed.
   hasAudio?: boolean
+  // Average bitrates (bits/sec) and codecs from the import probe. Absent when
+  // the probe could not measure them; export then falls back to fixed tables.
+  videoBitrate?: number
+  videoCodec?: string
+  audioBitrate?: number
+  audioCodec?: string
 }
 
 export type CropParams = {
@@ -36,6 +42,8 @@ export type ExportRecord = {
   width: number
   height: number
   format: ExportFormat
+  // The pre-export size estimate, kept to compare against the real size.
+  estimatedBytes?: number
 }
 
 export type Segment = {

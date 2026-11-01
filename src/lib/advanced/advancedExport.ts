@@ -18,7 +18,7 @@ import {
   type Quality,
 } from '@/lib/types'
 import type { CompositorJob } from '@/lib/webcodecs/compositorProtocol'
-import type { JobSource } from '@/lib/webcodecs/protocol'
+import { jobSourceFromClip, type JobSource } from '@/lib/webcodecs/protocol'
 
 // A hidden track turns its video off; its audio still plays (as in preview).
 export function visibleAdvancedSegments(segments: AdvancedSegment[]): AdvancedSegment[] {
@@ -48,13 +48,7 @@ export function buildCompositorJob(
     if (sourceIndex === undefined) {
       sourceIndex = sources.length
       indexByClip.set(clipId, sourceIndex)
-      sources.push({
-        file: clip.file,
-        width: clip.width,
-        height: clip.height,
-        hasAudio: clip.hasAudio !== false,
-        frameRate: clip.frameRate,
-      })
+      sources.push(jobSourceFromClip(clip))
     }
     return sourceIndex
   }
