@@ -13,14 +13,17 @@ import {
 } from '@/lib/advanced/advancedSegmentEditing'
 import {
   laneDropTarget,
+  placeReadout,
   segmentDuration,
   segmentEndTime,
   TIMELINE_PAD_LEFT,
   type LaneDropTarget,
+  type VisibleWindow,
 } from '@/lib/advanced/advancedTimelineDomain'
 import { formatPreciseTime, formatSignedSeconds, formatTime } from '@/lib/format'
 import {
   advancedClipDragActive,
+  advancedDragPreviewEnd,
   advancedNewTrackTarget,
   advancedPlayhead,
   advancedSegments,
@@ -29,6 +32,7 @@ import {
   advancedSnapLine,
   advancedTracks,
   clipColor,
+  framerate,
   getClipById,
   pxPerSec,
 } from '@/lib/store'
@@ -37,6 +41,7 @@ import {
   resolveEdgeTime,
   resolveMoveStart,
   snapThresholdSeconds,
+  timelineFrameGrid,
   timeSnapTargets,
 } from '@/lib/timelineSnap'
 import type { AdvancedSegment } from '@/lib/types'
@@ -58,6 +63,30 @@ function samplePointer(event: PointerEvent): PointerSample {
   return { clientX: event.clientX, clientY: event.clientY, altKey: event.altKey }
 }
 
+// Alt can change while the pointer holds still; no pointer event reports that,
+// so the gesture listens for the key itself to keep the preview honest.
+function listenForAltChanges(onChange: (altKey: boolean) => void): () => void {
+  function onKey(event: KeyboardEvent) {
+    if (event.key === 'Alt') onChange(event.type === 'keydown')
+  }
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('keyup', onKey)
+  return () => {
+    window.removeEventListener('keydown', onKey)
+    window.removeEventListener('keyup', onKey)
+  }
+}
+
+function visibleWindow(scroller: HTMLElement | null): VisibleWindow | null {
+  return scroller ? { left: scroller.scrollLeft, width: scroller.clientWidth } : null
+}
+
+// All drags share one frame grid so mixed-rate clips line up at export.
+function projectFrameGrid(): number {
+  const rates = advancedSegments.value.map((entry) => getClipById(entry.clipId)?.frameRate ?? 0)
+  return timelineFrameGrid(framerate.value, rates)
+}
+
 // Snap only to an exact landing: a trim clamped short of its target (by the
 // media bounds or the minimum length) shows no line.
 function landedOn(edge: number, target: number | null): number | null {
@@ -75,6 +104,7 @@ export function AdvancedSegmentBlock({
   // pointer before the move commits on release.
   const movePreview = useSignal<MovePreview | null>(null)
   const trimSide = useSignal<'left' | 'right' | null>(null)
+  const readoutWindow = useSignal<VisibleWindow | null>(null)
   const leftRef = useRef<HTMLDivElement>(null)
   const rightRef = useRef<HTMLDivElement>(null)
   // Ends an in-flight gesture if the block unmounts mid-drag (e.g. Delete).
@@ -95,12 +125,12 @@ export function AdvancedSegmentBlock({
 
   useEffect(() => () => cancelGestureRef.current?.(), [])
 
-  function snapOptions(altKey: boolean) {
+  function snapOptions(altKey: boolean, fps: number) {
     return {
       thresholdSec: snapThresholdSeconds(pxPerSec.value),
       // Holding Alt places freely for one gesture without turning snapping off.
       snap: advancedSnapEnabled.value && !altKey,
-      fps: clip?.frameRate,
+      fps,
     }
   }
 
@@ -120,15 +150,21 @@ export function AdvancedSegmentBlock({
         new Set([origin.id]),
         advancedPlayhead.value
       )
+      const fps = projectFrameGrid()
       let lastPointer = samplePointer(event)
       let moved = false
       // One undo entry per trim gesture, consumed by the first trim mutation.
       beginAdvancedGesture()
       trimSide.value = side
+      readoutWindow.value = visibleWindow(scroller)
       const throttler = createRafThrottler()
       const autoScroll = scroller
         ? createEdgeAutoScroller(scroller, () => throttler.queue(() => apply(lastPointer)))
         : null
+      const stopAltListening = listenForAltChanges((altKey) => {
+        lastPointer = { ...lastPointer, altKey }
+        if (moved) throttler.queue(() => apply(lastPointer))
+      })
 
       // The dragged edge moves in timeline time (where the snap targets live),
       // then converts back to the source time the trim actions take.
@@ -136,7 +172,7 @@ export function AdvancedSegmentBlock({
         const scrollDelta = (scroller?.scrollLeft ?? 0) - startScrollLeft
         const deltaTime = (pointer.clientX - startClientX + scrollDelta) / pxPerSec.value
         const rawEdge = (side === 'left' ? origin.timelineStart : originEnd) + deltaTime
-        const edge = resolveEdgeTime(rawEdge, targets, snapOptions(pointer.altKey))
+        const edge = resolveEdgeTime(rawEdge, targets, snapOptions(pointer.altKey, fps))
         const nextSourceTime = origin.sourceStart + (edge.time - origin.timelineStart)
         if (side === 'left') trimSegmentStart(origin.id, nextSourceTime)
         else trimSegmentEnd(origin.id, nextSourceTime)
@@ -144,6 +180,7 @@ export function AdvancedSegmentBlock({
         if (!live) return
         const landedEdge = side === 'left' ? live.timelineStart : segmentEndTime(live)
         advancedSnapLine.value = landedOn(landedEdge, edge.target)
+        readoutWindow.value = visibleWindow(scroller)
       }
       function onMove(moveEvent: PointerEvent) {
         lastPointer = samplePointer(moveEvent)
@@ -155,11 +192,13 @@ export function AdvancedSegmentBlock({
       function finish(upEvent: PointerEvent | null) {
         throttler.cancel()
         autoScroll?.stop()
+        stopAltListening()
         // Land exactly where the pointer was released. A click without movement
         // must not re-quantize an untouched edge.
         if (upEvent?.type === 'pointerup' && moved) apply(samplePointer(upEvent))
         endAdvancedGesture()
         trimSide.value = null
+        readoutWindow.value = null
         advancedSnapLine.value = null
         cancelGestureRef.current = null
         handle.removeEventListener('pointermove', onMove)
@@ -189,12 +228,17 @@ export function AdvancedSegmentBlock({
       new Set([origin.id]),
       advancedPlayhead.value
     )
+    const fps = projectFrameGrid()
     let lastPointer = samplePointer(event)
     let moved = false
     selectAdvancedSegment(origin.id)
     const autoScroll = scroller
       ? createEdgeAutoScroller(scroller, () => preview(lastPointer))
       : null
+    const stopAltListening = listenForAltChanges((altKey) => {
+      lastPointer = { ...lastPointer, altKey }
+      if (moved) preview(lastPointer)
+    })
 
     function resolve(pointer: PointerSample): MovePreview {
       const scrollDelta = (scroller?.scrollLeft ?? 0) - startScrollLeft
@@ -204,7 +248,7 @@ export function AdvancedSegmentBlock({
         rawStart,
         segmentDuration(origin),
         targets,
-        snapOptions(pointer.altKey)
+        snapOptions(pointer.altKey, fps)
       )
       const lanesTop = lanes?.getBoundingClientRect().top
       const target =
@@ -217,6 +261,8 @@ export function AdvancedSegmentBlock({
     function preview(pointer: PointerSample) {
       const next = resolve(pointer)
       movePreview.value = next
+      readoutWindow.value = visibleWindow(scroller)
+      advancedDragPreviewEnd.value = next.start + segmentDuration(origin)
       advancedSnapLine.value = next.snapTarget
       advancedNewTrackTarget.value = next.target.kind === 'new' ? next.target.position : null
     }
@@ -239,7 +285,10 @@ export function AdvancedSegmentBlock({
       element.removeEventListener('pointerup', onUp)
       element.removeEventListener('pointercancel', onCancel)
       autoScroll?.stop()
+      stopAltListening()
       movePreview.value = null
+      readoutWindow.value = null
+      advancedDragPreviewEnd.value = null
       advancedSnapLine.value = null
       advancedNewTrackTarget.value = null
       advancedClipDragActive.value = false
@@ -297,6 +346,8 @@ export function AdvancedSegmentBlock({
     ].join(' · ')
   }
 
+  const readoutPlacement = placeReadout(left + offsetX, width, readoutWindow.value)
+
   return (
     <>
       <div
@@ -347,8 +398,16 @@ export function AdvancedSegmentBlock({
       {readout && (
         <div
           data-advanced-readout
-          class="pointer-events-none absolute -top-6 z-50 rounded bg-slate-900/80 px-1.5 py-0.5 text-xs whitespace-nowrap text-white tabular-nums shadow"
-          style={{ left: `${left}px`, transform: offsetTransform }}
+          class={clsx(
+            'pointer-events-none absolute -top-6 z-50 truncate rounded bg-slate-900/80 px-1.5 py-0.5 text-xs text-white tabular-nums shadow',
+            readoutPlacement.alignEnd && '-translate-x-full'
+          )}
+          style={{
+            left: `${readoutPlacement.edge}px`,
+            maxWidth:
+              readoutPlacement.maxWidth === null ? undefined : `${readoutPlacement.maxWidth}px`,
+            transform: offsetY === 0 ? undefined : `translateY(${offsetY}px)`,
+          }}
         >
           {readout}
         </div>

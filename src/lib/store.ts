@@ -184,6 +184,9 @@ export const advancedSnapEnabled = signal<boolean>(
 // snapped to, and whether a clip drag is active and aiming at a new track.
 export const advancedSnapLine = signal<number | null>(null)
 export const advancedClipDragActive = signal(false)
+// Timeline end of the clip being dragged, so the lanes widen ahead of a move
+// that edge auto-scroll carries past the committed content.
+export const advancedDragPreviewEnd = signal<number | null>(null)
 export const advancedNewTrackTarget = signal<'top' | 'bottom' | null>(null)
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])

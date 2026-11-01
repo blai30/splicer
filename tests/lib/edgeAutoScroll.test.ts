@@ -25,6 +25,20 @@ describe('edgeScrollVelocity', () => {
     expect(edgeScrollVelocity(210, 200, 1200)).toBe(-15)
   })
 
+  it('shrinks the zones and top speed for a narrow view', () => {
+    // A 133 px phone timeline: 15% zones (about 20 px) at half speed.
+    expect(edgeScrollVelocity(30, 0, 133)).toBe(0)
+    expect(edgeScrollVelocity(100, 0, 133)).toBe(0)
+    expect(edgeScrollVelocity(10, 0, 133)).toBe(-5)
+    expect(edgeScrollVelocity(500, 0, 133)).toBe(10)
+    expect(edgeScrollVelocity(-50, 0, 133)).toBe(-10)
+  })
+
+  it('keeps full zones once the view is wide enough', () => {
+    expect(edgeScrollVelocity(290, 0, 300)).toBe(15)
+    expect(edgeScrollVelocity(1000, 0, 300)).toBe(20)
+  })
+
   it('stays off for a scroller too narrow for two zones', () => {
     expect(edgeScrollVelocity(10, 0, 60)).toBe(0)
   })
@@ -93,5 +107,19 @@ describe('createEdgeAutoScroller', () => {
     createEdgeAutoScroller(scroller, onScroll).update(0)
     runFrame()
     expect(onScroll).not.toHaveBeenCalled()
+  })
+
+  it('parks the frame loop at a limit and resumes on the next update', () => {
+    const scroller = makeScroller()
+    scroller.scrollLeft = 500
+    const autoScroll = createEdgeAutoScroller(scroller, () => {})
+    autoScroll.update(1000)
+    runFrame()
+    expect(frames).toHaveLength(0)
+    scroller.scrollLeft = 400
+    autoScroll.update(1000)
+    runFrame()
+    expect(scroller.scrollLeft).toBe(420)
+    expect(frames).toHaveLength(1)
   })
 })

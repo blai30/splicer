@@ -214,3 +214,68 @@ test('dragging a clip to the right edge auto-scrolls and keeps the move scroll-a
   const pointerTravel = view.x + view.width - 2 - grabX
   expect(landed.x + scrolled - box.x).toBeGreaterThan(pointerTravel + 50)
 })
+
+test('pressing or releasing Alt mid-drag updates the preview and the drop', async ({ page }) => {
+  const { top, bottom } = await twoClipsOnTwoTracks(page)
+  const anchor = (await bottom.boundingBox())!
+  const dragged = (await top.boundingBox())!
+  const snapLine = page.locator('[data-advanced-snap-line]')
+  const readout = page.locator('[data-advanced-readout]')
+
+  // Snapped first, then Alt pressed with the pointer still: the drop is free.
+  await dragBy(
+    page,
+    dragged.x + dragged.width / 2,
+    dragged.y + dragged.height / 2,
+    anchor.width + 5
+  )
+  await expect(snapLine).toBeVisible()
+  await page.keyboard.down('Alt')
+  await expect(snapLine).toHaveCount(0)
+  const previewed = await readout.textContent()
+  await page.mouse.up()
+  await page.keyboard.up('Alt')
+  const freeDrop = (await top.boundingBox())!
+  expect(freeDrop.x - (anchor.x + anchor.width)).toBeGreaterThan(3)
+  expect(previewed).toMatch(/Start 0:02\.\d\d/)
+
+  // Free first, then Alt released with the pointer still: the drop snaps.
+  await page.keyboard.down('Alt')
+  await dragBy(page, freeDrop.x + freeDrop.width / 2, freeDrop.y + freeDrop.height / 2, -6)
+  await expect(snapLine).toHaveCount(0)
+  await page.keyboard.up('Alt')
+  await expect(snapLine).toBeVisible()
+  await page.mouse.up()
+  const snappedDrop = (await top.boundingBox())!
+  expect(Math.abs(snappedDrop.x - (anchor.x + anchor.width))).toBeLessThan(1)
+})
+
+test('holding a dragged clip at the right edge keeps the lanes and drop zones under it', async ({
+  page,
+}) => {
+  await openAdvanced(page)
+  await importClip(page, 1)
+  await importClip(page, 2)
+  for (let step = 0; step < 8; step++) await page.locator('body').press('=')
+  await showTimeline(page)
+
+  const scroller = page.locator('[data-advanced-scroller]')
+  const view = (await scroller.boundingBox())!
+  const first = blocks(page).first()
+  const box = (await first.boundingBox())!
+  const grabX = box.x + 20
+  await dragBy(page, grabX, box.y + box.height / 2, view.x + view.width - 2 - grabX)
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollLeft), { timeout: 3000 })
+    .toBeGreaterThan(400)
+
+  const lanes = (await page.locator('[data-advanced-lanes]').boundingBox())!
+  const dragged = (await first.boundingBox())!
+  expect(lanes.x + lanes.width).toBeGreaterThanOrEqual(dragged.x + dragged.width)
+  const zone = (await page.locator('[data-advanced-new-track-zone]').first().boundingBox())!
+  expect(zone.x + zone.width).toBeGreaterThan(view.x + view.width - 1)
+  const chip = (await page.locator('[data-advanced-readout]').boundingBox())!
+  expect(chip.x).toBeGreaterThanOrEqual(view.x)
+  expect(chip.x + chip.width).toBeLessThanOrEqual(view.x + view.width + 1)
+  await page.mouse.up()
+})

@@ -7,6 +7,7 @@ import {
   snapEdges,
   snapThresholdSeconds,
   snapTime,
+  timelineFrameGrid,
   timeSnapTargets,
 } from '@/lib/timelineSnap'
 import type { AdvancedSegment } from '@/lib/types'
@@ -137,5 +138,30 @@ describe('resolveMoveStart', () => {
       start: expect.closeTo(2.9667, 3),
       target: null,
     })
+  })
+})
+
+describe('timelineFrameGrid', () => {
+  it('uses a fixed export rate as is', () => {
+    expect(timelineFrameGrid('30', [24, 60])).toBe(30)
+    expect(timelineFrameGrid('24', [])).toBe(24)
+  })
+
+  it('follows the fastest source for original export, rounded like the compositor', () => {
+    expect(timelineFrameGrid('original', [24, 29.97])).toBe(30)
+    expect(timelineFrameGrid('original', [24, 0, Number.NaN])).toBe(24)
+    expect(timelineFrameGrid('original', [500])).toBe(120)
+  })
+
+  it('falls back to 30 fps without known source rates', () => {
+    expect(timelineFrameGrid('original', [])).toBe(30)
+    expect(timelineFrameGrid('original', [0])).toBe(30)
+  })
+
+  it('puts an unsnapped 24 fps clip on the 30 fps export grid of a mixed project', () => {
+    const fps = timelineFrameGrid('original', [24, 30])
+    const { start } = resolveMoveStart(1.04, 2, [], { thresholdSec: 0.1, snap: false, fps })
+    expect(start).toBeCloseTo(1.0333333, 6)
+    expect(Math.abs(start * 30 - Math.round(start * 30))).toBeLessThan(1e-9)
   })
 })

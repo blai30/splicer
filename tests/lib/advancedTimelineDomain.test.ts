@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   laneDropTarget,
   orderedForRender,
+  placeReadout,
   projectDuration,
   segmentEndTime,
   segmentsActiveAt,
@@ -59,5 +60,26 @@ describe('advancedTimelineDomain', () => {
   it('orders for render bottom lane first', () => {
     const list = [seg('a', 'top', 0, 4), seg('b', 'bot', 0, 4)]
     expect(orderedForRender(list, tracks).map((segment) => segment.id)).toEqual(['b', 'a'])
+  })
+})
+
+describe('placeReadout', () => {
+  const view = { left: 1000, width: 400 }
+
+  it('hangs from the clip start in the left half of the view', () => {
+    expect(placeReadout(1100, 50, view)).toEqual({ edge: 1100, alignEnd: false, maxWidth: 296 })
+  })
+
+  it('hangs from the clip end once the clip starts in the right half', () => {
+    expect(placeReadout(1250, 100, view)).toEqual({ edge: 1350, alignEnd: true, maxWidth: 346 })
+  })
+
+  it('clamps to the view when the clip runs past either edge', () => {
+    expect(placeReadout(900, 300, view)).toEqual({ edge: 1004, alignEnd: false, maxWidth: 392 })
+    expect(placeReadout(1300, 900, view)).toEqual({ edge: 1396, alignEnd: true, maxWidth: 392 })
+  })
+
+  it('stays at the clip start without a scroller', () => {
+    expect(placeReadout(120, 40, null)).toEqual({ edge: 120, alignEnd: false, maxWidth: null })
   })
 })

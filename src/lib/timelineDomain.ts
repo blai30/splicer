@@ -278,10 +278,14 @@ export function computeZoomScroll(
 
 export const EDGE_SCROLL_ZONE_PX = 40
 export const EDGE_SCROLL_MAX_PX_PER_FRAME = 20
+// Share of a narrow view each edge zone may take, so a phone-width timeline
+// keeps a usable calm middle.
+export const EDGE_SCROLL_ZONE_SHARE = 0.15
 
 // Horizontal auto-scroll speed while a gesture holds the pointer near (or past)
 // a scroller edge: negative scrolls left, positive right, scaled linearly by how
-// deep the pointer is in the edge zone and capped beyond the edge.
+// deep the pointer is in the edge zone and capped beyond the edge. Narrow views
+// get proportionally smaller zones and a matching lower top speed.
 export function edgeScrollVelocity(
   pointerX: number,
   viewLeft: number,
@@ -289,11 +293,14 @@ export function edgeScrollVelocity(
   zonePx = EDGE_SCROLL_ZONE_PX,
   maxPxPerFrame = EDGE_SCROLL_MAX_PX_PER_FRAME
 ): number {
-  if (viewRight - viewLeft <= zonePx * 2 || zonePx <= 0) return 0
-  const leftDepth = viewLeft + zonePx - pointerX
-  if (leftDepth > 0) return -Math.round(maxPxPerFrame * Math.min(1, leftDepth / zonePx))
-  const rightDepth = pointerX - (viewRight - zonePx)
-  if (rightDepth > 0) return Math.round(maxPxPerFrame * Math.min(1, rightDepth / zonePx))
+  const viewWidth = viewRight - viewLeft
+  if (viewWidth <= zonePx * 2 || zonePx <= 0) return 0
+  const scaledZonePx = Math.min(zonePx, viewWidth * EDGE_SCROLL_ZONE_SHARE)
+  const scaledMax = maxPxPerFrame * (scaledZonePx / zonePx)
+  const leftDepth = viewLeft + scaledZonePx - pointerX
+  if (leftDepth > 0) return -Math.round(scaledMax * Math.min(1, leftDepth / scaledZonePx))
+  const rightDepth = pointerX - (viewRight - scaledZonePx)
+  if (rightDepth > 0) return Math.round(scaledMax * Math.min(1, rightDepth / scaledZonePx))
   return 0
 }
 
@@ -301,6 +308,8 @@ export function edgeScrollVelocity(
 // pointer X and starts a frame loop while it sits in an edge zone; each frame
 // that actually scrolls calls onScroll so the gesture can re-apply itself at
 // the unchanged pointer position (no pointermove fires while it holds still).
+// The loop parks once the scroller is pinned at a limit; the next update()
+// restarts it.
 export function createEdgeAutoScroller(scroller: HTMLElement, onScroll: () => void) {
   let pointerX = 0
   let frameId: number | null = null
@@ -312,7 +321,8 @@ export function createEdgeAutoScroller(scroller: HTMLElement, onScroll: () => vo
     if (velocity === 0) return
     const before = scroller.scrollLeft
     scroller.scrollLeft = Math.max(0, before + velocity)
-    if (scroller.scrollLeft !== before) onScroll()
+    if (scroller.scrollLeft === before) return
+    onScroll()
     frameId = requestAnimationFrame(step)
   }
 

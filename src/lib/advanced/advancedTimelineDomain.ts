@@ -61,3 +61,30 @@ export function laneDropTarget(
   if (index >= laneCount) return { kind: 'new', position: 'bottom' }
   return { kind: 'lane', index }
 }
+
+// The scroller's visible window in content pixels, so the readout chip can
+// stay on screen however far the clip has travelled.
+export type VisibleWindow = { left: number; width: number }
+
+const READOUT_INSET_PX = 4
+
+// Keeps the readout chip inside the visible scroller: it hangs from the clip's
+// start, or from its end once the clip sits in the right half of the view, and
+// is clamped and truncated at the view edges.
+export function placeReadout(
+  clipLeft: number,
+  clipWidth: number,
+  view: VisibleWindow | null
+): { edge: number; alignEnd: boolean; maxWidth: number | null } {
+  if (!view) return { edge: clipLeft, alignEnd: false, maxWidth: null }
+  const viewStart = view.left + READOUT_INSET_PX
+  const viewEnd = view.left + view.width - READOUT_INSET_PX
+  const clamp = (value: number) => Math.min(viewEnd, Math.max(viewStart, value))
+  const alignEnd = clipLeft - view.left > view.width / 2
+  if (alignEnd) {
+    const edge = clamp(clipLeft + clipWidth)
+    return { edge, alignEnd, maxWidth: Math.max(0, edge - viewStart) }
+  }
+  const edge = clamp(clipLeft)
+  return { edge, alignEnd, maxWidth: Math.max(0, viewEnd - edge) }
+}

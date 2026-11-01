@@ -34,6 +34,7 @@ import {
 } from '@/lib/advanced/advancedTimelineEditing'
 import {
   advancedClipDragActive,
+  advancedDragPreviewEnd,
   advancedNewTrackTarget,
   advancedPlayhead,
   advancedSegments,
@@ -57,7 +58,9 @@ export function AdvancedTimeline() {
 
   const tracks = advancedTracks.value
   const segments = advancedSegments.value
-  const duration = projectDuration(segments)
+  // A dragged clip widens the lanes ahead of itself, so edge auto-scroll can
+  // carry it past the committed end with the lanes and drop zones beneath it.
+  const duration = Math.max(projectDuration(segments), advancedDragPreviewEnd.value ?? 0)
   const contentWidth = Math.max(600, duration * pxPerSec.value + 200)
   const playheadLeft = PAD_LEFT + advancedPlayhead.value * pxPerSec.value
 

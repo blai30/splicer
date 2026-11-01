@@ -1,5 +1,5 @@
 import { segmentEndTime } from '@/lib/advanced/advancedTimelineDomain'
-import type { AdvancedSegment } from '@/lib/types'
+import type { AdvancedSegment, Framerate } from '@/lib/types'
 
 // Snap distance on screen. Converted to seconds per zoom level so the pull
 // feels the same at every zoom.
@@ -82,7 +82,21 @@ export function snapTime(time: number, sortedTargets: number[], thresholdSec: nu
   return { time: time + delta, target }
 }
 
-// Round to the clip's frame grid so moves and trims never leave sub-frame
+// The one frame grid every drag quantizes to: the export rate when it is fixed,
+// otherwise what "original" export resolves to (the fastest source, rounded and
+// clamped like the compositor does), so clips of different rates still land on
+// shared frames.
+export function timelineFrameGrid(framerate: Framerate, sourceFrameRates: number[]): number {
+  if (framerate !== 'original') return Number(framerate)
+  let fastest = 0
+  for (const rate of sourceFrameRates) {
+    if (Number.isFinite(rate)) fastest = Math.max(fastest, rate)
+  }
+  if (fastest <= 0) return DEFAULT_SNAP_FPS
+  return Math.min(120, Math.max(1, Math.round(fastest)))
+}
+
+// Round to the project's frame grid so moves and trims never leave sub-frame
 // gaps or overlaps at export.
 export function quantizeToFrame(time: number, fps = DEFAULT_SNAP_FPS): number {
   const rate = Number.isFinite(fps) && fps > 0 ? fps : DEFAULT_SNAP_FPS
