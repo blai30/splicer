@@ -156,3 +156,45 @@ test('the playback speed is shared by both editors and survives a reload', async
   await page.reload()
   await expect(page.getByRole('combobox', { name: 'Playback speed' })).toHaveValue('1.5')
 })
+
+test('trimming selects the segment, previews the edge, and snaps back', async ({ page }) => {
+  await importClips(page, 2)
+  await expect(segments(page).first()).toHaveClass(/ring-violet-400/)
+  const second = (await segments(page).nth(1).boundingBox())!
+  const handleY = second.y + second.height / 2
+  const handleX = second.x + second.width - 4
+
+  await page.mouse.move(handleX, handleY)
+  await page.mouse.down()
+  // 41 px at 80 px/s is 0.51 s in; the out-point lands on the 30 fps grid.
+  await page.mouse.move(handleX - 41, handleY, { steps: 6 })
+  const readout = page.locator('[data-trim-readout]')
+  await expect(readout).toHaveText('Out 0:01.50 · Duration 1.50s')
+  await expect(segments(page).nth(1)).toHaveClass(/ring-violet-400/)
+  // The preview shows the last kept frame, one frame before the out-point.
+  await expect(timecode(page, '0:03.4 / 0:03.5')).toBeVisible()
+  await expect(page.locator('[data-trim-snap-line]')).toHaveCount(0)
+
+  // Dragging back near the original end snaps onto it.
+  await page.mouse.move(handleX - 3, handleY, { steps: 4 })
+  await expect(readout).toHaveText('Out 0:02.00 · Duration 2.00s')
+  await expect(page.locator('[data-trim-snap-line]')).toBeVisible()
+  await page.mouse.move(handleX - 41, handleY, { steps: 4 })
+  await page.mouse.up()
+  await expect(readout).toHaveCount(0)
+  await expect(timecode(page, ' / 0:03.5')).toBeVisible()
+
+  // One undo restores the trim and the selection from before it.
+  await page.locator('body').press('Control+z')
+  await expect(timecode(page, ' / 0:04.0')).toBeVisible()
+  await expect(segments(page).first()).toHaveClass(/ring-violet-400/)
+})
+
+test('In with the playhead on a segment edge explains why nothing changed', async ({ page }) => {
+  await importClips(page, 1)
+  await page.locator('body').press('i')
+  await expect(page.locator('[data-edit-notice]')).toHaveText(
+    'Move the playhead inside the selected segment to set its in-point.'
+  )
+  await expect(page.locator('[data-edit-notice]')).toHaveCount(0, { timeout: 5000 })
+})

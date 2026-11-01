@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   buildSegmentLayout,
+  createIntervalThrottler,
   cutTimes,
   globalTimeOf,
   segmentAtGlobalTime,
@@ -94,5 +95,39 @@ describe('trackXToHit', () => {
 
   it('returns null for an empty timeline', () => {
     expect(trackXToHit([], 100)).toBeNull()
+  })
+})
+
+describe('createIntervalThrottler', () => {
+  it('runs the first call now and only the latest queued call per interval', () => {
+    vi.useFakeTimers()
+    let nowMs = 0
+    const throttler = createIntervalThrottler(33, () => nowMs)
+    const runs: number[] = []
+    throttler.queue(() => runs.push(1))
+    expect(runs).toEqual([1])
+    nowMs = 10
+    throttler.queue(() => runs.push(2))
+    throttler.queue(() => runs.push(3))
+    expect(runs).toEqual([1])
+    nowMs = 33
+    vi.advanceTimersByTime(23)
+    expect(runs).toEqual([1, 3])
+    // Flush runs a waiting call at once; cancel drops it.
+    nowMs = 40
+    throttler.queue(() => runs.push(4))
+    throttler.flush()
+    expect(runs).toEqual([1, 3, 4])
+    nowMs = 45
+    throttler.queue(() => runs.push(5))
+    throttler.cancel()
+    vi.advanceTimersByTime(100)
+    expect(runs).toEqual([1, 3, 4])
+    // After a reset the next call runs at once.
+    nowMs = 46
+    throttler.reset()
+    throttler.queue(() => runs.push(6))
+    expect(runs).toEqual([1, 3, 4, 6])
+    vi.useRealTimers()
   })
 })

@@ -5,9 +5,15 @@ import { useEffect, useRef } from 'preact/hooks'
 import type { ScrollWindow } from '@/components/useTimelineNavigation'
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
-import { seek } from '@/lib/playback'
-import { selectedSegmentId, timeline, getClipById, clips } from '@/lib/store'
-import { GAP_PX, PADDING_PX, clipColor, dragState, pxPerSec } from '@/lib/store'
+import {
+  beginEdgePreview,
+  endEdgePreview,
+  getActiveSegmentInfo,
+  previewEdgeFrame,
+  seek,
+} from '@/lib/playback'
+import { selectedSegmentId, timeline, getClipById, clips, playheadTime } from '@/lib/store'
+import { GAP_PX, PADDING_PX, clipColor, dragState, pxPerSec, trimFeedback } from '@/lib/store'
 import { createRafThrottler } from '@/lib/timelineDomain'
 import { clampPlayheadForSegment, findDropIndexAtTrackX } from '@/lib/timelineDomain'
 import {
@@ -22,6 +28,7 @@ import {
   BLOCK_NAME_MIN_WIDTH_PX,
   MIN_BLOCK_WIDTH_PX,
 } from '@/lib/timelineNavigation'
+import { DEFAULT_SNAP_FPS, resolveEdgeTime, snapThresholdSeconds } from '@/lib/timelineSnap'
 import type { Segment } from '@/lib/types'
 import { ensureClipWaveform } from '@/lib/videoImport'
 
@@ -51,6 +58,10 @@ export function SegmentBlock({
     void ensureClipWaveform(clip.id)
   }, [clip?.id, clip?.waveformPeaks?.length])
 
+  // Ends a trim still in progress if the block unmounts mid-drag (e.g. Delete).
+  const cancelTrimRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => cancelTrimRef.current?.(), [])
+
   function onTrimPointerDown(side: 'left' | 'right') {
     return (event: PointerEvent) => {
       event.stopPropagation()
@@ -58,16 +69,68 @@ export function SegmentBlock({
       const handle = side === 'left' ? leftRef.current! : rightRef.current!
       handle.setPointerCapture(event.pointerId)
       const startClientX = event.clientX
-      const startTime = side === 'left' ? segment.startTime : segment.endTime
+      const originalEdge = side === 'left' ? segment.startTime : segment.endTime
+      const frameRate = clip?.frameRate || DEFAULT_SNAP_FPS
+      // The playhead is a source time of the active segment's clip, so it is a
+      // meaningful target only when that is this clip. Read before selecting.
+      const active = getActiveSegmentInfo()
+      const playheadTarget = active?.clip.id === segment.clipId ? [playheadTime.peek()] : []
+      // The clip's start and end, and where the edge began.
+      const targets = [0, clip?.duration ?? segment.endTime, originalEdge, ...playheadTarget].sort(
+        (first, second) => first - second
+      )
 
-      // One undo history entry per trim gesture, not per pointer move.
+      // One undo history entry per trim gesture, not per pointer move. Begun
+      // before selecting, so undo restores the previous selection too.
       beginGesture()
+      selectedSegmentId.value = segment.id
+      beginEdgePreview()
+      trimFeedback.value = {
+        segmentId: segment.id,
+        side: side === 'left' ? 'start' : 'end',
+        snapped: false,
+      }
       const throttler = createRafThrottler()
 
+      // The source time on screen for an edge: the first kept frame on the
+      // left, the last kept frame on the right.
+      function edgeFrame(trimmed: Segment): number {
+        if (side === 'left') return trimmed.startTime
+        return Math.max(trimmed.startTime, trimmed.endTime - 1 / frameRate)
+      }
+
       function apply(pointerEvent: PointerEvent) {
-        const deltaTime = (pointerEvent.clientX - startClientX) / pxPerSec.value
-        if (side === 'left') trimSegmentStart(segment.id, startTime + deltaTime)
-        else trimSegmentEnd(segment.id, startTime + deltaTime)
+        const rawEdge = originalEdge + (pointerEvent.clientX - startClientX) / pxPerSec.value
+        const resolved = resolveEdgeTime(rawEdge, targets, {
+          thresholdSec: snapThresholdSeconds(pxPerSec.value),
+          // Alt places freely for one gesture, as in Advanced.
+          snap: !pointerEvent.altKey,
+          fps: frameRate,
+        })
+        if (side === 'left') trimSegmentStart(segment.id, resolved.time)
+        else trimSegmentEnd(segment.id, resolved.time)
+        const trimmed = timeline.peek().find((entry) => entry.id === segment.id)
+        if (!trimmed) return
+        const edge = side === 'left' ? trimmed.startTime : trimmed.endTime
+        previewEdgeFrame(edgeFrame(trimmed))
+        trimFeedback.value = {
+          segmentId: segment.id,
+          side: side === 'left' ? 'start' : 'end',
+          // A clamp (minimum length, clip bounds) can stop short of the target.
+          snapped: resolved.target !== null && Math.abs(edge - resolved.target) < 1e-9,
+        }
+      }
+
+      function finish() {
+        cancelTrimRef.current = null
+        throttler.cancel()
+        handle.removeEventListener('pointermove', onMove)
+        handle.removeEventListener('pointerup', onUp)
+        handle.removeEventListener('pointercancel', onUp)
+        trimFeedback.value = null
+        const trimmed = timeline.peek().find((entry) => entry.id === segment.id)
+        endEdgePreview(trimmed ? edgeFrame(trimmed) : playheadTime.peek())
+        endGesture()
       }
 
       function onMove(moveEvent: PointerEvent) {
@@ -75,15 +138,12 @@ export function SegmentBlock({
       }
 
       function onUp(upEvent: PointerEvent) {
-        throttler.cancel()
         // Land exactly where the pointer was released.
         if (upEvent.type === 'pointerup') apply(upEvent)
-        endGesture()
-        handle.removeEventListener('pointermove', onMove)
-        handle.removeEventListener('pointerup', onUp)
-        handle.removeEventListener('pointercancel', onUp)
+        finish()
       }
 
+      cancelTrimRef.current = finish
       handle.addEventListener('pointermove', onMove)
       handle.addEventListener('pointerup', onUp)
       handle.addEventListener('pointercancel', onUp)

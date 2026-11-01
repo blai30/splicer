@@ -13,7 +13,13 @@ import {
   shuttleRate,
   timeline,
 } from '@/lib/store'
-import { cutTimes, globalTimeOf, segmentAtGlobalTime, totalDuration } from '@/lib/timelineDomain'
+import {
+  createIntervalThrottler,
+  cutTimes,
+  globalTimeOf,
+  segmentAtGlobalTime,
+  totalDuration,
+} from '@/lib/timelineDomain'
 import type { Clip, Segment } from '@/lib/types'
 
 const DEFAULT_FRAME_RATE = 30
@@ -43,6 +49,13 @@ let pendingSeekTime: number | null = null
 let rewindOnSync = false
 // Set when a scrub paused playback, so its release resumes it.
 let resumeAfterScrub = false
+// True while a trim drag previews its edge frame: the segment's range moves
+// under the position each step, and the drag, not the range clamp, decides
+// where the video rests.
+let edgePreviewActive = false
+// Seeking on every pointer frame queues more decoding than the element can
+// finish; about 30 seeks a second keep the preview responsive.
+const edgePreviewSeeks = createIntervalThrottler(33)
 // Reverse shuttle: browsers reject negative playbackRate, so reverse play is a
 // frame loop that seeks backwards. The position runs ahead of the video while
 // a seek is still decoding; the next free frame catches up.
@@ -209,15 +222,18 @@ function syncSource() {
     videoElement.onloadedmetadata = () => {
       // A seek issued while the new source was loading wins over the default
       // segment start (e.g. clicking into a segment from a different clip).
+      // The segment may have been trimmed while the source loaded.
+      const live = getActiveSegmentInfo()
+      const range = live && live.url === info.url ? live : info
       const startTime =
         pendingSeekTime !== null
-          ? Math.min(info.end, Math.max(info.start, pendingSeekTime))
-          : info.start
+          ? Math.min(range.end, Math.max(range.start, pendingSeekTime))
+          : range.start
       pendingSeekTime = null
       videoElement.currentTime = startTime
       playheadTime.value = startTime
-      currentSegmentDuration.value = info.end - info.start
-      currentPlaybackTime.value = startTime - info.start
+      currentSegmentDuration.value = range.end - range.start
+      currentPlaybackTime.value = startTime - range.start
       if (resume) playSafely(videoElement)
     }
   } else {
@@ -229,7 +245,7 @@ function syncSource() {
     const forceRewind = autoAdvance || rewindOnSync
     rewindOnSync = false
     const pastEnd = forceRewind ? time >= info.end : time > info.end + 1e-3
-    if (time < info.start - 1e-3 || pastEnd) {
+    if (!edgePreviewActive && (time < info.start - 1e-3 || pastEnd)) {
       videoElement.currentTime = info.start
       playheadTime.value = info.start
       currentPlaybackTime.value = 0
@@ -267,6 +283,8 @@ export function detachVideo() {
   resumeAfterSwitch = false
   rewindOnSync = false
   resumeAfterScrub = false
+  edgePreviewActive = false
+  edgePreviewSeeks.reset()
   playing.value = false
   disposeEffects?.()
   disposeEffects = null
@@ -318,9 +336,17 @@ export function seek(time: number) {
 
 // Seek within the active segment's source without touching the shuttle.
 function seekSource(time: number) {
+  showPosition(time)
+  seekElement(time)
+}
+
+function showPosition(time: number) {
   playheadTime.value = time
   const info = getActiveSegmentInfo()
   if (info) currentPlaybackTime.value = Math.max(0, Math.min(info.end, time) - info.start)
+}
+
+function seekElement(time: number) {
   if (!video) return
   if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
     // Metadata for a source switch is still loading; defer the seek so the
@@ -515,4 +541,25 @@ function reverseTick(nowMs: number) {
 export function setPlaybackSpeed(rate: number) {
   playbackRate.value = rate
   if ((shuttleRate.peek() ?? 0) > 0) shuttleRate.value = null
+}
+
+// Trim drags show the frame at the dragged edge. The playhead follows every
+// step; the video seeks at a bounded rate.
+export function beginEdgePreview() {
+  stopReverse()
+  if (video && !video.paused) video.pause()
+  edgePreviewActive = true
+}
+
+export function previewEdgeFrame(time: number) {
+  if (!edgePreviewActive) return
+  showPosition(time)
+  edgePreviewSeeks.queue(() => seekElement(time))
+}
+
+export function endEdgePreview(finalTime: number) {
+  if (!edgePreviewActive) return
+  edgePreviewSeeks.cancel()
+  edgePreviewActive = false
+  seek(finalTime)
 }

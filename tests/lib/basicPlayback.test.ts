@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   attachVideo,
+  beginEdgePreview,
   beginScrub,
   detachVideo,
+  endEdgePreview,
   endScrub,
   goToAdjacentCut,
   goToEnd,
+  previewEdgeFrame,
   setPlaybackSpeed,
   shuttle,
   stepSeconds,
@@ -288,5 +291,43 @@ describe('Basic transport', () => {
     shuttle('l')
     expect(shuttleRate.value).toBeNull()
     expect(video.playCalls).toBe(1)
+  })
+})
+
+describe('trim edge preview', () => {
+  beforeEach(() => {
+    finishLoading()
+    vi.useFakeTimers()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('moves the playhead every step and seeks the element at a bounded rate', () => {
+    video.paused = false
+    beginEdgePreview()
+    expect(video.paused).toBe(true)
+    previewEdgeFrame(2)
+    expect(video.currentTime).toBe(2)
+    previewEdgeFrame(2.1)
+    previewEdgeFrame(2.2)
+    expect(playheadTime.value).toBe(2.2)
+    // The element catches up with the latest step once the interval passes.
+    expect(video.currentTime).toBe(2)
+    vi.advanceTimersByTime(40)
+    expect(video.currentTime).toBe(2.2)
+    endEdgePreview(2.5)
+    expect(video.currentTime).toBe(2.5)
+  })
+
+  it('keeps the previewed out-point frame while the segment shrinks under it', () => {
+    beginEdgePreview()
+    previewEdgeFrame(9.96)
+    // The trim moves the out-point in; a range clamp must not rewind to 0.
+    timeline.value = [{ ...timeline.value[0], endTime: 8 }, timeline.value[1]]
+    expect(video.currentTime).toBe(9.96)
+    previewEdgeFrame(7.96)
+    vi.advanceTimersByTime(40)
+    expect(video.currentTime).toBe(7.96)
+    endEdgePreview(7.96)
+    expect(video.currentTime).toBe(7.96)
   })
 })

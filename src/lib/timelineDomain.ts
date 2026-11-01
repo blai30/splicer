@@ -309,6 +309,51 @@ export function createRafThrottler() {
   }
 }
 
+// Runs at most one callback per interval: the first right away, then the
+// latest one queued during the wait once it ends. flush() runs a waiting
+// callback now (a gesture's last step must not be dropped).
+export function createIntervalThrottler(
+  intervalMs: number,
+  now: () => number = () => performance.now()
+) {
+  let lastRunMs = Number.NEGATIVE_INFINITY
+  let pending: (() => void) | null = null
+  let timerId: ReturnType<typeof setTimeout> | null = null
+
+  function run() {
+    timerId = null
+    const callback = pending
+    pending = null
+    if (!callback) return
+    lastRunMs = now()
+    callback()
+  }
+
+  return {
+    queue(callback: () => void) {
+      pending = callback
+      if (timerId !== null) return
+      const wait = lastRunMs + intervalMs - now()
+      if (wait <= 0) run()
+      else timerId = setTimeout(run, wait)
+    },
+    flush() {
+      if (timerId !== null) clearTimeout(timerId)
+      run()
+    },
+    cancel() {
+      if (timerId !== null) clearTimeout(timerId)
+      timerId = null
+      pending = null
+    },
+    // Cancel and forget the last run, so the next call runs at once.
+    reset() {
+      this.cancel()
+      lastRunMs = Number.NEGATIVE_INFINITY
+    },
+  }
+}
+
 export function viewportToTrackX(
   clientX: number,
   trackRect: DOMRect,

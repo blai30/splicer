@@ -1,6 +1,7 @@
 import { batch, signal } from '@preact/signals'
 
 import { addClipToPool, collectUnusedClips, registerClipReferences } from '@/lib/clipPool'
+import { showEditNotice } from '@/lib/editNotice'
 import { getClipById, playheadTime, selectedSegmentId, timeline } from '@/lib/store'
 import {
   splitSegmentAtPlayhead,
@@ -43,8 +44,8 @@ function captureEntry(): HistoryEntry {
   return { timeline: timeline.value, selectedSegmentId: selectedSegmentId.value }
 }
 
-function recordHistory() {
-  history.unshift(captureEntry())
+function recordHistory(entry: HistoryEntry = captureEntry()) {
+  history.unshift(entry)
   if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT
   // A new edit invalidates the redo branch.
   redoHistory.length = 0
@@ -82,8 +83,10 @@ function sameSegments(first: Segment[], second: Segment[]): boolean {
 }
 
 // Continuous gestures (trim drags) record one history entry for the whole
-// gesture: beginGesture() arms the flag and the first mutation consumes it.
+// gesture: beginGesture() snapshots the state and the first mutation records
+// that snapshot, so undo also restores a selection the gesture changed.
 let gesturePending = false
+let gestureEntry: HistoryEntry | null = null
 // True from beginGesture() until endGesture(). Undo/redo wait for the drag to
 // finish: undoing mid-drag would leave the rest of it unrecorded and a stale
 // mid-drag snapshot on the redo stack.
@@ -101,6 +104,7 @@ function onGlobalPointerEnd() {
 export function beginGesture() {
   gesturePending = true
   gestureActive = true
+  gestureEntry = captureEntry()
   if (typeof window !== 'undefined') {
     window.addEventListener('pointerup', onGlobalPointerEnd)
     window.addEventListener('pointercancel', onGlobalPointerEnd)
@@ -111,6 +115,7 @@ export function beginGesture() {
 export function endGesture() {
   gesturePending = false
   gestureActive = false
+  gestureEntry = null
   if (typeof window !== 'undefined') {
     window.removeEventListener('pointerup', onGlobalPointerEnd)
     window.removeEventListener('pointercancel', onGlobalPointerEnd)
@@ -120,7 +125,7 @@ export function endGesture() {
 function consumeGesturePending() {
   if (gesturePending) {
     gesturePending = false
-    recordHistory()
+    recordHistory(gestureEntry ?? undefined)
   }
 }
 
@@ -140,20 +145,34 @@ export function appendClipToTimeline(clip: Clip) {
   commit([...timeline.value, segment], wasEmpty ? segment.id : selectedSegmentId.value)
 }
 
-export function setInPoint() {
+// The selected segment when the playhead is strictly inside it. Otherwise an
+// in/out point would clamp to an edge, so the edit is skipped and the reason
+// shown instead of silently doing nothing.
+function segmentForEdgePoint(pointName: string): Segment | null {
+  if (timeline.value.length === 0) return null
   const segment = getSelectedSegment()
-  if (!segment) return
+  if (!segment) {
+    showEditNotice(`Select a segment to set its ${pointName}.`)
+    return null
+  }
   const playhead = playheadTime.value
-  // A playhead outside the segment would clamp to an edge: do nothing instead.
-  if (playhead <= segment.startTime || playhead >= segment.endTime) return
-  commit(updateSegmentStartTime(timeline.value, segment.id, playhead))
+  if (playhead <= segment.startTime || playhead >= segment.endTime) {
+    showEditNotice(`Move the playhead inside the selected segment to set its ${pointName}.`)
+    return null
+  }
+  return segment
+}
+
+export function setInPoint() {
+  const segment = segmentForEdgePoint('in-point')
+  if (!segment) return
+  commit(updateSegmentStartTime(timeline.value, segment.id, playheadTime.value))
 }
 
 export function setOutPoint() {
-  const segment = getSelectedSegment()
+  const segment = segmentForEdgePoint('out-point')
   if (!segment) return
   const playhead = playheadTime.value
-  if (playhead <= segment.startTime || playhead >= segment.endTime) return
   const clipDuration = getClipById(segment.clipId)?.duration ?? segment.endTime
   commit(updateSegmentEndTime(timeline.value, segment.id, playhead, clipDuration))
 }
@@ -257,5 +276,6 @@ export function resetHistory() {
   redoHistory.length = 0
   gesturePending = false
   gestureActive = false
+  gestureEntry = null
   syncHistoryFlags()
 }

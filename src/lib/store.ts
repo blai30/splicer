@@ -232,6 +232,12 @@ export const PADDING_PX = 16
 
 export const pxPerSec = signal(80)
 export const dragState = signal<DragState | null>(null)
+// The Basic trim drag in progress, for its readout and snap guide (transient).
+export const trimFeedback = signal<{
+  segmentId: string
+  side: 'start' | 'end'
+  snapped: boolean
+} | null>(null)
 export const importing = signal(false)
 // User-facing import failures, shown as a dismissible notice.
 export const importErrors = signal<string[]>([])

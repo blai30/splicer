@@ -1,3 +1,4 @@
+import type { ReadonlySignal } from '@preact/signals'
 import { useComputed } from '@preact/signals'
 import clsx from 'clsx/lite'
 import {
@@ -19,8 +20,15 @@ import { useEffect, useRef } from 'preact/hooks'
 import { SegmentBlock } from '@/components/SegmentBlock'
 import { TimelinePlayhead } from '@/components/TimelinePlayhead'
 import { TimeRuler } from '@/components/TimeRuler'
-import { useScrollWindow, useTimelineNavigation } from '@/components/useTimelineNavigation'
+import {
+  type ScrollWindow,
+  useScrollWindow,
+  useTimelineNavigation,
+} from '@/components/useTimelineNavigation'
 import { ZoomSlider } from '@/components/ZoomSlider'
+import { placeReadout } from '@/lib/advanced/advancedTimelineDomain'
+import { editNotice } from '@/lib/editNotice'
+import { formatPreciseTime } from '@/lib/format'
 import { beginScrub, endScrub, seek } from '@/lib/playback'
 import {
   GAP_PX,
@@ -33,6 +41,7 @@ import {
   selectedSegmentId,
   timeline,
   transportRunning,
+  trimFeedback,
 } from '@/lib/store'
 import {
   buildSegmentLayout,
@@ -60,7 +69,7 @@ import {
   MIN_BLOCK_WIDTH_PX,
   ZOOM_STEP_FACTOR,
 } from '@/lib/timelineNavigation'
-import type { Segment } from '@/lib/types'
+import type { Segment, SegmentLayoutItem } from '@/lib/types'
 import { FILE_INPUT_ACCEPT, importFiles } from '@/lib/videoImport'
 
 function layoutAt(segments: Segment[], zoom: number) {
@@ -406,8 +415,24 @@ export function Timeline() {
               }
               return result
             })()}
+            <TrimReadout layout={layout} scrollWindow={scrollWindow} />
             <TimelinePlayhead data-playhead class="top-0" x={playheadX} />
           </div>
+        )}
+      </div>
+
+      {/* Why an edit did nothing; a live region, so it is announced too. */}
+      <div
+        role="status"
+        class="pointer-events-none absolute inset-x-0 bottom-3 z-50 flex justify-center px-4"
+      >
+        {editNotice.value && (
+          <span
+            data-edit-notice
+            class="rounded-md bg-slate-900/85 px-2.5 py-1 text-center text-sm text-white shadow backdrop-blur"
+          >
+            {editNotice.value}
+          </span>
         )}
       </div>
 
@@ -421,5 +446,54 @@ export function Timeline() {
         aria-label="Select video files to import into timeline"
       />
     </div>
+  )
+}
+
+// Readout chip and snap guide for the Basic trim drag in progress. A leaf, so
+// scrolling during the drag re-renders only this.
+function TrimReadout({
+  layout,
+  scrollWindow,
+}: {
+  layout: SegmentLayoutItem[]
+  scrollWindow: ReadonlySignal<ScrollWindow>
+}) {
+  const feedback = trimFeedback.value
+  if (!feedback) return null
+  const item = layout.find((entry) => entry.segment.id === feedback.segmentId)
+  if (!item) return null
+  const { segment } = item
+  const edgeX = feedback.side === 'start' ? item.startX : item.endX
+  const placement = placeReadout(edgeX, 0, scrollWindow.value)
+  const label = [
+    feedback.side === 'start'
+      ? `In ${formatPreciseTime(segment.startTime)}`
+      : `Out ${formatPreciseTime(segment.endTime)}`,
+    `Duration ${(segment.endTime - segment.startTime).toFixed(2)}s`,
+  ].join(' · ')
+
+  return (
+    <>
+      {feedback.snapped && (
+        <div
+          data-trim-snap-line
+          class="pointer-events-none absolute top-7 bottom-0 z-35 w-px -translate-x-1/2 bg-amber-400"
+          style={{ left: `${edgeX}px` }}
+        />
+      )}
+      <div
+        data-trim-readout
+        class={clsx(
+          'pointer-events-none absolute top-7 z-50 truncate rounded bg-slate-900/80 px-1.5 py-0.5 text-xs text-white tabular-nums shadow',
+          placement.alignEnd && '-translate-x-full'
+        )}
+        style={{
+          left: `${placement.edge}px`,
+          maxWidth: placement.maxWidth === null ? undefined : `${placement.maxWidth}px`,
+        }}
+      >
+        {label}
+      </div>
+    </>
   )
 }
