@@ -2,9 +2,13 @@ import type { ReadonlySignal } from '@preact/signals'
 import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { VolumeX } from 'lucide-preact'
-import { useEffect, useRef } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks'
 
-import { clipBlockHasFocus, focusClipBlock } from '@/components/focusClipBlock'
+import {
+  clipBlockHasFocus,
+  focusClipBlock,
+  followSelectionFocus,
+} from '@/components/focusClipBlock'
 import type { ScrollWindow } from '@/components/useTimelineNavigation'
 import { WaveformView } from '@/components/WaveformView'
 import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
@@ -171,6 +175,13 @@ export function AdvancedSegmentBlock({
   const clip = getClipById(segment.clipId)
   const duration = segmentDuration(segment)
   const isSelected = advancedSelectedSet.value.has(segment.id)
+  // In the same commit as the render, so a key pressed right after the
+  // selection moved lands on the new block, not the stale one.
+  useLayoutEffect(() => {
+    if (isTabStop && isSelected) {
+      followSelectionFocus('data-advanced-segment', `[data-advanced-segment-id="${segment.id}"]`)
+    }
+  }, [isTabStop, isSelected, segment.id])
   // Set while another selected clip is dragged: this one follows it.
   const groupPreview = advancedGroupMovePreview.value
   const following = groupPreview?.ids.has(segment.id) ? groupPreview : null

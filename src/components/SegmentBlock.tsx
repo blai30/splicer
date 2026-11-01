@@ -1,9 +1,13 @@
 import type { ReadonlySignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { VolumeX } from 'lucide-preact'
-import { useEffect, useRef } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks'
 
-import { clipBlockHasFocus, focusClipBlock } from '@/components/focusClipBlock'
+import {
+  clipBlockHasFocus,
+  focusClipBlock,
+  followSelectionFocus,
+} from '@/components/focusClipBlock'
 import type { ScrollWindow } from '@/components/useTimelineNavigation'
 import { WaveformView } from '@/components/WaveformView'
 import { copyPreview } from '@/lib/copyExport'
@@ -71,6 +75,14 @@ export function SegmentBlock({
     if ((clip.waveformPeaks?.length ?? 0) > 0) return
     void ensureClipWaveform(clip.id)
   }, [clip?.id, clip?.waveformPeaks?.length])
+
+  // In the same commit as the render, so a key pressed right after the
+  // selection moved lands on the new block, not the stale one.
+  useLayoutEffect(() => {
+    if (isTabStop && isSelected) {
+      followSelectionFocus('data-segment', `[data-segment-id="${segment.id}"]`)
+    }
+  }, [isTabStop, isSelected, segment.id])
 
   // Ends a trim still in progress if the block unmounts mid-drag (e.g. Delete).
   const cancelTrimRef = useRef<(() => void) | null>(null)

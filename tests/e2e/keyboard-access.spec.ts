@@ -143,3 +143,51 @@ test('the Advanced seek bar and playhead are keyboard sliders', async ({ page })
     .poll(async () => Number(await playhead.getAttribute('aria-valuenow')))
     .toBeGreaterThan(0)
 })
+
+test('focus follows a Basic selection moved by shortcuts and undo', async ({ page }) => {
+  await page.goto('/splicer/')
+  await page.locator('input[type="file"]').setInputFiles([tiny, tall, wide])
+  const options = page.getByRole('listbox', { name: 'Segments' }).getByRole('option')
+  await expect(options).toHaveCount(3)
+  await options.first().focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(options.nth(1)).toBeFocused()
+
+  await page.keyboard.press('End')
+  await expect(options.nth(2)).toHaveAttribute('aria-selected', 'true')
+  await expect(options.nth(2)).toBeFocused()
+  await page.keyboard.press('Home')
+  await expect(options.first()).toHaveAttribute('aria-selected', 'true')
+  await expect(options.first()).toBeFocused()
+
+  // Arrows continue from the selection, not from where focus used to be.
+  await page.keyboard.press('ArrowRight')
+  await expect(options.nth(1)).toBeFocused()
+  await expect(options.nth(1)).toHaveAccessibleName(/^tall-silent, /)
+
+  await page.keyboard.press('Delete')
+  await expect(options).toHaveCount(2)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(options).toHaveCount(3)
+  await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true')
+  await expect(options.nth(1)).toBeFocused()
+})
+
+test('focus follows an Advanced selection restored by undo', async ({ page }) => {
+  await page.goto('/splicer/')
+  await page.getByRole('tab', { name: 'Advanced' }).click()
+  await page.locator('input[type="file"]').setInputFiles([tiny, tall])
+  const clips = page.getByRole('listbox', { name: 'Track 1 clips' }).getByRole('option')
+  await expect(clips).toHaveCount(2)
+
+  await clips.first().focus()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Delete')
+  await expect(clips).toHaveCount(1)
+  await expect(clips.first()).toBeFocused()
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(clips).toHaveCount(2)
+  await expect(clips.first()).toHaveAttribute('aria-selected', 'true')
+  await expect(clips.first()).toBeFocused()
+})
