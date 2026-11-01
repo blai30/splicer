@@ -48,6 +48,7 @@ function job(overrides: Partial<ExportJob> = {}): ExportJob {
     container: 'webm',
     videoCodec: 'vp9',
     audioCodec: 'opus',
+    videoMode: 'encode',
     ...overrides,
   }
 }
@@ -181,5 +182,139 @@ describe('outputDimensions with mixed aspect ratios', () => {
     )
     expect(plan.outputWidth).toBe(640)
     expect(plan.outputHeight).toBe(360)
+  })
+})
+
+describe('buildEditPlan source-aware bitrate', () => {
+  const lowBitrateSource = source({
+    width: 1280,
+    height: 720,
+    videoBitrate: 304_000,
+    videoCodec: 'avc',
+    audioBitrate: 128_000,
+    audioCodec: 'aac',
+    durationSec: 6,
+    file: new File([new Uint8Array(323_000)], 'low.mp4', { type: 'video/mp4' }),
+  })
+  const mp4Job = (overrides: Partial<ExportJob> = {}) =>
+    job({
+      sources: [lowBitrateSource],
+      slices: [slice({ sourceEnd: 6 })],
+      format: 'mp4',
+      container: 'mp4',
+      videoCodec: 'avc',
+      audioCodec: 'aac',
+      ...overrides,
+    })
+
+  it('keeps every preset below Maximum at or under the source bitrate', () => {
+    for (const quality of ['high', 'medium', 'low'] as const) {
+      expect(buildEditPlan(mp4Job({ quality })).videoBitrate).toBeLessThanOrEqual(304_000)
+    }
+    expect(buildEditPlan(mp4Job({ quality: 'low' })).videoBitrate).toBe(Math.round(304_000 * 0.35))
+  })
+
+  it('scales the source bitrate down with the picture when a crop is shown at its own size', () => {
+    const crop = { x: 0, y: 0, width: 640, height: 360 }
+    const plan = buildEditPlan(mp4Job({ slices: [slice({ sourceEnd: 6, crop })] }))
+    expect(plan.outputWidth).toBe(640)
+    expect(plan.videoBitrate).toBe(76_000)
+  })
+
+  it('counts only the letterboxed picture area of a mismatched slice', () => {
+    const vertical = source({ width: 720, height: 1280, videoBitrate: 304_000 })
+    const plan = buildEditPlan(
+      mp4Job({
+        sources: [lowBitrateSource, vertical],
+        slices: [slice({ sourceEnd: 3 }), slice({ sourceIndex: 1, sourceEnd: 3 })],
+      })
+    )
+    // The vertical clip fills (720/1280)^2 of its own pixels in a 1280x720 frame.
+    const verticalShare = 304_000 * (720 / 1280) ** 2
+    expect(plan.videoBitrate).toBe(Math.round((304_000 + verticalShare) / 2))
+  })
+
+  it('caps audio at the source rate', () => {
+    expect(buildEditPlan(mp4Job({ quality: 'high' })).audioBitrate).toBe(128_000)
+    const quiet = source({ ...lowBitrateSource, audioBitrate: 64_000 })
+    expect(buildEditPlan(mp4Job({ sources: [quiet] })).audioBitrate).toBe(64_000)
+  })
+
+  it('ignores muted slices for the audio cap', () => {
+    const rich = source({ audioBitrate: 256_000, audioCodec: 'aac', videoBitrate: 1_000_000 })
+    const quiet = source({ audioBitrate: 48_000, audioCodec: 'aac', videoBitrate: 1_000_000 })
+    const plan = buildEditPlan(
+      mp4Job({
+        sources: [rich, quiet],
+        slices: [slice({ muted: true }), slice({ sourceIndex: 1 })],
+      })
+    )
+    expect(plan.audioBitrate).toBe(48_000)
+  })
+
+  it('records the size basis for the estimate', () => {
+    const plan = buildEditPlan(mp4Job({ slices: [slice({ sourceStart: 0, sourceEnd: 3 })] }))
+    expect(plan.sizeBasis.durationSec).toBe(3)
+    expect(plan.sizeBasis.sourceBytes).toBe(161_500)
+    expect(plan.sizeBasis.sourceEquivalent?.raw).toBe(304_000)
+    expect(plan.sizeBasis.frameRate).toBe(30)
+  })
+
+  it('falls back to the table when a source has no bitrate', () => {
+    const plan = buildEditPlan(mp4Job({ sources: [source({ width: 1280, height: 720 })] }))
+    expect(plan.sizeBasis.sourceEquivalent).toBeNull()
+    expect(plan.videoBitrate).toBeGreaterThan(1_000_000)
+  })
+})
+
+describe('buildEditPlan resolution and target size', () => {
+  it('caps the output at the chosen resolution, keeping the aspect ratio', () => {
+    const plan = buildEditPlan(job({ maxShortSide: 360 }))
+    expect(plan.outputWidth).toBe(640)
+    expect(plan.outputHeight).toBe(360)
+    // The bitrate follows the smaller picture.
+    expect(plan.videoBitrate).toBeLessThan(buildEditPlan(job()).videoBitrate)
+  })
+
+  it('never upscales past the source', () => {
+    const plan = buildEditPlan(
+      job({ sources: [source({ width: 640, height: 360 })], maxShortSide: 1080 })
+    )
+    expect(plan.outputHeight).toBe(360)
+  })
+
+  it('aims a target size with constant bitrate on VP9', () => {
+    const plan = buildEditPlan(job({ targetBytes: 2_000_000, slices: [slice({ sourceEnd: 10 })] }))
+    expect(plan.targetFit?.feasible).toBe(true)
+    expect(plan.bitrateMode).toBe('constant')
+    expect(plan.videoBitrate).toBe(plan.targetFit?.videoBitrate)
+    expect(plan.audioBitrate).toBe(plan.targetFit?.audioBitrate)
+    const bytes = ((plan.videoBitrate + plan.audioBitrate) * 10) / 8
+    expect(bytes).toBeLessThan(2_000_000)
+    expect(bytes).toBeGreaterThan(2_000_000 * 0.9)
+  })
+
+  it('keeps variable bitrate for H.264 and for quality presets', () => {
+    expect(buildEditPlan(job()).bitrateMode).toBe('variable')
+    expect(
+      buildEditPlan(
+        job({ targetBytes: 2_000_000, container: 'mp4', videoCodec: 'avc', audioCodec: 'aac' })
+      ).bitrateMode
+    ).toBe('variable')
+  })
+
+  it('shrinks and drops frames when the target leaves too few bits', () => {
+    const plan = buildEditPlan(
+      job({
+        sources: [source({ hasAudio: false })],
+        slices: [slice({ sourceEnd: 60 })],
+        fps: '30',
+        targetBytes: 2_000_000,
+      })
+    )
+    expect(plan.outputHeight).toBe(360)
+    expect(plan.frameRate).toBe(24)
+    expect(plan.frameDurationUs).toBe(Math.round(1_000_000 / 24))
+    expect(plan.nominalFrameRate).toBe(24)
   })
 })

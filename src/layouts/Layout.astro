@@ -45,7 +45,6 @@ const webAppJsonLd = {
         document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
       })()
     </script>
-    <script is:inline src={assetPath('coi-serviceworker.min.js')}></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link
@@ -54,6 +53,8 @@ const webAppJsonLd = {
       href={assetPath('brand/logo-mark.svg')}
     />
     <link rel="icon" href={assetPath('favicon.ico')} sizes="32x32" />
+    <link rel="manifest" href={assetPath('manifest.webmanifest')} />
+    <link rel="apple-touch-icon" href={assetPath('brand/apple-touch-icon.png')} />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
     <meta name="description" content={description} />

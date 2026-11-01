@@ -1,6 +1,15 @@
 import clsx from 'clsx/lite'
-import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Crop } from 'lucide-preact'
+import {
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowUp,
+  ArrowUpToLine,
+  Crop,
+  Expand,
+  Shrink,
+} from 'lucide-preact'
 
+import { placementChanges, plannedPlacement, placeInOutput } from '@/lib/advanced/canvasPlacement'
 import { bringForward, bringToFront, sendBackward, sendToBack } from '@/lib/advanced/zOrder'
 import { advancedSegments, advancedSelectedId } from '@/lib/store'
 
@@ -20,6 +29,15 @@ export function AdvancedSelectionToolbar({
 
   function run(action: (id: string) => void) {
     if (selectedId) action(selectedId)
+  }
+
+  // Disabled when the clip already sits that way (a lone clip in Auto is its
+  // own frame, so there is nothing to fit to).
+  const selectedSegment = advancedSegments.value.find((segment) => segment.id === selectedId)
+  function placementAvailable(mode: 'fit' | 'fill'): boolean {
+    if (!selectedSegment) return false
+    const placement = plannedPlacement(selectedSegment.id, mode)
+    return placement !== null && placementChanges(selectedSegment, placement)
   }
 
   return (
@@ -68,6 +86,25 @@ export function AdvancedSelectionToolbar({
       >
         <Crop class="h-4 w-4" />
         {cropMode ? 'Done' : 'Crop'}
+      </button>
+      <span class="mx-0.5 h-4 w-px bg-slate-300 dark:bg-slate-700" aria-hidden="true" />
+      <button
+        class={BUTTON}
+        disabled={!placementAvailable('fit')}
+        onClick={() => run((id) => placeInOutput(id, 'fit'))}
+        title="Scale the clip to fit inside the output frame, keeping its shape"
+      >
+        <Shrink class="h-4 w-4" />
+        Fit to output
+      </button>
+      <button
+        class={BUTTON}
+        disabled={!placementAvailable('fill')}
+        onClick={() => run((id) => placeInOutput(id, 'fill'))}
+        title="Cover the whole output frame, cropping the clip's edges instead of stretching it"
+      >
+        <Expand class="h-4 w-4" />
+        Fill output
       </button>
     </div>
   )

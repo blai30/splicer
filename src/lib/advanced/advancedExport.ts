@@ -1,7 +1,8 @@
 import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
 import { computeExportBounds } from '@/lib/advanced/exportLayout'
 import { selectCodecs } from '@/lib/exportCodecs'
-import { runExportWorker } from '@/lib/exportRunner'
+import { encodeQuality, outputSizing, type SizingOptions } from '@/lib/exportEngine'
+import { runExportWorker, type ExportOutput } from '@/lib/exportRunner'
 import {
   advancedOutputLock,
   advancedSegments,
@@ -15,19 +16,30 @@ import {
   type AdvancedSegment,
   type ExportFormat,
   type Framerate,
-  type Quality,
+  type QualityChoice,
 } from '@/lib/types'
+import { buildCompositorPlan } from '@/lib/webcodecs/compositorPlan'
 import type { CompositorJob } from '@/lib/webcodecs/compositorProtocol'
-import type { JobSource } from '@/lib/webcodecs/protocol'
+import { jobSourceFromClip, type JobSource } from '@/lib/webcodecs/protocol'
+
+// A hidden track turns its video off; its audio still plays (as in preview).
+export function visibleAdvancedSegments(segments: AdvancedSegment[]): AdvancedSegment[] {
+  const hiddenTrackIds = new Set(
+    advancedTracks.value.filter((track) => track.hidden).map((track) => track.id)
+  )
+  return segments.filter((segment) => !hiddenTrackIds.has(segment.trackId))
+}
 
 // Resolve the Advanced project into a serializable compositor job. One source
 // per distinct clip; each segment becomes a layer referencing its source.
-// Returns null when any clip is missing.
+// Returns null when any clip is missing. Compositing always re-encodes, so
+// Original encodes at High.
 export function buildCompositorJob(
   segments: AdvancedSegment[],
   format: ExportFormat,
-  quality: Quality,
-  fps: Framerate
+  quality: QualityChoice,
+  fps: Framerate,
+  options: SizingOptions = {}
 ): CompositorJob | null {
   const sources: JobSource[] = []
   const indexByClip = new Map<string, number>()
@@ -40,26 +52,16 @@ export function buildCompositorJob(
     if (sourceIndex === undefined) {
       sourceIndex = sources.length
       indexByClip.set(clipId, sourceIndex)
-      sources.push({
-        file: clip.file,
-        width: clip.width,
-        height: clip.height,
-        hasAudio: clip.hasAudio !== false,
-        frameRate: clip.frameRate,
-      })
+      sources.push(jobSourceFromClip(clip))
     }
     return sourceIndex
   }
 
-  const hiddenTrackIds = new Set(
-    advancedTracks.value.filter((track) => track.hidden).map((track) => track.id)
-  )
   const mutedTrackIds = new Set(
     advancedTracks.value.filter((track) => track.muted).map((track) => track.id)
   )
 
-  // A hidden track turns its video off; its audio still plays (as in preview).
-  const visibleSegments = segments.filter((segment) => !hiddenTrackIds.has(segment.trackId))
+  const visibleSegments = visibleAdvancedSegments(segments)
 
   const exportBounds = computeExportBounds(visibleSegments, advancedOutputLock.value)
   if (!exportBounds) return null
@@ -74,10 +76,12 @@ export function buildCompositorJob(
       sourceEnd: segment.sourceEnd,
       timelineStart: segment.timelineStart,
       trackId: segment.trackId,
-      transform: exportBounds.mapTransform(segment.transform),
+      transform: exportBounds.mapSegment(segment),
       crop: segment.crop,
       muted: segment.muted === true,
       opacity: segment.opacity ?? 1,
+      fadeIn: segment.fadeIn,
+      fadeOut: segment.fadeOut,
     })
   }
 
@@ -94,6 +98,8 @@ export function buildCompositorJob(
       sourceEnd: segment.sourceEnd,
       timelineStart: segment.timelineStart,
       volume,
+      fadeIn: segment.fadeIn,
+      fadeOut: segment.fadeOut,
     })
   }
 
@@ -105,7 +111,8 @@ export function buildCompositorJob(
     audioLayers,
     durationSec: projectDuration(segments),
     tracksOrder: advancedTracks.value.map((track) => track.id),
-    quality,
+    quality: encodeQuality(quality),
+    ...outputSizing(quality, options),
     fps,
     format,
     container: selection.container,
@@ -116,25 +123,27 @@ export function buildCompositorJob(
 
 export async function runAdvancedExport(
   format: ExportFormat,
-  quality: Quality,
-  fps: Framerate
-): Promise<{ url: string; size: number; width: number; height: number; duration: number }> {
+  quality: QualityChoice,
+  fps: Framerate,
+  options: SizingOptions = {}
+): Promise<ExportOutput & { width: number; height: number; duration: number }> {
   const segments = advancedSegments.value
   if (segments.length === 0) throw new Error('Nothing to export: add a clip first')
   const duration = projectDuration(segments)
 
-  const job = buildCompositorJob(segments, format, quality, fps)
+  const job = buildCompositorJob(segments, format, quality, fps, options)
   if (!job) {
     throw new Error(
       'Nothing visible to export, or a placed clip is no longer available. Check hidden tracks.'
     )
   }
 
+  const plan = buildCompositorPlan(job)
   const result = await runExportWorker(
     () =>
       new Worker(new URL('../webcodecs/compositorWorker.ts', import.meta.url), { type: 'module' }),
     job,
     MIME_TYPES[job.format]
   )
-  return { ...result, width: job.canvas.width, height: job.canvas.height, duration }
+  return { ...result, width: plan.outputWidth, height: plan.outputHeight, duration }
 }

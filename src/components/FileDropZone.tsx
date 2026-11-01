@@ -2,8 +2,14 @@ import { useSignal } from '@preact/signals'
 import { Upload } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { consumeLaunchedFiles, type LaunchQueue } from '@/lib/launchQueue'
 import { appMode } from '@/lib/store'
-import { importFiles, importFilesIntoAdvanced } from '@/lib/videoImport'
+import { importFiles, importFilesIntoAdvanced, prefetchMediaProbe } from '@/lib/videoImport'
+
+function importIntoActiveEditor(files: File[]) {
+  if (appMode.value === 'advanced') void importFilesIntoAdvanced(files)
+  else void importFiles(files)
+}
 
 function hasFiles(event: DragEvent): boolean {
   return [...(event.dataTransfer?.types ?? [])].includes('Files')
@@ -17,9 +23,20 @@ export function FileDropZone() {
   const depth = useRef(0)
 
   useEffect(() => {
+    // Warm the video reader once the page settles, so the first import does
+    // not wait on it; a drag that arrives earlier warms it too.
+    const idleHandle =
+      typeof requestIdleCallback === 'function'
+        ? requestIdleCallback(prefetchMediaProbe, { timeout: 5000 })
+        : window.setTimeout(prefetchMediaProbe, 2000)
+
+    // Videos opened from the OS with the installed app.
+    consumeLaunchedFiles(window as { launchQueue?: LaunchQueue }, importIntoActiveEditor)
+
     function onDragEnter(event: DragEvent) {
       if (!hasFiles(event)) return
       event.preventDefault()
+      prefetchMediaProbe()
       depth.current += 1
       draggingOver.value = true
     }
@@ -42,9 +59,7 @@ export function FileDropZone() {
       event.preventDefault()
       depth.current = 0
       draggingOver.value = false
-      const files = Array.from(event.dataTransfer?.files ?? [])
-      if (appMode.value === 'advanced') void importFilesIntoAdvanced(files)
-      else void importFiles(files)
+      importIntoActiveEditor(Array.from(event.dataTransfer?.files ?? []))
     }
 
     window.addEventListener('dragenter', onDragEnter)
@@ -52,6 +67,8 @@ export function FileDropZone() {
     window.addEventListener('dragleave', onDragLeave)
     window.addEventListener('drop', onDrop)
     return () => {
+      if (typeof cancelIdleCallback === 'function') cancelIdleCallback(idleHandle)
+      else window.clearTimeout(idleHandle)
       window.removeEventListener('dragenter', onDragEnter)
       window.removeEventListener('dragover', onDragOver)
       window.removeEventListener('dragleave', onDragLeave)

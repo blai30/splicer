@@ -1,11 +1,14 @@
 import { batch, signal } from '@preact/signals'
 
+import { liveSelection } from '@/lib/advanced/advancedSelection'
 import { collectUnusedClips, registerClipReferences } from '@/lib/clipPool'
+import { createCoalescingHistory } from '@/lib/coalescingHistory'
 import {
   advancedOutputLock,
   advancedSegments,
-  advancedSelectedId,
+  advancedSelection,
   advancedTracks,
+  type AdvancedSelection,
 } from '@/lib/store'
 import type { AdvancedSegment, CanvasSize, Track } from '@/lib/types'
 
@@ -19,7 +22,7 @@ const HISTORY_LIMIT = 50
 type AdvancedHistoryEntry = {
   segments: AdvancedSegment[]
   tracks: Track[]
-  selectedId: string | null
+  selection: AdvancedSelection
   outputLock: CanvasSize | null
 }
 
@@ -29,7 +32,12 @@ const redoHistory: AdvancedHistoryEntry[] = []
 export const canUndoAdvanced = signal(false)
 export const canRedoAdvanced = signal(false)
 
+// Bumped whenever either stack changes, so coalesced edits can tell whether
+// anything else was recorded since their last entry.
+let historyGeneration = 0
+
 function syncHistoryFlags() {
+  historyGeneration += 1
   canUndoAdvanced.value = history.length > 0
   canRedoAdvanced.value = redoHistory.length > 0
 }
@@ -46,7 +54,7 @@ function captureEntry(): AdvancedHistoryEntry {
   return {
     segments: advancedSegments.value,
     tracks: advancedTracks.value,
-    selectedId: advancedSelectedId.value,
+    selection: advancedSelection.value,
     outputLock: advancedOutputLock.value,
   }
 }
@@ -60,6 +68,12 @@ export function recordAdvancedHistory() {
   syncHistoryFlags()
   queueCollect()
 }
+
+// One undo entry per burst of repeated small edits sharing `key` (nudges).
+export const recordAdvancedHistoryCoalesced = createCoalescingHistory({
+  record: recordAdvancedHistory,
+  generation: () => historyGeneration,
+})
 
 // Collect after the caller's mutation lands (it runs synchronously right after
 // recordAdvancedHistory), so clips the new state references are kept.
@@ -100,6 +114,14 @@ export function beginAdvancedGesture() {
   }
 }
 
+// One undo entry for a property edit: the whole drag while a pointer gesture
+// is armed (a slider drag), otherwise one per burst of repeats sharing `key`
+// (arrow keys on a slider, nudges).
+export function recordAdvancedEdit(key: string) {
+  if (gestureActive) consumeAdvancedGesture()
+  else recordAdvancedHistoryCoalesced(key)
+}
+
 export function consumeAdvancedGesture() {
   if (gesturePending) {
     gesturePending = false
@@ -123,10 +145,7 @@ function restoreEntry(entry: AdvancedHistoryEntry) {
     advancedSegments.value = entry.segments
     advancedTracks.value = entry.tracks
     advancedOutputLock.value = entry.outputLock
-    advancedSelectedId.value =
-      entry.selectedId && entry.segments.some((segment) => segment.id === entry.selectedId)
-        ? entry.selectedId
-        : null
+    advancedSelection.value = liveSelection(entry.selection, entry.segments)
   })
 }
 
@@ -150,6 +169,20 @@ export function redoAdvanced() {
   restoreEntry(entry)
   syncHistoryFlags()
   collectUnusedClips()
+}
+
+// Rewrite the segments of every snapshot on both stacks, given each
+// snapshot's tracks. A relink uses it: the relinked segments belonged to the
+// project all along, so no undo or redo step may drop them again.
+export function rebaseAdvancedHistory(
+  transform: (segments: AdvancedSegment[], tracks: Track[]) => AdvancedSegment[]
+) {
+  const rebase = (entry: AdvancedHistoryEntry): AdvancedHistoryEntry => ({
+    ...entry,
+    segments: transform(entry.segments, entry.tracks),
+  })
+  history.splice(0, history.length, ...history.map(rebase))
+  redoHistory.splice(0, redoHistory.length, ...redoHistory.map(rebase))
 }
 
 // Clears both stacks and any armed gesture. Used by tests for isolation.

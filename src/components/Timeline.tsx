@@ -1,7 +1,15 @@
+import type { ReadonlySignal } from '@preact/signals'
+import { useComputed } from '@preact/signals'
 import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Maximize2,
+  RotateCcw,
+  Volume2,
   Scissors,
   Plus,
   Redo2,
@@ -14,112 +22,180 @@ import {
 } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu'
 import { SegmentBlock } from '@/components/SegmentBlock'
+import { TimelinePlayhead } from '@/components/TimelinePlayhead'
+import { TimeRuler } from '@/components/TimeRuler'
+import {
+  type ScrollWindow,
+  useScrollWindow,
+  useTimelineNavigation,
+} from '@/components/useTimelineNavigation'
 import { ZoomSlider } from '@/components/ZoomSlider'
-import { seek } from '@/lib/playback'
+import { placeReadout } from '@/lib/advanced/advancedTimelineDomain'
+import { editNotice } from '@/lib/editNotice'
+import { formatPreciseTime } from '@/lib/format'
+import { beginScrub, endScrub, seek } from '@/lib/playback'
+import { seekBasicByKey } from '@/lib/seekKeys'
 import {
   GAP_PX,
   PADDING_PX,
   ZOOM_MAX,
   ZOOM_MIN,
   dragState,
+  getClipById,
   playheadTime,
   pxPerSec,
+  segmentMenu,
   selectedSegmentId,
   timeline,
+  transportRunning,
+  trimFeedback,
 } from '@/lib/store'
 import {
-  computeZoomScroll,
-  createPlayheadDragHandler,
   buildSegmentLayout,
-  createTrackSeekHandler,
+  createScrubHandler,
+  cutMarkerXs,
+  globalTimeToX,
+  MIN_SEGMENT_DURATION,
+  layoutDuration,
+  playheadXInLayout,
+  trackXToHit,
+  viewportToTrackX,
+  xToGlobalTime,
+  globalTimeOf,
 } from '@/lib/timelineDomain'
 import {
   canRedo,
   canUndo,
   cutAtPlayhead,
   deleteSegment,
+  duplicateSegment,
+  isSegmentTrimmed,
+  moveSegment,
   redo,
+  resetSegmentTrim,
   setInPoint,
   setOutPoint,
+  splitSegmentAt,
   toggleMute,
   undo,
 } from '@/lib/timelineEditing'
+import { rovingTabStop } from '@/lib/timelineKeyboard'
+import {
+  fitZoomWithMinWidth,
+  formatZoom,
+  MIN_BLOCK_WIDTH_PX,
+  ZOOM_STEP_FACTOR,
+} from '@/lib/timelineNavigation'
+import type { Segment, SegmentLayoutItem } from '@/lib/types'
 import { FILE_INPUT_ACCEPT, importFiles } from '@/lib/videoImport'
 
-const ZOOM_SCALE_FACTOR = 1.25
+function layoutAt(segments: Segment[], zoom: number) {
+  return buildSegmentLayout(segments, zoom, GAP_PX, PADDING_PX, MIN_BLOCK_WIDTH_PX)
+}
 
 export function Timeline() {
   const trackRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const trackSeekHandlerRef = useRef<ReturnType<typeof createTrackSeekHandler> | null>(null)
-  const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
+  const scrubHandlerRef = useRef<ReturnType<typeof createScrubHandler> | null>(null)
 
-  const activeSegmentId = selectedSegmentId.value ?? timeline.value[0]?.id
+  const layoutSignal = useComputed(() => layoutAt(timeline.value, pxPerSec.value))
+  // Read only by the playhead leaf and the follow effect: the timeline itself
+  // must not subscribe to the per-frame playhead time.
+  const playheadX = useComputed(() =>
+    playheadXInLayout(
+      layoutSignal.value,
+      selectedSegmentId.value ?? timeline.value[0]?.id,
+      playheadTime.value,
+      PADDING_PX
+    )
+  )
+  // The playhead's place on the whole edited timeline, for its slider value.
+  const playheadGlobalTime = useComputed(() => {
+    const segments = timeline.value
+    const activeId = selectedSegmentId.value ?? segments[0]?.id
+    return activeId ? (globalTimeOf(segments, activeId, playheadTime.value) ?? 0) : 0
+  })
+  const isEmpty = useComputed(() => timeline.value.length === 0)
+  const layout = layoutSignal.value
   const segments = timeline.value
-  // Build layout once per render to avoid repeated O(n) scans.
-  const layout = buildSegmentLayout(segments, pxPerSec.value, GAP_PX, PADDING_PX)
-  const activeLayout = layout.find((layoutItem) => layoutItem.segment.id === activeSegmentId)
-  const playheadLeft = activeLayout
-    ? activeLayout.startX + (playheadTime.value - activeLayout.segment.startTime) * pxPerSec.value
-    : PADDING_PX
+  const totalDuration = layoutDuration(layout)
+  const tabStopId = rovingTabStop(
+    segments.map((segment) => segment.id),
+    (id) => id === selectedSegmentId.value
+  )
+  const scrollWindow = useScrollWindow(trackRef)
+  const { zoomTo, zoomStep, fit } = useTimelineNavigation({
+    scrollRef: trackRef,
+    geometry: {
+      timeToX: (time, zoom) => globalTimeToX(layoutAt(segments, zoom), time),
+      xToTime: (x, zoom) => xToGlobalTime(layoutAt(segments, zoom), x),
+      fitZoom: (viewWidth) =>
+        fitZoomWithMinWidth(
+          viewWidth - 2 * PADDING_PX - GAP_PX * Math.max(0, segments.length - 1),
+          segments.map((segment) => segment.endTime - segment.startTime),
+          MIN_BLOCK_WIDTH_PX
+        ),
+    },
+    playheadX,
+    // Reverse shuttle moves the playhead too.
+    playing: transportRunning,
+    isEmpty,
+  })
 
-  function onTrackPointerDown(event: PointerEvent) {
-    if (!trackRef.current) return
-    if (timeline.value.length === 0) return
-    // Ignore clicks on playhead and segment containers
-    if ((event.target as HTMLElement).closest('[data-playhead]')) return
-    if ((event.target as HTMLElement).closest('[data-segment]')) return
-
-    // Create and cache handler for this drag session
-    trackSeekHandlerRef.current = createTrackSeekHandler({
-      timeline: timeline.value,
-      pxPerSec: pxPerSec.value,
-      padding: PADDING_PX,
-      gap: GAP_PX,
-      trackElement: trackRef.current,
+  // Every press that moves the playhead (ruler, playhead, empty track) runs
+  // the same scrub, which crosses cuts and resolves gaps to the nearest edge.
+  function startScrub(event: PointerEvent, seekOnPress: boolean) {
+    const track = trackRef.current
+    if (!track) return
+    scrubHandlerRef.current?.cleanup()
+    beginScrub()
+    scrubHandlerRef.current = createScrubHandler({
+      trackElement: track,
+      getLayout: () => layoutSignal.peek(),
       onSeek(segmentId, time) {
         selectedSegmentId.value = segmentId
         seek(time)
       },
-    })
-
-    trackSeekHandlerRef.current.onPointerDown(event)
-  }
-
-  function onPlayheadPointerDown(event: PointerEvent) {
-    if (!activeLayout || !trackRef.current) return
-
-    // Create and cache handler for this drag session using precomputed layout
-    playheadDragHandlerRef.current = createPlayheadDragHandler({
-      segment: activeLayout.segment,
-      segmentStartX: activeLayout.startX,
-      pxPerSec: pxPerSec.value,
-      trackElement: trackRef.current,
-      onUpdate(time) {
-        seek(time)
+      onEnd() {
+        scrubHandlerRef.current = null
+        endScrub()
       },
     })
-
-    playheadDragHandlerRef.current.onPointerDown(event)
+    scrubHandlerRef.current.onPointerDown(event, seekOnPress)
   }
 
-  function zoomTo(newPx: number, anchorX?: number) {
+  // Right-click (or long-press) anywhere on the track opens the menu of the
+  // segment under the pointer (the playhead or ruler may be on top of it) and
+  // moves the playhead there, so "Split here" splits where it was opened.
+  function onTrackContextMenu(event: MouseEvent) {
+    // Shift+F10 or the Menu key already opened the menu for the selection;
+    // the browser's follow-up event (claimed then) must not re-target it.
+    if (event.defaultPrevented) return
     const track = trackRef.current
     if (!track) return
-    const oldPx = pxPerSec.value
-    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
+    const x = viewportToTrackX(event.clientX, track.getBoundingClientRect(), track.scrollLeft)
+    const hit = trackXToHit(layoutSignal.peek(), x)
+    if (!hit) return
+    event.preventDefault()
+    selectedSegmentId.value = hit.segment.id
+    seek(hit.time)
+    segmentMenu.value = {
+      segmentId: hit.segment.id,
+      time: hit.time,
+      x: event.clientX,
+      y: event.clientY,
+    }
+  }
 
-    if (clamped === oldPx) return
-    // Keep the time under the cursor fixed. The target scroll is applied after
-    // the re-render widens the content; set now, the browser would clamp it to
-    // the old, narrower scroll range.
-    const target =
-      anchorX === undefined
-        ? null
-        : computeZoomScroll(oldPx, clamped, anchorX, track.scrollLeft, PADDING_PX)
-    pxPerSec.value = clamped
-    if (target !== null) requestAnimationFrame(() => (track.scrollLeft = Math.max(0, target)))
+  function onTrackPointerDown(event: PointerEvent) {
+    if (timeline.value.length === 0) return
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    // Blocks handle their own presses (select, reorder, trim).
+    if (target.closest('[data-segment]')) return
+    startScrub(event, !target.closest('[data-playhead]'))
   }
 
   function applyZoomInput(input: HTMLInputElement) {
@@ -127,17 +203,11 @@ export function Timeline() {
     const value = Number(raw)
     if (raw !== '' && Number.isFinite(value)) zoomTo(value)
     // Always show the zoom actually in effect (clamped, or unchanged on bad input).
-    input.value = String(Math.round(pxPerSec.value))
+    input.value = formatZoom(pxPerSec.value)
   }
 
-  // Cleanup any pending drag handlers on unmount
-  useEffect(
-    () => () => {
-      trackSeekHandlerRef.current?.cleanup()
-      playheadDragHandlerRef.current?.cleanup()
-    },
-    []
-  )
+  // End a scrub still in progress on unmount.
+  useEffect(() => () => scrubHandlerRef.current?.cleanup(), [])
 
   function onWheel(event: WheelEvent) {
     if (!trackRef.current) return
@@ -145,7 +215,7 @@ export function Timeline() {
       event.preventDefault()
       const rect = trackRef.current.getBoundingClientRect()
       const anchorX = event.clientX - rect.left
-      const factor = event.deltaY > 0 ? 1 / ZOOM_SCALE_FACTOR : ZOOM_SCALE_FACTOR
+      const factor = event.deltaY > 0 ? 1 / ZOOM_STEP_FACTOR : ZOOM_STEP_FACTOR
       zoomTo(pxPerSec.value * factor, anchorX)
     } else if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
       event.preventDefault()
@@ -160,13 +230,12 @@ export function Timeline() {
     await importFiles(files)
   }
 
-  const isEmpty = timeline.value.length === 0
   const selectedSegment = timeline.value.find((segment) => segment.id === selectedSegmentId.value)
   const disabled = !selectedSegment
 
   return (
     <div
-      class="relative flex h-64 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur transition-colors hover:duration-0 md:h-48 dark:border-slate-700/60 dark:bg-slate-900/40"
+      class="relative flex min-h-64 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur transition-colors hover:duration-0 md:h-48 md:min-h-0 dark:border-slate-700/60 dark:bg-slate-900/40"
       onWheel={onWheel}
     >
       {/* Header */}
@@ -244,7 +313,7 @@ export function Timeline() {
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
               )}
               disabled={disabled}
-              onClick={toggleMute}
+              onClick={() => toggleMute()}
               title="Toggle mute on selected segment (M)"
               aria-label="Toggle mute on selected segment"
             >
@@ -255,7 +324,7 @@ export function Timeline() {
             <button
               class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
               disabled={disabled}
-              onClick={deleteSegment}
+              onClick={() => deleteSegment()}
               title="Delete segment (Delete)"
               aria-label="Delete selected segment"
             >
@@ -263,25 +332,36 @@ export function Timeline() {
               Delete
             </button>
           </div>
+          {/* On phones the zoom-out/in buttons give way to the slider and Fit,
+              so the toolbar keeps its rows and the track keeps room for the clips. */}
           <div class="flex shrink-0 items-center gap-2 md:gap-3">
             <button
-              onClick={() => zoomTo(pxPerSec.value - 10)}
-              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
+              onClick={() => fit()}
+              disabled={isEmpty.value}
+              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-500 dark:hover:text-slate-300"
+              title="Fit timeline to view (Shift+Z)"
+              aria-label="Fit timeline to view"
+            >
+              <Maximize2 class="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => zoomStep(-1)}
+              class="hidden text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 md:block dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom out"
+              aria-label="Zoom out"
             >
               <ZoomOut class="h-3.5 w-3.5" />
             </button>
             <ZoomSlider
               class="w-16 md:w-28"
               value={pxPerSec.value}
-              min={ZOOM_MIN}
-              max={ZOOM_MAX}
-              onChange={zoomTo}
+              onChange={(zoom) => zoomTo(zoom)}
             />
             <button
-              onClick={() => zoomTo(pxPerSec.value + 10)}
-              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
+              onClick={() => zoomStep(1)}
+              class="hidden text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 md:block dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom in"
+              aria-label="Zoom in"
             >
               <ZoomIn class="h-3.5 w-3.5" />
             </button>
@@ -290,7 +370,8 @@ export function Timeline() {
                 type="number"
                 min={ZOOM_MIN}
                 max={ZOOM_MAX}
-                value={Math.round(pxPerSec.value)}
+                step="any"
+                value={formatZoom(pxPerSec.value)}
                 onBlur={(event) => applyZoomInput(event.currentTarget as HTMLInputElement)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') applyZoomInput(event.currentTarget as HTMLInputElement)
@@ -307,16 +388,18 @@ export function Timeline() {
         </div>
       </div>
 
-      {/* Track */}
+      {/* Track. On phones the toolbar can wrap onto several rows, so the card
+          grows instead of squeezing the track below the ruler plus a clip. */}
       <div
         ref={trackRef}
         data-track
         role="region"
         aria-label="Timeline scrubber - click to seek, drag edges to trim segments"
-        class="relative min-h-0 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto overflow-y-hidden dark:scrollbar-thumb-slate-700"
+        class="relative min-h-30 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto overflow-y-hidden md:min-h-0 dark:scrollbar-thumb-slate-700"
         onPointerDown={onTrackPointerDown}
+        onContextMenu={onTrackContextMenu}
       >
-        {isEmpty ? (
+        {isEmpty.value ? (
           <div class="flex h-full items-center justify-center px-4 md:pb-5">
             <button
               type="button"
@@ -329,64 +412,104 @@ export function Timeline() {
           </div>
         ) : (
           <div class="relative flex h-full items-start gap-1 px-4 pt-12">
-            {(() => {
-              const dragStateValue = dragState.value
-              const segments = timeline.value
-              const fromIndex = dragStateValue
-                ? segments.findIndex((segment) => segment.id === dragStateValue.segmentId)
-                : -1
-              const result = []
-              for (let i = 0; i < segments.length; i++) {
+            <TimeRuler
+              class="absolute top-0 left-0 h-7"
+              width={(layout.at(-1)?.endX ?? 0) + PADDING_PX}
+              pxPerSec={pxPerSec.value}
+              endTime={totalDuration}
+              timeToX={(time) => globalTimeToX(layout, time)}
+              xToTime={(x) => xToGlobalTime(layout, x)}
+              scrollWindow={scrollWindow}
+              markerXs={cutMarkerXs(layout, GAP_PX)}
+            />
+            {/* The blocks form one listbox with a single tab stop on the
+                selection; arrow keys move it (see SegmentBlock). */}
+            <div
+              role="listbox"
+              aria-label="Segments"
+              aria-orientation="horizontal"
+              class="contents"
+            >
+              {(() => {
+                const dragStateValue = dragState.value
+                const fromIndex = dragStateValue
+                  ? segments.findIndex((segment) => segment.id === dragStateValue.segmentId)
+                  : -1
+                const result = []
+                for (let i = 0; i < segments.length; i++) {
+                  if (
+                    dragStateValue &&
+                    dragStateValue.dropIndex === i &&
+                    fromIndex !== i &&
+                    fromIndex + 1 !== i
+                  ) {
+                    result.push(
+                      <div
+                        key={`drop-${i}`}
+                        aria-hidden="true"
+                        class="pointer-events-none w-1 shrink-0 self-stretch rounded-full bg-violet-400"
+                      />
+                    )
+                  }
+                  const item = layout[i]
+                  result.push(
+                    <SegmentBlock
+                      key={segments[i].id}
+                      segment={segments[i]}
+                      isDragging={dragStateValue?.segmentId === segments[i].id}
+                      startX={item.startX}
+                      width={item.endX - item.startX}
+                      isTabStop={segments[i].id === tabStopId}
+                      scrollWindow={scrollWindow}
+                    />
+                  )
+                }
                 if (
                   dragStateValue &&
-                  dragStateValue.dropIndex === i &&
-                  fromIndex !== i &&
-                  fromIndex + 1 !== i
+                  dragStateValue.dropIndex === segments.length &&
+                  fromIndex !== segments.length - 1
                 ) {
                   result.push(
                     <div
-                      key={`drop-${i}`}
+                      key="drop-last"
+                      aria-hidden="true"
                       class="pointer-events-none w-1 shrink-0 self-stretch rounded-full bg-violet-400"
                     />
                   )
                 }
-                const item = layout[i]
-                result.push(
-                  <SegmentBlock
-                    key={segments[i].id}
-                    segment={segments[i]}
-                    isDragging={dragStateValue?.segmentId === segments[i].id}
-                    startX={item.startX}
-                    width={item.endX - item.startX}
-                  />
-                )
-              }
-              if (
-                dragStateValue &&
-                dragStateValue.dropIndex === segments.length &&
-                fromIndex !== segments.length - 1
-              ) {
-                result.push(
-                  <div
-                    key="drop-last"
-                    class="pointer-events-none w-1 shrink-0 self-stretch rounded-full bg-violet-400"
-                  />
-                )
-              }
-              return result
-            })()}
-            <div
-              data-playhead
-              class="absolute top-0 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize touch-none"
-              style={{ left: `${playheadLeft}px` }}
-              onPointerDown={onPlayheadPointerDown}
-            >
-              <div class="pointer-events-none absolute inset-x-0 top-0 bottom-0 flex justify-center">
-                <div class="h-full w-0.5 bg-violet-400" />
-              </div>
-              <div class="pointer-events-none absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1 rounded-full bg-violet-400" />
+                return result
+              })()}
             </div>
+            <TrimReadout layout={layout} scrollWindow={scrollWindow} />
+            <TimelinePlayhead
+              data-playhead
+              class="top-0"
+              x={playheadX}
+              slider={{
+                label: 'Playhead',
+                time: playheadGlobalTime,
+                duration: totalDuration,
+                onSeekKey: seekBasicByKey,
+              }}
+            />
           </div>
+        )}
+      </div>
+
+      <SegmentMenu />
+
+      {/* Why an edit did nothing; a live region, so it is announced too. */}
+      <div
+        role="status"
+        class="pointer-events-none absolute inset-x-0 bottom-3 z-50 flex justify-center px-4"
+      >
+        {editNotice.value && (
+          <span
+            data-edit-notice
+            class="rounded-md bg-slate-900/85 px-2.5 py-1 text-center text-sm text-white shadow backdrop-blur"
+          >
+            {editNotice.value}
+          </span>
         )}
       </div>
 
@@ -400,5 +523,125 @@ export function Timeline() {
         aria-label="Select video files to import into timeline"
       />
     </div>
+  )
+}
+
+// Readout chip and snap guide for the Basic trim drag in progress. A leaf, so
+// scrolling during the drag re-renders only this.
+function TrimReadout({
+  layout,
+  scrollWindow,
+}: {
+  layout: SegmentLayoutItem[]
+  scrollWindow: ReadonlySignal<ScrollWindow>
+}) {
+  const feedback = trimFeedback.value
+  if (!feedback) return null
+  const item = layout.find((entry) => entry.segment.id === feedback.segmentId)
+  if (!item) return null
+  const { segment } = item
+  const edgeX = feedback.side === 'start' ? item.startX : item.endX
+  const placement = placeReadout(edgeX, 0, scrollWindow.value)
+  const label = [
+    feedback.side === 'start'
+      ? `In ${formatPreciseTime(segment.startTime)}`
+      : `Out ${formatPreciseTime(segment.endTime)}`,
+    `Duration ${(segment.endTime - segment.startTime).toFixed(2)}s`,
+  ].join(' · ')
+
+  return (
+    <>
+      {feedback.snapped && (
+        <div
+          data-trim-snap-line
+          class="pointer-events-none absolute top-7 bottom-0 z-35 w-px -translate-x-1/2 bg-amber-400"
+          style={{ left: `${edgeX}px` }}
+        />
+      )}
+      <div
+        data-trim-readout
+        class={clsx(
+          'pointer-events-none absolute top-7 z-50 truncate rounded bg-slate-900/80 px-1.5 py-0.5 text-xs text-white tabular-nums shadow',
+          placement.alignEnd && '-translate-x-full'
+        )}
+        style={{
+          left: `${placement.edge}px`,
+          maxWidth: placement.maxWidth === null ? undefined : `${placement.maxWidth}px`,
+        }}
+      >
+        {label}
+      </div>
+    </>
+  )
+}
+
+// The right-click menu of the Basic segment it was opened on.
+function SegmentMenu() {
+  const menu = segmentMenu.value
+  if (!menu) return null
+  const segments = timeline.value
+  const index = segments.findIndex((segment) => segment.id === menu.segmentId)
+  if (index === -1) return null
+  const segment = segments[index]
+  // The point the menu was opened at, not the live playhead, which keeps
+  // moving while playback runs.
+  const canSplit =
+    menu.time - segment.startTime >= MIN_SEGMENT_DURATION &&
+    segment.endTime - menu.time >= MIN_SEGMENT_DURATION
+  const items: ContextMenuItem[] = [
+    {
+      label: 'Duplicate',
+      icon: Copy,
+      shortcut: { display: 'Ctrl D', aria: 'Control+D' },
+      run: () => duplicateSegment(segment.id),
+    },
+    {
+      label: 'Split here',
+      icon: Scissors,
+      shortcut: { display: 'C', aria: 'C' },
+      disabled: !canSplit,
+      run: () => splitSegmentAt(segment.id, menu.time),
+    },
+    {
+      label: 'Reset trim',
+      icon: RotateCcw,
+      disabled: !isSegmentTrimmed(segment),
+      run: () => resetSegmentTrim(segment.id),
+    },
+    {
+      label: segment.muted ? 'Unmute' : 'Mute',
+      icon: segment.muted ? Volume2 : VolumeX,
+      shortcut: { display: 'M', aria: 'M' },
+      run: () => toggleMute(segment.id),
+    },
+    {
+      label: 'Move left',
+      icon: ChevronLeft,
+      disabled: index === 0,
+      run: () => moveSegment(segment.id, -1),
+    },
+    {
+      label: 'Move right',
+      icon: ChevronRight,
+      disabled: index === segments.length - 1,
+      run: () => moveSegment(segment.id, 1),
+    },
+    {
+      label: 'Delete',
+      icon: Trash2,
+      shortcut: { display: 'Delete', aria: 'Delete' },
+      danger: true,
+      run: () => deleteSegment(segment.id),
+    },
+  ]
+  const name = getClipById(segment.clipId)?.name ?? 'Clip'
+  return (
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      label={`${name} segment actions`}
+      items={items}
+      onClose={() => (segmentMenu.value = null)}
+    />
   )
 }

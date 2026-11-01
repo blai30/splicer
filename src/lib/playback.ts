@@ -1,19 +1,31 @@
-import { effect } from '@preact/signals'
+import { batch, effect } from '@preact/signals'
 
 import {
   currentPlaybackTime,
   currentSegmentDuration,
   getClipById,
+  playbackRate,
   playing,
   playheadTime,
   previewMuted,
   previewVolume,
   selectedSegmentId,
+  shuttleRate,
   timeline,
 } from '@/lib/store'
+import {
+  createIntervalThrottler,
+  cutTimes,
+  globalTimeOf,
+  segmentAtGlobalTime,
+  totalDuration,
+} from '@/lib/timelineDomain'
 import type { Clip, Segment } from '@/lib/types'
 
 const DEFAULT_FRAME_RATE = 30
+// Shuttle speeds, in multiples of normal speed. Each further J or L press
+// moves one step faster in that direction.
+const SHUTTLE_SPEEDS = [1, 2, 4, 8]
 
 type ActiveSegmentInfo = {
   url: string
@@ -35,6 +47,21 @@ let pendingSeekTime: number | null = null
 // Set by the end-of-timeline reset so the next same-source sync rewinds even
 // when the position sits exactly on the segment's out-point.
 let rewindOnSync = false
+// Set when a scrub paused playback, so its release resumes it.
+let resumeAfterScrub = false
+// True while a trim drag previews its edge frame: the segment's range moves
+// under the position each step, and the drag, not the range clamp, decides
+// where the video rests.
+let edgePreviewActive = false
+// Seeking on every pointer frame queues more decoding than the element can
+// finish; about 30 seeks a second keep the preview responsive.
+const edgePreviewSeeks = createIntervalThrottler(33)
+// Reverse shuttle: browsers reject negative playbackRate, so reverse play is a
+// frame loop that seeks backwards. The position runs ahead of the video while
+// a seek is still decoding; the next free frame catches up.
+let reverseFrameId = 0
+let reverseLastMs: number | null = null
+let reversePosition = 0
 
 // play() rejects when interrupted by a later load() or when no source is set;
 // neither case should surface as an unhandled rejection.
@@ -56,8 +83,12 @@ function tickPlayhead() {
   if (!video) return
   const info = getActiveSegmentInfo()
   const segmentStart = info?.start ?? 0
-  playheadTime.value = video.currentTime
-  currentPlaybackTime.value = Math.max(0, video.currentTime - segmentStart)
+  const time = video.currentTime
+  // One notification per frame for both time signals.
+  batch(() => {
+    playheadTime.value = time
+    currentPlaybackTime.value = Math.max(0, time - segmentStart)
+  })
   // Check the segment boundary every frame: timeupdate alone fires only a few
   // times per second, letting playback overshoot the out-point audibly.
   advanceAtSegmentEnd()
@@ -76,6 +107,7 @@ function stopTicking() {
 }
 
 function onPlay() {
+  stopReverse()
   playing.value = true
   startTicking()
 }
@@ -83,6 +115,23 @@ function onPlay() {
 function onPause() {
   playing.value = false
   stopTicking()
+  // A forward shuttle ends with playback. Reverse pauses the element on
+  // purpose, and this event arrives after it starts, so it is left alone.
+  if ((shuttleRate.peek() ?? 0) > 0) shuttleRate.value = null
+}
+
+function frameDuration(clip: Clip | undefined): number {
+  return 1 / (clip?.frameRate || DEFAULT_FRAME_RATE)
+}
+
+// The chosen speed, or a faster forward shuttle on top of it.
+function syncRate() {
+  if (!video) return
+  const shuttle = shuttleRate.value
+  const rate = shuttle !== null && shuttle > 0 ? shuttle : playbackRate.value
+  // defaultPlaybackRate keeps the rate across src switches between segments.
+  video.defaultPlaybackRate = rate
+  video.playbackRate = rate
 }
 
 // Auto-advance: when playback reaches the segment end, move to the next
@@ -106,6 +155,9 @@ function advanceAtSegmentEnd() {
     } else {
       video.pause()
       playing.value = false
+      // The rewind below can switch sources, which drops the queued pause
+      // event, so a forward shuttle is ended here rather than in onPause.
+      shuttleRate.value = null
       currentPlaybackTime.value = 0
       const first = segments[0]
       if (first) {
@@ -162,18 +214,29 @@ function syncSource() {
     videoElement.src = info.url
     videoElement.load()
     if (!resume) playing.value = false
+    // Until the new source reports its position, rest the playhead at the
+    // segment start: the old source's time means nothing in this clip, and the
+    // timeline would otherwise draw (and follow) it at a stale spot. A seek
+    // issued right after the switch still overrides this.
+    batch(() => {
+      playheadTime.value = info.start
+      currentPlaybackTime.value = 0
+    })
     videoElement.onloadedmetadata = () => {
       // A seek issued while the new source was loading wins over the default
       // segment start (e.g. clicking into a segment from a different clip).
+      // The segment may have been trimmed while the source loaded.
+      const live = getActiveSegmentInfo()
+      const range = live && live.url === info.url ? live : info
       const startTime =
         pendingSeekTime !== null
-          ? Math.min(info.end, Math.max(info.start, pendingSeekTime))
-          : info.start
+          ? Math.min(range.end, Math.max(range.start, pendingSeekTime))
+          : range.start
       pendingSeekTime = null
       videoElement.currentTime = startTime
       playheadTime.value = startTime
-      currentSegmentDuration.value = info.end - info.start
-      currentPlaybackTime.value = startTime - info.start
+      currentSegmentDuration.value = range.end - range.start
+      currentPlaybackTime.value = startTime - range.start
       if (resume) playSafely(videoElement)
     }
   } else {
@@ -185,7 +248,7 @@ function syncSource() {
     const forceRewind = autoAdvance || rewindOnSync
     rewindOnSync = false
     const pastEnd = forceRewind ? time >= info.end : time > info.end + 1e-3
-    if (time < info.start - 1e-3 || pastEnd) {
+    if (!edgePreviewActive && (time < info.start - 1e-3 || pastEnd)) {
       videoElement.currentTime = info.start
       playheadTime.value = info.start
       currentPlaybackTime.value = 0
@@ -201,13 +264,17 @@ export function attachVideo(element: HTMLVideoElement) {
   element.addEventListener('timeupdate', advanceAtSegmentEnd)
   const disposeSource = effect(syncSource)
   const disposeAudio = effect(syncAudio)
+  const disposeRate = effect(syncRate)
   disposeEffects = () => {
     disposeSource()
     disposeAudio()
+    disposeRate()
   }
 }
 
 export function detachVideo() {
+  stopReverse()
+  shuttleRate.value = null
   if (video) {
     video.removeEventListener('play', onPlay)
     video.removeEventListener('pause', onPause)
@@ -218,6 +285,9 @@ export function detachVideo() {
   pendingSeekTime = null
   resumeAfterSwitch = false
   rewindOnSync = false
+  resumeAfterScrub = false
+  edgePreviewActive = false
+  edgePreviewSeeks.reset()
   playing.value = false
   disposeEffects?.()
   disposeEffects = null
@@ -230,8 +300,14 @@ export function togglePlay() {
   // Nothing to play when the timeline is empty; calling play() on a video
   // without a source leaves a dangling rejected promise.
   if (!info) return
+  // Reverse shows as running, so the same toggle stops it.
+  if (stopReverse()) return
   if (video.paused) {
-    if (video.currentTime >= info.end - 1e-3) video.currentTime = info.start
+    if (video.currentTime >= info.end - 1e-3) {
+      // At the very end of the timeline, play it again from the top.
+      if (info.segment.id === timeline.value.at(-1)?.id) goToStart()
+      else video.currentTime = info.start
+    }
     playSafely(video)
   } else {
     video.pause()
@@ -242,6 +318,7 @@ export function stepFrame(direction: 1 | -1) {
   if (!video) return
   const info = getActiveSegmentInfo()
   if (!info) return
+  stopReverse()
   if (!video.paused) video.pause()
   const segmentStart = info.start
   const segmentEnd = info.end
@@ -256,9 +333,23 @@ export function stepFrame(direction: 1 | -1) {
 }
 
 export function seek(time: number) {
+  stopReverse()
+  seekSource(time)
+}
+
+// Seek within the active segment's source without touching the shuttle.
+function seekSource(time: number) {
+  showPosition(time)
+  seekElement(time)
+}
+
+function showPosition(time: number) {
   playheadTime.value = time
   const info = getActiveSegmentInfo()
   if (info) currentPlaybackTime.value = Math.max(0, Math.min(info.end, time) - info.start)
+}
+
+function seekElement(time: number) {
   if (!video) return
   if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
     // Metadata for a source switch is still loading; defer the seek so the
@@ -269,18 +360,209 @@ export function seek(time: number) {
   }
 }
 
-export function setPlaybackRate(rate: number) {
-  if (!video) return
-  // defaultPlaybackRate keeps the rate across src switches between segments.
-  video.defaultPlaybackRate = rate
-  video.playbackRate = rate
-}
-
 // Jump to the start of the first segment.
 export function goToStart() {
   const first = timeline.value[0]
   if (!first) return
+  stopReverse()
   if (video && !video.paused) video.pause()
   selectedSegmentId.value = first.id
   seek(first.startTime)
+}
+
+// A scrub holds playback still while the pointer moves the playhead (crossing
+// cuts would otherwise race the auto-advance), then resumes on release.
+export function beginScrub() {
+  if (!video || video.paused) return
+  resumeAfterScrub = true
+  video.pause()
+}
+
+export function endScrub() {
+  if (!video || !resumeAfterScrub) return
+  resumeAfterScrub = false
+  playSafely(video)
+}
+
+// The playhead on the whole edited timeline (null when it is empty).
+function activeGlobalTime(): number | null {
+  const info = getActiveSegmentInfo()
+  if (!info) return null
+  return globalTimeOf(timeline.value, info.segment.id, playheadTime.value)
+}
+
+// Seek to a time on the whole edited timeline, selecting the segment there.
+function seekGlobal(globalTime: number) {
+  const segments = timeline.value
+  const clamped = Math.max(0, Math.min(totalDuration(segments), globalTime))
+  const hit = segmentAtGlobalTime(segments, clamped)
+  if (!hit) return
+  selectedSegmentId.value = hit.segment.id
+  seek(hit.localTime)
+}
+
+// Jump to the last frame of the timeline and stop there.
+export function goToEnd() {
+  const last = timeline.value.at(-1)
+  if (!last) return
+  stopReverse()
+  if (video && !video.paused) video.pause()
+  selectedSegmentId.value = last.id
+  seek(last.endTime)
+}
+
+// Down (1) goes to the next cut, or the end of the timeline. Up (-1) goes to
+// the start of the current segment, or to the previous cut when already
+// within a frame of it, so repeated presses keep walking back. Playback keeps
+// running across a jump, except at the end.
+export function goToAdjacentCut(direction: 1 | -1) {
+  const current = activeGlobalTime()
+  if (current === null) return
+  const segments = timeline.value
+  const cuts = cutTimes(segments)
+  const end = cuts[cuts.length - 1]
+  if (direction === 1) {
+    const next = cuts.find((time) => time > current + 1e-6)
+    if (next === undefined || next >= end - 1e-9) goToEnd()
+    else seekGlobal(next)
+    return
+  }
+  const frame = frameDuration(getActiveSegmentInfo()?.clip)
+  const previous = cuts.filter((time) => time < current - frame - 1e-6).at(-1) ?? 0
+  seekGlobal(previous)
+}
+
+// Move the paused playhead by whole seconds across cuts (Shift+Arrow).
+export function stepSeconds(seconds: number) {
+  const current = activeGlobalTime()
+  if (current === null) return
+  if (video && !video.paused) video.pause()
+  seekGlobal(current + seconds)
+}
+
+function nextShuttleSpeed(current: number): number {
+  return SHUTTLE_SPEEDS.find((speed) => speed > current) ?? SHUTTLE_SPEEDS.at(-1)!
+}
+
+// J/K/L shuttle. L plays forward, and each further press while playing goes
+// faster; J does the same in reverse; K stops and returns to normal speed.
+export function shuttle(key: 'j' | 'k' | 'l') {
+  if (!video || !getActiveSegmentInfo()) return
+  const current = shuttleRate.peek()
+  if (key === 'k') {
+    stopReverse()
+    if (!video.paused) video.pause()
+    shuttleRate.value = null
+    return
+  }
+  if (key === 'l') {
+    if (stopReverse() || video.paused) {
+      shuttleRate.value = null
+      togglePlay()
+      return
+    }
+    // Already playing forward: one step past the current speed.
+    const speed = current !== null && current > 0 ? current : playbackRate.peek()
+    shuttleRate.value = nextShuttleSpeed(speed)
+    return
+  }
+  const reverseSpeed = current !== null && current < 0 ? nextShuttleSpeed(-current) : 1
+  startReverse(reverseSpeed)
+}
+
+function startReverse(speed: number) {
+  const element = video
+  const info = getActiveSegmentInfo()
+  if (!element || !info) return
+  if (!element.paused) element.pause()
+  shuttleRate.value = -speed
+  if (reverseFrameId) return
+  reversePosition = Math.min(info.end, Math.max(info.start, element.currentTime))
+  reverseLastMs = null
+  reverseFrameId = requestAnimationFrame(reverseTick)
+}
+
+// Ends reverse play, leaving the video on the last reverse position. Returns
+// whether reverse was running.
+function stopReverse(): boolean {
+  if (!reverseFrameId) return false
+  cancelAnimationFrame(reverseFrameId)
+  finishReverse()
+  return true
+}
+
+function finishReverse() {
+  reverseFrameId = 0
+  reverseLastMs = null
+  if ((shuttleRate.peek() ?? 0) < 0) shuttleRate.value = null
+  seekSource(reversePosition)
+}
+
+function reverseTick(nowMs: number) {
+  reverseFrameId = 0
+  const element = video
+  const info = getActiveSegmentInfo()
+  if (!element || !info) {
+    if ((shuttleRate.peek() ?? 0) < 0) shuttleRate.value = null
+    return
+  }
+  // Hold still while a new source loads, so a cut does not swallow time.
+  const loading = element.readyState < HTMLMediaElement.HAVE_METADATA
+  const elapsed = reverseLastMs === null || loading ? 0 : (nowMs - reverseLastMs) / 1000
+  reverseLastMs = nowMs
+  const speed = -(shuttleRate.peek() ?? -1)
+  const next = reversePosition - elapsed * speed
+
+  if (next <= info.start) {
+    const segments = timeline.value
+    const index = segments.findIndex((segment) => segment.id === info.segment.id)
+    const previous = segments[index - 1]
+    if (!previous) {
+      // Reached the start of the timeline.
+      reversePosition = info.start
+      finishReverse()
+      return
+    }
+    // Continue from the last frame of the previous segment.
+    const lastFrame = previous.endTime - frameDuration(getClipById(previous.clipId))
+    reversePosition = Math.max(previous.startTime, lastFrame)
+    selectedSegmentId.value = previous.id
+    seekSource(reversePosition)
+  } else {
+    reversePosition = next
+    batch(() => {
+      playheadTime.value = next
+      currentPlaybackTime.value = next - info.start
+    })
+    // Let an in-flight seek finish rather than restarting the decoder.
+    if (!loading && !element.seeking) element.currentTime = next
+  }
+  reverseFrameId = requestAnimationFrame(reverseTick)
+}
+
+// The speed selector: a new choice also ends a forward shuttle, so it applies.
+export function setPlaybackSpeed(rate: number) {
+  playbackRate.value = rate
+  if ((shuttleRate.peek() ?? 0) > 0) shuttleRate.value = null
+}
+
+// Trim drags show the frame at the dragged edge. The playhead follows every
+// step; the video seeks at a bounded rate.
+export function beginEdgePreview() {
+  stopReverse()
+  if (video && !video.paused) video.pause()
+  edgePreviewActive = true
+}
+
+export function previewEdgeFrame(time: number) {
+  if (!edgePreviewActive) return
+  showPosition(time)
+  edgePreviewSeeks.queue(() => seekElement(time))
+}
+
+export function endEdgePreview(finalTime: number) {
+  if (!edgePreviewActive) return
+  edgePreviewSeeks.cancel()
+  edgePreviewActive = false
+  seek(finalTime)
 }

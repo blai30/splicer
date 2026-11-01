@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   addTrack,
+  nextTrackName,
   moveTrack,
   removeTrack,
   renameTrack,
@@ -57,5 +58,21 @@ describe('advancedTrackEditing', () => {
     expect(advancedTracks.value[0].id).toBe(top)
     moveTrack(added, 1) // no-op variants stay in bounds
     expect(advancedTracks.value).toHaveLength(2)
+  })
+
+  it('names a new track after the highest existing number', () => {
+    expect(nextTrackName([{ id: 'a', name: 'Track 1' }])).toBe('Track 2')
+    expect(
+      nextTrackName([
+        { id: 'a', name: 'Track 5' },
+        { id: 'b', name: 'Music' },
+      ])
+    ).toBe('Track 6')
+    expect(
+      nextTrackName([
+        { id: 'a', name: 'Video' },
+        { id: 'b', name: 'Music' },
+      ])
+    ).toBe('Track 3')
   })
 })

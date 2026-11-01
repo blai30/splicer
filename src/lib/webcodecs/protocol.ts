@@ -1,5 +1,5 @@
 import type { MbAudioCodec, MbContainer, MbVideoCodec } from '../exportCodecs'
-import type { CropParams, ExportFormat, Framerate, Quality } from '../types'
+import type { Clip, CropParams, ExportFormat, Framerate, Quality } from '../types'
 
 // One distinct source file referenced by the timeline.
 export type JobSource = {
@@ -9,6 +9,31 @@ export type JobSource = {
   hasAudio: boolean
   // Average source frame rate, when known.
   frameRate?: number
+  // Clockwise container rotation; display width/height already include it.
+  rotation?: number
+  // Probed source stats, when known. They let the bitrate model aim relative
+  // to the source instead of a fixed table, and let the UI compare sizes.
+  durationSec?: number
+  videoBitrate?: number
+  videoCodec?: string
+  audioBitrate?: number
+  audioCodec?: string
+}
+
+export function jobSourceFromClip(clip: Clip): JobSource {
+  return {
+    file: clip.file,
+    width: clip.width,
+    height: clip.height,
+    hasAudio: clip.hasAudio !== false,
+    frameRate: clip.frameRate,
+    rotation: clip.rotation,
+    durationSec: clip.duration,
+    videoBitrate: clip.videoBitrate,
+    videoCodec: clip.videoCodec,
+    audioBitrate: clip.audioBitrate,
+    audioCodec: clip.audioCodec,
+  }
 }
 
 // One timeline segment resolved against its source. sourceStart/sourceEnd are
@@ -21,8 +46,21 @@ export type JobSlice = {
   muted: boolean
 }
 
+// 'copy' writes the source's own video packets (see fastCopy.ts and
+// copyVideo.ts); 'encode' decodes, draws, and re-encodes every frame.
+export type VideoMode = 'encode' | 'copy'
+
+// How big the output may be, shared by Basic and Advanced jobs.
+export type OutputSizing = {
+  // Cap on the output's shorter side; absent or null keeps the source size.
+  maxShortSide?: number | null
+  // Aim the whole file at this many bytes instead of following the quality
+  // preset; absent or null uses the preset.
+  targetBytes?: number | null
+}
+
 // The serializable job posted to the worker.
-export type ExportJob = {
+export type ExportJob = OutputSizing & {
   sources: JobSource[]
   slices: JobSlice[]
   quality: Quality
@@ -31,12 +69,28 @@ export type ExportJob = {
   container: MbContainer
   videoCodec: MbVideoCodec
   audioCodec: MbAudioCodec
+  videoMode: VideoMode
 }
 
-export type WorkerRequest = { type: 'export'; job: ExportJob } | { type: 'cancel' }
+// Where streamed exports live in the origin private file system. Each tab
+// writes under its own folder (see exportStorage.ts) so a startup sweep in one
+// tab never deletes another tab's files.
+export const EXPORTS_DIR = 'exports'
+
+// storageDir names this tab's folder for streamed exports (see
+// exportStorage.ts); without it the export is built in memory.
+export type WorkerRequest =
+  | { type: 'export'; job: ExportJob; storageDir?: string }
+  | { type: 'cancel' }
 
 export type WorkerResponse =
   | { type: 'progress'; progress: number }
+  // The streamed file an export writes into, sent before any data so the page
+  // can delete it if it terminates the worker mid-export.
+  | { type: 'storage'; storageName: string }
+  // A file streamed to the origin private file system; storageName is its
+  // path under the exports folder, for deleting it later.
+  | { type: 'done'; file: File; storageName: string }
   | { type: 'done'; buffer: ArrayBuffer }
   | { type: 'canceled' }
   | { type: 'error'; message: string; unsupported: boolean }

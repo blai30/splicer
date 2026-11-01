@@ -1,7 +1,9 @@
 import { useSignal, useSignalEffect } from '@preact/signals'
+import clsx from 'clsx/lite'
 import { Maximize, Minus, Pause, Play, Plus, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { AdvancedInspector } from '@/components/advanced/AdvancedInspector'
 import { AdvancedSelectionToolbar } from '@/components/advanced/AdvancedSelectionToolbar'
 import { AdvancedTransformOverlay } from '@/components/advanced/AdvancedTransformOverlay'
 import { VolumeControl } from '@/components/VolumeControl'
@@ -9,7 +11,6 @@ import {
   attachAdvancedPreview,
   projectDuration,
   seek,
-  setPlaybackRate,
   stepFrame,
   togglePlay,
 } from '@/lib/advanced/advancedPlayback'
@@ -17,15 +18,18 @@ import { computeContentBounds } from '@/lib/advanced/exportLayout'
 import { clampStageHeight } from '@/lib/advanced/stageHeight'
 import { clampZoom, fitToContent, zoomAtPoint } from '@/lib/advanced/viewportMath'
 import { formatTimecode } from '@/lib/format'
+import { seekAdvancedByKey } from '@/lib/seekKeys'
 import {
+  PLAYBACK_SPEED_OPTIONS,
   advancedPlayhead,
   advancedPlaying,
   advancedSegments,
   advancedStageHeight,
   advancedViewport,
+  playbackRate,
 } from '@/lib/store'
+import { seekKeyAction } from '@/lib/timelineKeyboard'
 
-const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 const FIT_PADDING = 40
 
 const TRANSPORT_BUTTON =
@@ -38,7 +42,6 @@ export function AdvancedPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const didFit = useRef(false)
-  const playbackSpeed = useSignal(1)
   const cropMode = useSignal(false)
   const stageSize = useSignal({ width: 0, height: 0 })
 
@@ -127,20 +130,12 @@ export function AdvancedPreview() {
   const segments = advancedSegments.value
   const hasContent = segments.length > 0
   const totalDuration = projectDuration(segments)
-  const progress = totalDuration > 0 ? Math.min(1, advancedPlayhead.value / totalDuration) : 0
   const viewport = advancedViewport.value
   const zoomPercent = Math.round(viewport.zoom * 100)
   // The dot grid tracks the viewport so panning/zooming feels like moving through
   // space rather than dragging the clips: spacing scales with zoom, and the grid
   // origin is the world origin mapped to screen (worldToScreen of 0,0).
   const gridSpacing = 24 * viewport.zoom
-
-  function onSeekClick(event: MouseEvent) {
-    if (!totalDuration) return
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
-    seek(ratio * totalDuration)
-  }
 
   return (
     <div class="flex w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
@@ -189,17 +184,9 @@ export function AdvancedPreview() {
           cropMode.value = !cropMode.value
         }}
       />
+      <AdvancedInspector />
 
-      {/* Seek bar */}
-      <button
-        type="button"
-        onClick={onSeekClick}
-        disabled={!hasContent}
-        aria-label="Seek"
-        class="h-1.5 w-full cursor-pointer bg-slate-200 disabled:cursor-default dark:bg-slate-800"
-      >
-        <div class="h-full bg-violet-500" style={{ width: `${progress * 100}%` }} />
-      </button>
+      <SeekBar totalDuration={totalDuration} />
 
       {/* Controls */}
       <div class="flex flex-col border-t border-slate-200/60 dark:border-slate-700/60">
@@ -233,12 +220,11 @@ export function AdvancedPreview() {
           </div>
           <div class="flex items-center justify-end gap-2 sm:gap-4">
             <select
-              value={playbackSpeed.value}
-              onChange={(event) => {
-                const nextSpeed = Number((event.currentTarget as HTMLSelectElement).value)
-                playbackSpeed.value = nextSpeed
-                setPlaybackRate(nextSpeed)
-              }}
+              value={playbackRate.value}
+              onChange={(event) =>
+                (playbackRate.value = Number((event.currentTarget as HTMLSelectElement).value))
+              }
+              aria-label="Playback speed"
               class="rounded border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none hover:duration-0 focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
               title="Playback speed"
             >
@@ -248,15 +234,66 @@ export function AdvancedPreview() {
                 </option>
               ))}
             </select>
-            <span class="hidden text-sm text-slate-500 tabular-nums sm:inline dark:text-slate-400">
-              {formatTimecode(advancedPlayhead.value)} / {formatTimecode(totalDuration)}
-            </span>
+            <PlaybackTimecode class="hidden sm:inline" totalDuration={totalDuration} />
           </div>
         </div>
-        <div class="pb-2 text-center text-sm text-slate-500 tabular-nums sm:hidden dark:text-slate-400">
-          {formatTimecode(advancedPlayhead.value)} / {formatTimecode(totalDuration)}
-        </div>
+        <PlaybackTimecode class="block pb-2 text-center sm:hidden" totalDuration={totalDuration} />
       </div>
     </div>
+  )
+}
+
+// The seek bar and timecode read the playhead themselves, so playback
+// re-renders these leaves each frame and not the stage and controls.
+function SeekBar({ totalDuration }: { totalDuration: number }) {
+  const progress = totalDuration > 0 ? Math.min(1, advancedPlayhead.value / totalDuration) : 0
+
+  function onSeekClick(event: MouseEvent) {
+    if (!totalDuration) return
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
+    seek(ratio * totalDuration)
+  }
+
+  const time = Math.min(totalDuration, advancedPlayhead.value)
+  const disabled = totalDuration <= 0
+  return (
+    <div
+      role="slider"
+      tabIndex={disabled ? -1 : 0}
+      aria-label="Seek"
+      aria-disabled={disabled}
+      aria-valuemin={0}
+      aria-valuemax={Math.round(totalDuration * 100) / 100}
+      aria-valuenow={Math.round(time * 100) / 100}
+      aria-valuetext={`${formatTimecode(time)} of ${formatTimecode(totalDuration)}`}
+      onClick={onSeekClick}
+      onKeyDown={(event) => {
+        const action = disabled ? null : seekKeyAction(event)
+        if (!action) return
+        event.preventDefault()
+        seekAdvancedByKey(action)
+      }}
+      class={clsx(
+        'h-1.5 w-full bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:bg-slate-800',
+        disabled ? 'cursor-default' : 'cursor-pointer'
+      )}
+    >
+      <div class="h-full bg-violet-500" style={{ width: `${progress * 100}%` }} />
+    </div>
+  )
+}
+
+function PlaybackTimecode({
+  class: className,
+  totalDuration,
+}: {
+  class: string
+  totalDuration: number
+}) {
+  return (
+    <span class={clsx('text-sm text-slate-500 tabular-nums dark:text-slate-400', className)}>
+      {formatTimecode(advancedPlayhead.value)} / {formatTimecode(totalDuration)}
+    </span>
   )
 }

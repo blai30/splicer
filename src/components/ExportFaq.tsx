@@ -14,7 +14,17 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
   {
     question: 'How do I keep quality as high as possible?',
     answer:
-      'Every export re-encodes the video, so a perfectly lossless copy is not possible. To stay as close to the source as you can, export to the same format as your source at Lossless quality with FPS left on Original. Lossless targets a very high bitrate for near-transparent quality.',
+      'Pick Original (no re-encode). It copies the source video as it is, so there is no quality loss and the file is about the size of the source. It works in Basic mode when every clip comes from the same kind of camera or encoder, nothing is cropped, FPS and Resolution are on Original, and the format can hold the source codec (MP4, MOV or MKV for H.264; WebM or MKV for VP9). When Original is unavailable, the button says why. Otherwise, export to the same format as your source at Maximum quality with FPS on Original.',
+  },
+  {
+    question: 'Why does an Original export start a little before my cut?',
+    answer:
+      'Compressed video stores a full picture only every so often (a key frame) and the frames between depend on it. A copy has to start on a key frame, so each cut moves back to the key frame before it. The panel lists how far each cut moves, and the timeline shows a dashed line. Phones usually place key frames every 1 to 2 seconds; screen recordings can go 10 seconds or more, in which case a quality preset gives an exact cut. Audio is re-encoded to line up with the copied video.',
+  },
+  {
+    question: 'How do I make a file that fits a size limit?',
+    answer:
+      'Pick Target size and choose 8, 10, 25 or 50 MB, or type a size. The export aims a little under it to leave room. If that leaves too few bits for a clear picture at the current size, it lowers the resolution, then the frame rate, and tells you. If even 360p cannot fit, it tells you the smallest size that can. To shrink a file at any quality, you can also lower the Resolution yourself.',
   },
   {
     question: 'Should I use VP8 or VP9?',
@@ -24,12 +34,12 @@ const FAQ_ITEMS: { question: string; answer: string }[] = [
   {
     question: 'What do the quality presets do?',
     answer:
-      'They set the target bitrate for the re-encode, from highest (Lossless) to lowest (Low). "Lossless" aims for near-transparent quality at a very high bitrate; it is not mathematically lossless. Higher quality means larger files.',
+      'They set the target bitrate relative to your source, scaled to the output size: Maximum up to 1.5x the source bitrate, High about the same as the source, Medium about 60%, and Low about 35%. When the source bitrate cannot be measured, they fall back to fixed bitrates for the output size. Maximum is not mathematically lossless.',
   },
   {
     question: 'Will exporting make my file smaller?',
     answer:
-      'Only if your source was encoded inefficiently and you choose an efficient codec like VP9. An already well-compressed source may actually get larger when re-encoded.',
+      'Medium and Low aim below the source bitrate, and High aims at it. The size shown next to the Export button is an estimate with a likely range and your source size for comparison. One limit: the browser encoder cannot go below a minimum bitrate for a given resolution, so a source that is already very compressed (common for screen recordings) can come out larger at any quality. The panel tells you when that happens.',
   },
 ]
 
@@ -62,14 +72,15 @@ export function ExportFaq({ class: className }: { class?: string }) {
             <p>
               <span class="font-semibold text-violet-700 dark:text-violet-300">TL;DR:</span> For the
               highest-quality export, keep the format the same as your source video and leave
-              quality on Lossless and FPS on Original. Every export re-encodes in the browser, so
-              Lossless aims for near-transparent quality rather than a perfect copy.
+              quality on Original (no re-encode), which copies the video without any loss. When
+              Original is unavailable, use Maximum, or High for a file about the size of your
+              source. Target size fits a size limit.
             </p>
           </div>
 
           <div class="mb-2 rounded-md border border-slate-200/70 bg-slate-50 p-3 text-sm leading-relaxed text-slate-600 dark:border-slate-700/60 dark:bg-slate-800/40 dark:text-slate-300">
             <p class="mb-2 font-medium text-slate-800 dark:text-slate-100">
-              Exporting to WebM always re-encodes your video, which loses a little quality:
+              Exporting an MP4 to WebM always re-encodes your video, which loses a little quality:
             </p>
             <ul class="flex flex-col gap-1.5 pl-4">
               <li class="list-disc">

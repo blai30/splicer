@@ -8,10 +8,27 @@ export type Clip = {
   // Average frames per second, used for frame stepping. Absent on clips
   // created before probing recorded it.
   frameRate?: number
+  // Clockwise rotation from the container metadata (0, 90, 180, 270). Absent
+  // on clips probed before it was recorded.
+  rotation?: number
   objectUrl: string
-  waveformPeaks: number[]
+  // Max-abs audio peaks over the whole clip (see lib/waveform.ts); empty
+  // until extracted or when the clip has no audio.
+  waveformPeaks: Float32Array
   // Set after waveform extraction; undefined means not yet probed.
   hasAudio?: boolean
+  // Average bitrates (bits/sec) and codecs from the import probe. Absent when
+  // the probe could not measure them; export then falls back to fixed tables.
+  videoBitrate?: number
+  videoCodec?: string
+  audioBitrate?: number
+  audioCodec?: string
+  // Identifies the exact decoder setup (codec string, coded size, and a hash
+  // of the out-of-band description such as avcC), so stream copy can tell
+  // whether packets from different clips can share one output track.
+  decoderConfigKey?: string
+  // False when the track uses non-square pixels. Absent on older probes.
+  squarePixels?: boolean
 }
 
 export type CropParams = {
@@ -36,6 +53,11 @@ export type ExportRecord = {
   width: number
   height: number
   format: ExportFormat
+  // The pre-export size estimate, kept to compare against the real size.
+  estimatedBytes?: number
+  // Set when the file lives in the origin private file system rather than in
+  // memory; deleted along with the record.
+  storageName?: string
 }
 
 export type Segment = {
@@ -90,12 +112,23 @@ export type AdvancedSegment = {
   transform: Transform
   crop?: CropParams
   opacity?: number
+  // 0..1 of the source level; the preview cannot play louder than the source.
   volume?: number
   muted?: boolean
+  // Linear fade durations in seconds (see lib/advanced/segmentGain.ts).
+  fadeIn?: number
+  fadeOut?: number
 }
 
 export type ExportFormat = 'mp4' | 'mkv' | 'mov' | 'webm'
+// An encoder preset. Stored as 'lossless' for Maximum so persisted settings
+// keep working.
 export type Quality = 'lossless' | 'high' | 'medium' | 'low'
+// What the Quality control offers: a preset, a stream copy of the source
+// packets ('original'), or a file size to aim for ('target').
+export type QualityChoice = Quality | 'original' | 'target'
+// A cap on the output's shorter side; 'original' keeps the source size.
+export type Resolution = 'original' | '1080' | '720' | '480' | '360'
 export type Framerate = 'original' | '60' | '30' | '24'
 export type WebmCodec = 'vp9' | 'vp8'
 export type MkvCodec = 'h264' | 'vp9'

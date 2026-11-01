@@ -33,20 +33,26 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
   - set out-point
   - cut at playhead
   - delete
-- Drag segment trim handles for interactive left/right trimming.
-- Seek by clicking/dragging in the timeline.
+- Drag segment trim handles for interactive left/right trimming. The preview shows the edge frame, a readout shows the in/out point and duration, and edges snap to the clip's start and end, the playhead, and where they began (hold `Alt` to place freely). Trims land on the clip's frame grid.
+- Right-click (or long-press) a segment, or press `Shift` + `F10`, for its menu: Duplicate, Split here, Reset trim, Mute/Unmute, Move left/right, and Delete.
+- Setting an in/out point with the playhead outside the selected segment shows a short notice instead of doing nothing.
+- Seek by clicking or dragging the playhead, the time ruler, or empty track. Scrubbing crosses cuts (marked on the ruler), and presses in gaps or padding land on the nearest segment edge.
+- The view follows the playhead during playback and after keyboard seeks, pausing briefly after you scroll by hand.
+- Fit the whole timeline in view with one click; the first import zooms out to fit a long timeline.
 
 ### Playback
 
 - Segment-aware preview player.
-- Playback speed: `0.25x` to `2x`.
-- Frame stepping controls.
+- Playback speed: `0.25x` to `2x`, shared by both editors and remembered across reloads.
+- J/K/L shuttle in Basic: reverse and forward play that speeds up with each press (up to `8x`).
+- Frame stepping controls, one-second steps, and jumps between cuts.
 - Automatic segment advance during playback.
 
 ### Export
 
 - Formats: `mp4`, `mkv`, `mov`, `webm`
-- Quality presets: `lossless`, `high`, `medium`, `low`
+- Quality: `Original (no re-encode)` stream copy, presets `Maximum`, `High`, `Medium`, `Low`, or `Target size` (8/10/25/50 MB or a custom size)
+- Resolution cap: `original`, `1080p`, `720p`, `480p`, `360p`
 - Framerate options: `original`, `60`, `30`, `24`
 - WebM codec choice: `VP9` (recommended, smaller files) or `VP8` (faster to encode).
 - A single WebCodecs export engine (runs in a Web Worker) handles every format and resolution, including HD sources, with bounded memory regardless of clip length.
@@ -57,7 +63,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 ### Per-Segment Mute
 
 - Toggle mute on a selected segment via the timeline toolbar button or `M` key.
-- Muted segments show a 🔇 indicator on the segment block.
+- Muted segments show a muted-speaker icon on the segment block.
 - Preview playback respects per-segment mute immediately.
 - Exported video silences muted segments (the WebCodecs engine fills the segment with silence).
 
@@ -66,18 +72,26 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 - `Space`: Play/Pause
 - `ArrowLeft` or `,`: Step back one frame
 - `ArrowRight` or `.`: Step forward one frame
-- `-`: Zoom timeline out
-- `=`: Zoom timeline in
+- `Shift` + `ArrowLeft` / `ArrowRight`: Step back/forward one second, across cuts (Basic)
+- `ArrowUp` / `ArrowDown`: Jump to the previous/next cut (Basic)
+- `J` / `K` / `L`: Play in reverse / stop / play forward; press `J` or `L` again to go faster (Basic)
+- `-`: Zoom timeline out (anchored on the playhead)
+- `=`: Zoom timeline in (anchored on the playhead)
+- `Shift` + `Z`: Fit the whole timeline in view
 - `Ctrl` + mouse wheel up/down: Zoom timeline in/out at cursor
-- `Enter` (while focused in zoom % field): Apply typed zoom level
+- `Shift` + mouse wheel: Scroll the Advanced timeline through time
+- `Enter` (while focused in the px/s zoom field): Apply typed zoom level
 - `I`: Set in-point
 - `O`: Set out-point
 - `C`: Cut at playhead
 - `M`: Toggle mute on selected segment
 - `Delete` / `Backspace`: Delete selected segment
+- `Ctrl` + `D`: Duplicate selected segment (Basic)
+- `Shift` + `F10` or the `Menu` key: Open the selected segment's menu (Basic)
 - `Ctrl` + `Z`: Undo
 - `Ctrl` + `Shift` + `Z` or `Ctrl` + `Y`: Redo
 - `Home`: Go to start
+- `End`: Go to end
 
 ## Tech Stack
 
@@ -112,13 +126,14 @@ Every export runs through the browser's native WebCodecs API:
 - A capability gate checks encoder/decoder support up front. When WebCodecs is unavailable or the source is not demuxable, the export surfaces an honest error rather than falling back.
 - This path handles HD sources (e.g. 1080p60) in-browser.
 - The first segment sets the output aspect ratio. The resolution is the largest segment with that same shape. Other segments are letterboxed (never stretched).
-- Cuts are frame accurate for video and sample accurate for audio. Audio is normalized to 48 kHz stereo, and segments without audio (or muted ones) get silence to keep A/V in sync.
+- `Original (no re-encode)` copies the source's video packets instead (Basic mode, one shared codec setup, no crop, original FPS and resolution). Cuts snap back to the key frame before each in-point, and audio is re-encoded over the copied span.
+- Cuts are frame accurate for video and sample accurate for audio when re-encoding. Audio is normalized to 48 kHz stereo, and segments without audio (or muted ones) get silence to keep A/V in sync.
 
 ## Usage Guidelines
 
-- Use `high`/`medium` presets for smaller files; use `lossless` to stay closest to the source.
+- Use `Original` for a lossless trim at the source size, `High`/`Medium` for smaller files, a lower `Resolution` when the encoder cannot shrink the file further, and `Target size` to fit a limit.
 - For WebM, prefer `VP9` for smaller files at similar quality; choose `VP8` when encode speed matters more than size.
-- Every export re-encodes, so a perfectly lossless copy is not possible. To keep quality highest, export to the same format as your source at `lossless + original fps`. See the in-app FAQ or `/about` for the full explanation.
+- Every export except `Original` re-encodes. When `Original` is unavailable, keep quality highest by exporting to the same format as your source at `Maximum` with original FPS. See the in-app FAQ or `/about` for the full explanation.
 - The finished file is held in memory until it is downloaded or removed from the export library.
 
 ## Current Limitations

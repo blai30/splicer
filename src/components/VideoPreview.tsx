@@ -1,24 +1,25 @@
 import { useSignalEffect } from '@preact/signals'
 import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
-import { Pause, Play, StepBack, StepForward } from 'lucide-preact'
+import { FastForward, Pause, Play, Rewind, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { VolumeControl } from '@/components/VolumeControl'
 import { formatTimecode } from '@/lib/format'
-import { attachVideo, detachVideo, setPlaybackRate, stepFrame, togglePlay } from '@/lib/playback'
+import { attachVideo, detachVideo, setPlaybackSpeed, stepFrame, togglePlay } from '@/lib/playback'
 import {
-  clips,
+  PLAYBACK_SPEED_OPTIONS,
   currentPlaybackTime,
   getClipById,
-  playing,
+  playbackRate,
   selectedSegmentId,
+  shuttleRate,
   timeline,
+  transportRunning,
 } from '@/lib/store'
 
 const DEFAULT_PREVIEW_HEIGHT = 600
 const DEFAULT_PREVIEW_MAX_WIDTH = 1600
-const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
 export function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -26,7 +27,6 @@ export function VideoPreview() {
   const playerRef = useRef<HTMLDivElement>(null)
   const previewMaxWidth = useSignal(Math.round(DEFAULT_PREVIEW_HEIGHT * (16 / 9)))
   const previewAspectRatio = useSignal(16 / 9)
-  const playbackSpeed = useSignal(1)
   const hasManualResize = useRef(false)
 
   // Match the export frame: the first segment sets the aspect ratio, and every
@@ -96,21 +96,6 @@ export function VideoPreview() {
   }
 
   const hasContent = timeline.value.length > 0
-  // Position on the whole edited timeline: every segment before the active
-  // one, plus the offset inside it.
-  void clips.value
-  const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
-  let elapsedBefore = 0
-  let totalDuration = 0
-  let passedActive = false
-  for (const segment of timeline.value) {
-    const length = segment.endTime - segment.startTime
-    if (segment.id === activeId) passedActive = true
-    else if (!passedActive) elapsedBefore += length
-    totalDuration += length
-  }
-  const position = Math.min(totalDuration, elapsedBefore + currentPlaybackTime.value)
-  const timecode = `${formatTimecode(position)} / ${formatTimecode(totalDuration)}`
 
   return (
     <div
@@ -174,9 +159,9 @@ export function VideoPreview() {
               onClick={togglePlay}
               disabled={!hasContent}
               class="flex h-9 w-9 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
-              title={playing.value ? 'Pause (Space)' : 'Play (Space)'}
+              title={transportRunning.value ? 'Pause (Space)' : 'Play (Space)'}
             >
-              {playing.value ? <Pause class="h-5 w-5" /> : <Play class="ml-0.5 h-5 w-5" />}
+              {transportRunning.value ? <Pause class="h-5 w-5" /> : <Play class="ml-0.5 h-5 w-5" />}
             </button>
             <button
               onClick={() => stepFrame(1)}
@@ -188,14 +173,14 @@ export function VideoPreview() {
             </button>
           </div>
           <div class="flex items-center justify-end gap-2 sm:gap-4">
+            <ShuttleIndicator />
             <select
               id="playback-speed"
-              value={playbackSpeed.value}
-              onChange={(event) => {
-                const nextSpeed = Number((event.currentTarget as HTMLSelectElement).value)
-                playbackSpeed.value = nextSpeed
-                setPlaybackRate(nextSpeed)
-              }}
+              value={playbackRate.value}
+              onChange={(event) =>
+                setPlaybackSpeed(Number((event.currentTarget as HTMLSelectElement).value))
+              }
+              aria-label="Playback speed"
               class="rounded border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none hover:duration-0 focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
               title="Playback speed"
             >
@@ -205,15 +190,53 @@ export function VideoPreview() {
                 </option>
               ))}
             </select>
-            <span class="hidden text-sm text-slate-500 tabular-nums sm:inline dark:text-slate-400">
-              {timecode}
-            </span>
+            <PlaybackTimecode class="hidden sm:inline" />
           </div>
         </div>
-        <div class="pb-2 text-center text-sm text-slate-500 tabular-nums sm:hidden dark:text-slate-400">
-          {timecode}
-        </div>
+        <PlaybackTimecode class="block pb-2 text-center sm:hidden" />
       </div>
     </div>
+  )
+}
+
+// Position on the whole edited timeline: every segment before the active one,
+// plus the offset inside it. A leaf, so the per-frame playback time re-renders
+// only this text and not the preview around it.
+function PlaybackTimecode({ class: className }: { class: string }) {
+  const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
+  let elapsedBefore = 0
+  let totalDuration = 0
+  let passedActive = false
+  for (const segment of timeline.value) {
+    const length = segment.endTime - segment.startTime
+    if (segment.id === activeId) passedActive = true
+    else if (!passedActive) elapsedBefore += length
+    totalDuration += length
+  }
+  const position = Math.min(totalDuration, elapsedBefore + currentPlaybackTime.value)
+  return (
+    <span class={clsx('text-sm text-slate-500 tabular-nums dark:text-slate-400', className)}>
+      {formatTimecode(position)} / {formatTimecode(totalDuration)}
+    </span>
+  )
+}
+
+// J/K/L shuttle feedback: direction and speed while shuttling.
+function ShuttleIndicator() {
+  const rate = shuttleRate.value
+  return (
+    <span role="status" class="text-sm font-semibold text-violet-600 dark:text-violet-300">
+      {rate !== null && (
+        <span class="flex items-center gap-1" title="Shuttle speed (J/K/L)">
+          {rate < 0 ? (
+            <Rewind class="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <FastForward class="h-4 w-4" aria-hidden="true" />
+          )}
+          <span class="sr-only">{rate < 0 ? 'Reverse' : 'Forward'}</span>
+          {Math.abs(rate)}×
+        </span>
+      )}
+    </span>
   )
 }

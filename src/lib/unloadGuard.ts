@@ -1,14 +1,14 @@
+import { projectSaved, unlinkedClips } from '@/lib/project/projectPersistence'
 import { advancedSegments, exportHistory, exporting, timeline } from '@/lib/store'
 
-// Nothing is persisted across reloads (source files cannot be rehydrated), so
-// warn before the page unloads with work that would be lost.
+// Warn before the page unloads only when something would be lost: an export
+// still running, exports in the library (kept for the session only), or edits
+// the autosave has not stored yet (or cannot store, e.g. without IndexedDB).
 export function hasUnsavedWork(): boolean {
-  return (
-    exporting.value ||
-    timeline.value.length > 0 ||
-    advancedSegments.value.length > 0 ||
-    exportHistory.value.length > 0
-  )
+  if (exporting.value || exportHistory.value.length > 0) return true
+  const hasProject =
+    timeline.value.length > 0 || advancedSegments.value.length > 0 || unlinkedClips.value.length > 0
+  return hasProject && !projectSaved.value
 }
 
 function onBeforeUnload(event: BeforeUnloadEvent) {

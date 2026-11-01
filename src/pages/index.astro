@@ -8,6 +8,7 @@ import { ExportPanel } from '@/components/ExportPanel'
 import { ExportHistory } from '@/components/ExportHistory'
 import { FileDropZone } from '@/components/FileDropZone'
 import { ImportStatus } from '@/components/ImportStatus'
+import { ProjectRestoreBanner } from '@/components/ProjectRestoreBanner'
 import { LogPanel } from '@/components/LogPanel'
 import '@/styles/global.css'
 
@@ -30,6 +31,7 @@ const pageDescription =
     <FileDropZone client:only="preact" />
     <ModeTabs client:only="preact" />
     <ImportStatus client:only="preact" />
+    <ProjectRestoreBanner client:only="preact" />
     <EditorSurface client:only="preact" />
     <section aria-label="Export settings and controls">
       <ExportPanel client:only="preact" />

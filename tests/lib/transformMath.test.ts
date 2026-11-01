@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resizeTransform } from '@/lib/advanced/transformMath'
+import { MIN_TRANSFORM_SIZE, resizeTransform } from '@/lib/advanced/transformMath'
 import type { Transform } from '@/lib/types'
 
 const base: Transform = { x: 100, y: 100, width: 200, height: 100 }
@@ -45,5 +45,22 @@ describe('resizeTransform', () => {
     expect(result.width / result.height).toBeCloseTo(2)
     expect(result.x).toBe(100)
     expect(result.y).toBe(100)
+  })
+  it.each([
+    ['se', 0, 50, { x: 100, y: 100, width: 300, height: 150 }],
+    ['sw', 0, 50, { x: 0, y: 100, width: 300, height: 150 }],
+    ['ne', 0, -50, { x: 100, y: 50, width: 300, height: 150 }],
+    ['se', -100, 0, { x: 100, y: 100, width: 100, height: 50 }],
+  ] as const)(
+    'follows the axis that moved further on a locked %s drag of (%d, %d)',
+    (handle, dx, dy, expected) => {
+      expect(resizeTransform(base, handle, dx, dy, true)).toEqual(expected)
+    }
+  )
+
+  it('keeps a locked corner at the minimum size on both axes', () => {
+    const result = resizeTransform(base, 'se', -1000, -1000, true)
+    expect(result.height).toBe(MIN_TRANSFORM_SIZE)
+    expect(result.width).toBe(MIN_TRANSFORM_SIZE * 2)
   })
 })

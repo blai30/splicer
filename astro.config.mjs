@@ -4,11 +4,6 @@ import sitemap from '@astrojs/sitemap'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'astro/config'
 
-const coopCoep = {
-  'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp',
-}
-
 export default defineConfig({
   site: 'https://blai30.github.io',
   trailingSlash: 'always',
@@ -23,11 +18,21 @@ export default defineConfig({
   ],
   vite: {
     plugins: [tailwindcss()],
-    // The WebCodecs export worker is a module worker that code-splits its
-    // demuxers via dynamic import; ES output is required (the default 'iife'
-    // cannot code-split).
+    // The export workers are module workers that load the WASM AAC encoder
+    // via dynamic import only when the browser lacks native AAC; ES output is
+    // required (the default 'iife' cannot code-split).
     worker: { format: 'es' },
-    server: { headers: coopCoep },
-    preview: { headers: coopCoep },
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            // Keep the bundler's shared helpers in their own tiny chunk. Left to
+            // itself, rolldown parks them in the mediabunny chunk, and every
+            // island would then load mediabunny statically just to reach them.
+            groups: [{ name: 'runtime', test: /rolldown[:/]runtime/ }],
+          },
+        },
+      },
+    },
   },
 })

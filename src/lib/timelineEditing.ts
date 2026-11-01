@@ -1,6 +1,7 @@
 import { batch, signal } from '@preact/signals'
 
 import { addClipToPool, collectUnusedClips, registerClipReferences } from '@/lib/clipPool'
+import { showEditNotice } from '@/lib/editNotice'
 import { getClipById, playheadTime, selectedSegmentId, timeline } from '@/lib/store'
 import {
   splitSegmentAtPlayhead,
@@ -43,8 +44,8 @@ function captureEntry(): HistoryEntry {
   return { timeline: timeline.value, selectedSegmentId: selectedSegmentId.value }
 }
 
-function recordHistory() {
-  history.unshift(captureEntry())
+function recordHistory(entry: HistoryEntry = captureEntry()) {
+  history.unshift(entry)
   if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT
   // A new edit invalidates the redo branch.
   redoHistory.length = 0
@@ -82,8 +83,10 @@ function sameSegments(first: Segment[], second: Segment[]): boolean {
 }
 
 // Continuous gestures (trim drags) record one history entry for the whole
-// gesture: beginGesture() arms the flag and the first mutation consumes it.
+// gesture: beginGesture() snapshots the state and the first mutation records
+// that snapshot, so undo also restores a selection the gesture changed.
 let gesturePending = false
+let gestureEntry: HistoryEntry | null = null
 // True from beginGesture() until endGesture(). Undo/redo wait for the drag to
 // finish: undoing mid-drag would leave the rest of it unrecorded and a stale
 // mid-drag snapshot on the redo stack.
@@ -101,6 +104,7 @@ function onGlobalPointerEnd() {
 export function beginGesture() {
   gesturePending = true
   gestureActive = true
+  gestureEntry = captureEntry()
   if (typeof window !== 'undefined') {
     window.addEventListener('pointerup', onGlobalPointerEnd)
     window.addEventListener('pointercancel', onGlobalPointerEnd)
@@ -111,6 +115,7 @@ export function beginGesture() {
 export function endGesture() {
   gesturePending = false
   gestureActive = false
+  gestureEntry = null
   if (typeof window !== 'undefined') {
     window.removeEventListener('pointerup', onGlobalPointerEnd)
     window.removeEventListener('pointercancel', onGlobalPointerEnd)
@@ -120,7 +125,7 @@ export function endGesture() {
 function consumeGesturePending() {
   if (gesturePending) {
     gesturePending = false
-    recordHistory()
+    recordHistory(gestureEntry ?? undefined)
   }
 }
 
@@ -140,20 +145,34 @@ export function appendClipToTimeline(clip: Clip) {
   commit([...timeline.value, segment], wasEmpty ? segment.id : selectedSegmentId.value)
 }
 
-export function setInPoint() {
+// The selected segment when the playhead is strictly inside it. Otherwise an
+// in/out point would clamp to an edge, so the edit is skipped and the reason
+// shown instead of silently doing nothing.
+function segmentForEdgePoint(pointName: string): Segment | null {
+  if (timeline.value.length === 0) return null
   const segment = getSelectedSegment()
-  if (!segment) return
+  if (!segment) {
+    showEditNotice(`Select a segment to set its ${pointName}.`)
+    return null
+  }
   const playhead = playheadTime.value
-  // A playhead outside the segment would clamp to an edge: do nothing instead.
-  if (playhead <= segment.startTime || playhead >= segment.endTime) return
-  commit(updateSegmentStartTime(timeline.value, segment.id, playhead))
+  if (playhead <= segment.startTime || playhead >= segment.endTime) {
+    showEditNotice(`Move the playhead inside the selected segment to set its ${pointName}.`)
+    return null
+  }
+  return segment
+}
+
+export function setInPoint() {
+  const segment = segmentForEdgePoint('in-point')
+  if (!segment) return
+  commit(updateSegmentStartTime(timeline.value, segment.id, playheadTime.value))
 }
 
 export function setOutPoint() {
-  const segment = getSelectedSegment()
+  const segment = segmentForEdgePoint('out-point')
   if (!segment) return
   const playhead = playheadTime.value
-  if (playhead <= segment.startTime || playhead >= segment.endTime) return
   const clipDuration = getClipById(segment.clipId)?.duration ?? segment.endTime
   commit(updateSegmentEndTime(timeline.value, segment.id, playhead, clipDuration))
 }
@@ -161,14 +180,19 @@ export function setOutPoint() {
 export function cutAtPlayhead() {
   const segment = getSelectedSegment()
   if (!segment) return
-  const split = splitSegmentAtPlayhead(timeline.value, segment.id, playheadTime.value)
+  splitSegmentAt(segment.id, playheadTime.value)
+}
+
+// Split a segment at a source time, selecting the second piece. Does nothing
+// when either piece would be shorter than the minimum length.
+export function splitSegmentAt(segmentId: string, time: number) {
+  const split = splitSegmentAtPlayhead(timeline.value, segmentId, time)
   if (!split) return
   commit(split.nextSegments, split.newSegmentId)
 }
 
-export function toggleMute() {
-  const segmentId = selectedSegmentId.value
-  if (!segmentId || !getSelectedSegment()) return
+export function toggleMute(segmentId = selectedSegmentId.value) {
+  if (!segmentId || !timeline.value.some((segment) => segment.id === segmentId)) return
   commit(
     timeline.value.map((segment) =>
       segment.id === segmentId ? { ...segment, muted: !segment.muted } : segment
@@ -204,13 +228,48 @@ export function reorderSegment(segmentId: string, dropIndex: number) {
   commit(segments)
 }
 
-export function deleteSegment() {
-  const segmentId = selectedSegmentId.value
+export function deleteSegment(segmentId = selectedSegmentId.value) {
   if (!segmentId) return
   const currentIndex = timeline.value.findIndex((segment) => segment.id === segmentId)
   if (currentIndex === -1) return
   const next = timeline.value.filter((segment) => segment.id !== segmentId)
   commit(next, next[currentIndex]?.id ?? next[currentIndex - 1]?.id ?? null)
+}
+
+// Insert a copy right after the segment and select the copy.
+export function duplicateSegment(segmentId = selectedSegmentId.value) {
+  const index = timeline.value.findIndex((segment) => segment.id === segmentId)
+  if (index === -1) return
+  const copy = { ...timeline.value[index], id: crypto.randomUUID() }
+  const next = [...timeline.value]
+  next.splice(index + 1, 0, copy)
+  commit(next, copy.id)
+}
+
+// The segment back at the clip's full length.
+export function resetSegmentTrim(segmentId = selectedSegmentId.value) {
+  const segment = timeline.value.find((entry) => entry.id === segmentId)
+  const clip = segment && getClipById(segment.clipId)
+  if (!segment || !clip) return
+  commit(
+    timeline.value.map((entry) =>
+      entry.id === segment.id ? { ...entry, startTime: 0, endTime: clip.duration } : entry
+    )
+  )
+}
+
+export function isSegmentTrimmed(segment: Segment): boolean {
+  const clip = getClipById(segment.clipId)
+  return !!clip && (segment.startTime > 0 || segment.endTime < clip.duration)
+}
+
+// Swap the segment with its neighbour on one side.
+export function moveSegment(segmentId: string, direction: -1 | 1) {
+  const index = timeline.value.findIndex((segment) => segment.id === segmentId)
+  const target = index + direction
+  if (index === -1 || target < 0 || target >= timeline.value.length) return
+  // reorderSegment takes the gap index to drop into.
+  reorderSegment(segmentId, direction === -1 ? index - 1 : index + 2)
 }
 
 export function clearTimeline() {
@@ -251,11 +310,25 @@ export function redo() {
   collectUnusedClips()
 }
 
+// Rewrite the timeline of every snapshot on both stacks, an armed gesture's
+// included. A relink uses it: the relinked segments belonged to the project
+// all along, so no undo or redo step may drop them again.
+export function rebaseHistory(transform: (timeline: Segment[]) => Segment[]) {
+  const rebase = (entry: HistoryEntry): HistoryEntry => ({
+    ...entry,
+    timeline: transform(entry.timeline),
+  })
+  history.splice(0, history.length, ...history.map(rebase))
+  redoHistory.splice(0, redoHistory.length, ...redoHistory.map(rebase))
+  if (gestureEntry) gestureEntry = rebase(gestureEntry)
+}
+
 // Clears both stacks and any armed gesture. Used by tests for isolation.
 export function resetHistory() {
   history.length = 0
   redoHistory.length = 0
   gesturePending = false
   gestureActive = false
+  gestureEntry = null
   syncHistoryFlags()
 }

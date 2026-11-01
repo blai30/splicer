@@ -1,6 +1,6 @@
 import type { MbAudioCodec, MbContainer, MbVideoCodec } from '../exportCodecs'
 import type { CropParams, ExportFormat, Framerate, Quality, Transform } from '../types'
-import type { JobSource, WorkerResponse } from './protocol'
+import type { JobSource, OutputSizing, WorkerResponse } from './protocol'
 
 // One placed clip to composite. timelineStart is where it begins on the output
 // timeline (seconds); transform is its destination box on the project canvas.
@@ -14,6 +14,9 @@ export type CompositorLayer = {
   crop?: CropParams
   muted: boolean
   opacity: number
+  // Fade durations in seconds; missing means none.
+  fadeIn?: number
+  fadeOut?: number
 }
 
 export type CompositorAudioLayer = {
@@ -22,9 +25,11 @@ export type CompositorAudioLayer = {
   sourceEnd: number
   timelineStart: number
   volume: number
+  fadeIn?: number
+  fadeOut?: number
 }
 
-export type CompositorJob = {
+export type CompositorJob = OutputSizing & {
   canvas: { width: number; height: number }
   sources: JobSource[]
   layers: CompositorLayer[]
@@ -42,6 +47,8 @@ export type CompositorJob = {
   audioCodec: MbAudioCodec
 }
 
-export type CompositorWorkerRequest = { type: 'export'; job: CompositorJob } | { type: 'cancel' }
+export type CompositorWorkerRequest =
+  | { type: 'export'; job: CompositorJob; storageDir?: string }
+  | { type: 'cancel' }
 
 export type { WorkerResponse }

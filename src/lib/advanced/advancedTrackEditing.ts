@@ -1,20 +1,29 @@
 import { recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
+import { pruneAdvancedSelection, setActiveAdvancedTrack } from '@/lib/advanced/advancedSelection'
 import { advancedSegments, advancedTracks } from '@/lib/store'
 import type { Track } from '@/lib/types'
+
+// Number after the highest existing "Track N" so names stay unique after
+// tracks are removed.
+export function nextTrackName(tracks: Track[]): string {
+  let highest = 0
+  for (const track of tracks) {
+    const match = /^Track (\d+)$/.exec(track.name)
+    if (match) highest = Math.max(highest, Number(match[1]))
+  }
+  return `Track ${Math.max(highest, tracks.length) + 1}`
+}
 
 export function addTrack(): string {
   recordAdvancedHistory()
   const id = crypto.randomUUID()
-  // Number after the highest existing "Track N" so names stay unique after
-  // tracks are removed.
-  let highest = 0
-  for (const track of advancedTracks.value) {
-    const match = /^Track (\d+)$/.exec(track.name)
-    if (match) highest = Math.max(highest, Number(match[1]))
-  }
-  const name = `Track ${Math.max(highest, advancedTracks.value.length) + 1}`
   // Insert at the top (front), since the top lane renders on top.
-  advancedTracks.value = [{ id, name }, ...advancedTracks.value]
+  advancedTracks.value = [
+    { id, name: nextTrackName(advancedTracks.value) },
+    ...advancedTracks.value,
+  ]
+  // A new track is where the next import or paste is meant to go.
+  setActiveAdvancedTrack(id)
   return id
 }
 
@@ -25,6 +34,7 @@ export function removeTrack(id: string): void {
   recordAdvancedHistory()
   advancedTracks.value = advancedTracks.value.filter((track) => track.id !== id)
   advancedSegments.value = advancedSegments.value.filter((segment) => segment.trackId !== id)
+  pruneAdvancedSelection()
 }
 
 function patchTrack(id: string, patch: Partial<Track>): void {

@@ -1,11 +1,13 @@
 import type { Signal } from '@preact/signals'
-import { effect, signal } from '@preact/signals'
+import { computed, effect, signal } from '@preact/signals'
 
 import {
   STAGE_DEFAULT_HEIGHT,
   STAGE_MAX_HEIGHT,
   STAGE_MIN_HEIGHT,
 } from '@/lib/advanced/stageHeight'
+import { deleteStoredExport } from '@/lib/exportStorage'
+import { formatSize } from '@/lib/format'
 import type {
   AdvancedSegment,
   CanvasSize,
@@ -15,7 +17,8 @@ import type {
   ExportRecord,
   Framerate,
   MkvCodec,
-  Quality,
+  QualityChoice,
+  Resolution,
   Segment,
   Track,
   Viewport,
@@ -97,17 +100,59 @@ export function clearLogs() {
 export const logPanelVisible = signal<boolean>(loadFromStorage('logPanelVisible', false, isBoolean))
 
 export const EXPORT_HISTORY_LIMIT = 50
+// Exports are kept in memory or on disk for the session; past this total the
+// oldest are dropped so the library cannot fill the disk or the tab's memory.
+export const EXPORT_LIBRARY_BYTE_LIMIT = 4_000_000_000
+
+// Why older exports left the library, shown until dismissed.
+export const exportLibraryNotice = signal<string | null>(null)
+
+// Release what a record holds: its object URL and, for a streamed export, the
+// file on disk.
+export function releaseExportRecord(record: ExportRecord) {
+  URL.revokeObjectURL(record.url)
+  if (record.storageName) void deleteStoredExport(record.storageName)
+}
+
+// The newest records that fit the count and byte limits; the newest is always
+// kept, however large.
+export function recordsWithinLimits(
+  records: ExportRecord[],
+  countLimit = EXPORT_HISTORY_LIMIT,
+  byteLimit = EXPORT_LIBRARY_BYTE_LIMIT
+): { kept: ExportRecord[]; evicted: ExportRecord[] } {
+  const kept: ExportRecord[] = []
+  let bytes = 0
+  for (const [index, record] of records.entries()) {
+    bytes += record.size
+    if (index > 0 && (index >= countLimit || bytes > byteLimit)) {
+      return { kept, evicted: records.slice(index) }
+    }
+    kept.push(record)
+  }
+  return { kept, evicted: [] }
+}
 
 export function addExportRecord(record: ExportRecord) {
-  const next = [record, ...exportHistory.value]
-  if (next.length > EXPORT_HISTORY_LIMIT) {
-    // Release blob memory held by evicted records.
-    for (const evicted of next.slice(EXPORT_HISTORY_LIMIT)) {
-      URL.revokeObjectURL(evicted.url)
-    }
-    next.length = EXPORT_HISTORY_LIMIT
+  const { kept, evicted } = recordsWithinLimits([record, ...exportHistory.value])
+  for (const old of evicted) releaseExportRecord(old)
+  if (evicted.length > 0) {
+    const count =
+      evicted.length === 1 ? 'the oldest export' : `the ${evicted.length} oldest exports`
+    exportLibraryNotice.value = `Removed ${count} to keep the library under ${EXPORT_HISTORY_LIMIT} files and ${formatSize(EXPORT_LIBRARY_BYTE_LIMIT)}. Download any export you want to keep.`
   }
-  exportHistory.value = next
+  exportHistory.value = kept
+}
+
+export function removeExportRecord(record: ExportRecord) {
+  releaseExportRecord(record)
+  exportHistory.value = exportHistory.value.filter((entry) => entry.id !== record.id)
+}
+
+export function clearExportHistory() {
+  for (const record of exportHistory.value) releaseExportRecord(record)
+  exportHistory.value = []
+  exportLibraryNotice.value = null
 }
 
 // Internal map for O(1) clip lookups. Rebuilt whenever `clips` changes.
@@ -124,8 +169,31 @@ export function getClipById(id: string): Clip | undefined {
 export const exportFormat = signal<ExportFormat>(
   loadFromStorage('exportFormat', 'mp4', oneOf('mp4', 'mkv', 'mov', 'webm'))
 )
-export const quality = signal<Quality>(
-  loadFromStorage('quality', 'lossless', oneOf('lossless', 'high', 'medium', 'low'))
+export const quality = signal<QualityChoice>(
+  loadFromStorage(
+    'quality',
+    'lossless',
+    oneOf('original', 'lossless', 'high', 'medium', 'low', 'target')
+  )
+)
+export const resolution = signal<Resolution>(
+  loadFromStorage('resolution', 'original', oneOf('original', '1080', '720', '480', '360'))
+)
+// The file size Target size mode aims for, in megabytes (10^6 bytes, as the
+// size readouts use).
+export const TARGET_SIZE_PRESETS_MB = [8, 10, 25, 50]
+export const TARGET_SIZE_MIN_MB = 0.1
+export const TARGET_SIZE_MAX_MB = 100_000
+// A typed custom size, clamped into range; null for an empty or non-numeric
+// entry, which keeps the current size.
+export function parseTargetSizeMB(text: string): number | null {
+  if (text.trim() === '') return null
+  const value = Number(text)
+  if (!Number.isFinite(value)) return null
+  return Math.min(TARGET_SIZE_MAX_MB, Math.max(TARGET_SIZE_MIN_MB, value))
+}
+export const targetSizeMB = signal<number>(
+  loadFromStorage('targetSizeMB', 10, isNumberIn(TARGET_SIZE_MIN_MB, TARGET_SIZE_MAX_MB))
 )
 export const framerate = signal<Framerate>(
   loadFromStorage('framerate', 'original', oneOf('original', '60', '30', '24'))
@@ -176,37 +244,102 @@ export const advancedStageHeight = signal<number>(
     isNumberIn(STAGE_MIN_HEIGHT, STAGE_MAX_HEIGHT)
   )
 )
+// Magnetic snapping of timeline moves and trims. A workspace preference.
+export const advancedSnapEnabled = signal<boolean>(
+  loadFromStorage('advancedSnapEnabled', true, isBoolean)
+)
+// Transient timeline gesture feedback (not persisted): the time a dragged edge
+// snapped to, and whether a clip drag is active and aiming at a new track.
+export const advancedSnapLine = signal<number | null>(null)
+export const advancedClipDragActive = signal(false)
+// Timeline end of the clip being dragged, so the lanes widen ahead of a move
+// that edge auto-scroll carries past the committed content.
+export const advancedDragPreviewEnd = signal<number | null>(null)
+export const advancedNewTrackTarget = signal<'top' | 'bottom' | null>(null)
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])
-export const advancedSelectedId = signal<string | null>(null)
+// The Advanced clip selection. `primary` is the clip the last click picked: the
+// inspector, crop, cut, in/out, and z-order act on it alone, while move,
+// delete, mute, duplicate, and copy act on every id. Always written whole, so
+// the two never disagree.
+export type AdvancedSelection = { ids: string[]; primary: string | null }
+export const advancedSelection = signal<AdvancedSelection>({ ids: [], primary: null })
+export const advancedSelectedId = computed(() => advancedSelection.value.primary)
+export const advancedSelectedIds = computed(() => advancedSelection.value.ids)
+export const advancedSelectedSet = computed(() => new Set(advancedSelection.value.ids))
+// The track paste, imports, and file drops land on (view state, not undone).
+// null, or a removed track, means the top track.
+export const advancedActiveTrackId = signal<string | null>(null)
+// Every selected clip but the one being dragged follows it by this much while
+// a group move is previewed on the timeline.
+export const advancedGroupMovePreview = signal<{
+  ids: ReadonlySet<string>
+  deltaTime: number
+  laneDelta: number
+} | null>(null)
+// The Advanced clip whose context menu is open, and where (viewport px).
+export const advancedClipMenu = signal<{ segmentId: string; x: number; y: number } | null>(null)
+// True while the preview canvas has keyboard focus, so arrow keys nudge the
+// selection there instead of stepping frames.
+export const advancedCanvasFocused = signal(false)
 export const advancedPlayhead = signal<number>(0)
 export const advancedPlaying = signal<boolean>(false)
 
+// Preview speed chosen in either editor's speed selector. Shared and persisted,
+// so the two selectors agree and the choice survives remounts and reloads.
+export const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
+export const playbackRate = signal<number>(
+  loadFromStorage('playbackRate', 1, oneOf(...PLAYBACK_SPEED_OPTIONS))
+)
+
 // Playback output signals. Written only by the playback module (lib/playback.ts).
 export const playing = signal(false)
+// J/K/L shuttle speed in Basic: positive plays forward faster than the chosen
+// speed, negative plays in reverse, null is normal playback.
+export const shuttleRate = signal<number | null>(null)
+// True while the Basic preview moves on its own, forward or in reverse.
+export const transportRunning = computed(() => playing.value || (shuttleRate.value ?? 0) < 0)
 export const currentPlaybackTime = signal(0)
 export const currentSegmentDuration = signal(0)
 
 persistSignal('exportFormat', exportFormat)
 persistSignal('quality', quality)
 persistSignal('framerate', framerate)
+persistSignal('resolution', resolution)
+persistSignal('targetSizeMB', targetSizeMB)
 persistSignal('webmCodec', webmCodec)
 persistSignal('mkvCodec', mkvCodec)
 persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
+persistSignal('playbackRate', playbackRate)
 persistSignal('logPanelVisible', logPanelVisible)
 persistSignal('appMode', appMode)
 persistSignal('advancedOutputLock', advancedOutputLock)
 persistSignal('advancedStageHeight', advancedStageHeight)
+persistSignal('advancedSnapEnabled', advancedSnapEnabled)
 
-export const ZOOM_MIN = 5
-export const ZOOM_MAX = 200
+export { ZOOM_MAX, ZOOM_MIN } from '@/lib/timelineNavigation'
 // Must match the timeline track's DOM: gap-1 between blocks, px-4 padding.
 export const GAP_PX = 4
 export const PADDING_PX = 16
 
 export const pxPerSec = signal(80)
 export const dragState = signal<DragState | null>(null)
+// The Basic segment whose context menu is open, and where (viewport px).
+// `time` is the source time the menu was opened at, where "Split here" splits;
+// playback may move the playhead on while the menu is open.
+export const segmentMenu = signal<{
+  segmentId: string
+  time: number
+  x: number
+  y: number
+} | null>(null)
+// The Basic trim drag in progress, for its readout and snap guide (transient).
+export const trimFeedback = signal<{
+  segmentId: string
+  side: 'start' | 'end'
+  snapped: boolean
+} | null>(null)
 export const importing = signal(false)
 // User-facing import failures, shown as a dismissible notice.
 export const importErrors = signal<string[]>([])

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { addClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
+import { clearAdvancedSelection } from '@/lib/advanced/advancedSelection'
 import {
   cutAdvancedAtPlayhead,
   deleteAdvancedSelected,
@@ -20,7 +21,7 @@ function makeClip(id: string): Clip {
     width: 1280,
     height: 720,
     objectUrl: `blob:${id}`,
-    waveformPeaks: [],
+    waveformPeaks: new Float32Array(0),
   }
 }
 
@@ -28,7 +29,7 @@ describe('advancedTimelineEditing', () => {
   beforeEach(() => {
     clips.value = []
     advancedSegments.value = []
-    advancedSelectedId.value = null
+    clearAdvancedSelection()
     advancedPlayhead.value = 0
   })
 
@@ -75,7 +76,7 @@ describe('advancedTimelineEditing', () => {
 
   it('no-ops when nothing is selected', () => {
     addClipToTrack(makeClip('a'), 'track-1', 0)
-    advancedSelectedId.value = null
+    clearAdvancedSelection()
     advancedPlayhead.value = 2
     setAdvancedInPoint()
     expect(advancedSegments.value[0]).toMatchObject({ sourceStart: 0 })

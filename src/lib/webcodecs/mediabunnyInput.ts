@@ -1,11 +1,45 @@
-import { ALL_FORMATS, AudioSampleSink, BlobSource, Input, VideoSampleSink } from 'mediabunny'
+import {
+  ALL_FORMATS,
+  AudioSampleSink,
+  BlobSource,
+  EncodedPacketSink,
+  Input,
+  IsobmffInputFormat,
+  VideoSampleSink,
+  type InputVideoTrack,
+} from 'mediabunny'
 
 import { UnsupportedSourceError } from './protocol'
 
 export type SourceReader = {
+  videoTrack: InputVideoTrack
   videoSink: VideoSampleSink
   audioSink: AudioSampleSink | null
+  // Video frames shown in [start, end), counted from the container index;
+  // null when the container has no up-front index (MKV/WebM would need a scan).
+  countVideoFrames: (start: number, end: number) => Promise<number | null>
   dispose: () => void
+}
+
+// Packets whose display span overlaps [start, end), walking decode order from
+// the key packet at or before `start`. B-frames make presentation times
+// non-monotonic in decode order, so the walk ends at the first key packet past
+// `end` rather than the first packet past it.
+export async function countPacketsInRange(
+  track: InputVideoTrack,
+  start: number,
+  end: number
+): Promise<number> {
+  const sink = new EncodedPacketSink(track)
+  const options = { metadataOnly: true }
+  const first = (await sink.getKeyPacket(start, options)) ?? (await sink.getFirstPacket(options))
+  if (!first) return 0
+  let count = 0
+  for await (const packet of sink.packets(first, undefined, options)) {
+    if (packet.type === 'key' && packet.timestamp >= end) break
+    if (packet.timestamp < end && packet.timestamp + packet.duration > start) count++
+  }
+  return count
 }
 
 // Open one source file with mediabunny, verifying the primary video track can be
@@ -22,9 +56,13 @@ export async function openSource(file: File): Promise<SourceReader> {
     const audioTrack = await input.getPrimaryAudioTrack()
     const audioDecodable = audioTrack ? await audioTrack.canDecode() : false
 
+    const indexed = (await input.getFormat()) instanceof IsobmffInputFormat
     return {
+      videoTrack,
       videoSink: new VideoSampleSink(videoTrack),
       audioSink: audioDecodable && audioTrack ? new AudioSampleSink(audioTrack) : null,
+      countVideoFrames: async (start, end) =>
+        indexed ? countPacketsInRange(videoTrack, start, end) : null,
       dispose: () => input.dispose(),
     }
   } catch (err) {

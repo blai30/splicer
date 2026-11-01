@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { setOutputLock } from '@/lib/advanced/advancedEditing'
 import {
   recordAdvancedHistory,
+  recordAdvancedHistoryCoalesced,
   redoAdvanced,
   resetAdvancedHistory,
   undoAdvanced,
 } from '@/lib/advanced/advancedHistory'
 import { addClipToTrack, toggleSegmentMute } from '@/lib/advanced/advancedSegmentEditing'
+import { clearAdvancedSelection } from '@/lib/advanced/advancedSelection'
 import { deleteAdvancedSelected, setAdvancedInPoint } from '@/lib/advanced/advancedTimelineEditing'
 import { addTrack } from '@/lib/advanced/advancedTrackEditing'
 import {
@@ -29,7 +31,7 @@ function makeClip(id: string): Clip {
     width: 1280,
     height: 720,
     objectUrl: `blob:${id}`,
-    waveformPeaks: [],
+    waveformPeaks: new Float32Array(0),
   }
 }
 
@@ -38,10 +40,34 @@ describe('advancedHistory', () => {
     clips.value = []
     advancedSegments.value = []
     advancedTracks.value = []
-    advancedSelectedId.value = null
+    clearAdvancedSelection()
     advancedPlayhead.value = 0
     advancedOutputLock.value = null
     resetAdvancedHistory()
+  })
+
+  it('folds a burst of coalesced edits into one entry, but not across other edits', () => {
+    addClipToTrack(makeClip('a'), 'track-1', 0)
+    const id = advancedSegments.value[0].id
+    const shift = (delta: number) => {
+      recordAdvancedHistoryCoalesced(`nudge:${id}`)
+      advancedSegments.value = advancedSegments.value.map((segment) => ({
+        ...segment,
+        timelineStart: segment.timelineStart + delta,
+      }))
+    }
+    shift(1)
+    shift(1)
+    toggleSegmentMute(id)
+    shift(1)
+    expect(advancedSegments.value[0].timelineStart).toBe(3)
+    undoAdvanced()
+    expect(advancedSegments.value[0].timelineStart).toBe(2)
+    undoAdvanced()
+    expect(advancedSegments.value[0].muted).toBeFalsy()
+    expect(advancedSegments.value[0].timelineStart).toBe(2)
+    undoAdvanced()
+    expect(advancedSegments.value[0].timelineStart).toBe(0)
   })
 
   it('undoes and redoes a mute toggle', () => {

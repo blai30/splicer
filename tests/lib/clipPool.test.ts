@@ -2,15 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { resetAdvancedHistory, undoAdvanced } from '@/lib/advanced/advancedHistory'
 import { addClipToTrack, removeAdvancedSegment } from '@/lib/advanced/advancedSegmentEditing'
+import { clearAdvancedSelection } from '@/lib/advanced/advancedSelection'
 import { collectUnusedClips } from '@/lib/clipPool'
-import {
-  advancedSegments,
-  advancedSelectedId,
-  advancedTracks,
-  clips,
-  selectedSegmentId,
-  timeline,
-} from '@/lib/store'
+import { advancedSegments, advancedTracks, clips, selectedSegmentId, timeline } from '@/lib/store'
 import {
   appendClipToTimeline,
   deleteSegment,
@@ -29,7 +23,7 @@ function makeClip(id: string): Clip {
     width: 640,
     height: 360,
     objectUrl: `blob:${id}`,
-    waveformPeaks: [],
+    waveformPeaks: new Float32Array(0),
   }
 }
 
@@ -40,7 +34,7 @@ describe('shared clip pool', () => {
     selectedSegmentId.value = null
     advancedSegments.value = []
     advancedTracks.value = [{ id: 'track-1', name: 'Track 1' }]
-    advancedSelectedId.value = null
+    clearAdvancedSelection()
     resetHistory()
     resetAdvancedHistory()
   })
