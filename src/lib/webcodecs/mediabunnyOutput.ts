@@ -24,8 +24,8 @@ export type OutputParams = {
   videoCodec: MbVideoCodec
   videoBitrate: number
   keyFrameIntervalUs: number
-  // Constant output frame interval; null passes source timing through.
-  frameDurationUs: number | null
+  // Exact constant output frame rate; null passes source timing through.
+  frameRate: number | null
   hasAudioOutput: boolean
   audioCodec: MbAudioCodec
   audioBitrate: number
@@ -65,7 +65,7 @@ export function createOutput(plan: OutputParams, container: MbContainer): Output
     keyFrameInterval: plan.keyFrameIntervalUs / 1_000_000,
     // Frames are always drawn at the output size, but guard against drift.
     sizeChangeBehavior: 'contain',
-    transform: plan.frameDurationUs ? { frameRate: 1_000_000 / plan.frameDurationUs } : undefined,
+    transform: plan.frameRate ? { frameRate: plan.frameRate } : undefined,
   })
   output.addVideoTrack(videoSource)
 

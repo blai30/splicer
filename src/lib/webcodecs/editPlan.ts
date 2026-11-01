@@ -13,6 +13,8 @@ export type EditPlan = {
   slices: EditSlice[]
   // null means "original": pass source frame timing through unchanged.
   frameDurationUs: number | null
+  // Exact output frame rate for constant-rate output; null for "original".
+  frameRate: number | null
   videoBitrate: number
   audioBitrate: number
   keyFrameIntervalUs: number
@@ -50,6 +52,7 @@ const MIN_VIDEO_BITRATE = 100_000
 
 export type EncodeParams = {
   frameDurationUs: number | null
+  frameRate: number | null
   videoBitrate: number
   audioBitrate: number
   keyFrameIntervalUs: number
@@ -63,7 +66,8 @@ export function computeEncodeParams(
   fps: Framerate,
   quality: Quality
 ): EncodeParams {
-  const frameDurationUs = fps === 'original' ? null : Math.round(1_000_000 / FPS_BY_PRESET[fps])
+  const frameRate = fps === 'original' ? null : FPS_BY_PRESET[fps]
+  const frameDurationUs = frameRate === null ? null : Math.round(1_000_000 / frameRate)
   const pixelRatio = (width * height) / REF_PIXELS
   const videoBitrate = Math.max(
     MIN_VIDEO_BITRATE,
@@ -71,6 +75,7 @@ export function computeEncodeParams(
   )
   return {
     frameDurationUs,
+    frameRate,
     videoBitrate,
     audioBitrate: AUDIO_BITRATE[quality],
     keyFrameIntervalUs: KEYFRAME_INTERVAL_US,
@@ -136,6 +141,7 @@ export function buildEditPlan(job: ExportJob): EditPlan {
     outputHeight: height,
     slices,
     frameDurationUs: params.frameDurationUs,
+    frameRate: params.frameRate,
     videoBitrate: params.videoBitrate,
     audioBitrate: params.audioBitrate,
     keyFrameIntervalUs: params.keyFrameIntervalUs,

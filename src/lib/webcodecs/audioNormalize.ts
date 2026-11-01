@@ -1,12 +1,6 @@
-// Convert planar PCM of any rate/channel count to the export's fixed layout
-// (stereo at the output rate). Encoders require constant audio parameters, so
-// every source is normalized before it reaches the encoder.
-
-export type PlanarAudio = {
-  sampleRate: number
-  // One Float32Array per channel, all the same length.
-  channels: Float32Array[]
-}
+// Convert PCM of any rate/channel count to the export's fixed layout (stereo at
+// the output rate). Encoders require constant audio parameters, so every source
+// is normalized before it reaches the encoder.
 
 // Mono is duplicated to both sides; stereo passes through; for more channels
 // the front left/right pair is used.
@@ -16,44 +10,61 @@ export function toStereo(channels: Float32Array[]): [Float32Array, Float32Array]
   return [channels[0], channels[1]]
 }
 
-// Linear-interpolation resample of one channel to `outFrames` frames.
-export function resampleChannel(
-  input: Float32Array,
-  ratio: number,
-  outFrames: number
-): Float32Array {
-  const output = new Float32Array(outFrames)
-  const last = input.length - 1
-  if (last < 0) return output
-  for (let frame = 0; frame < outFrames; frame++) {
-    const position = frame * ratio
-    const index = Math.min(last, Math.floor(position))
-    const next = Math.min(last, index + 1)
-    const fraction = position - index
-    output[frame] = input[index] * (1 - fraction) + input[next] * fraction
-  }
-  return output
-}
+// Streaming linear-interpolation resampler for one stereo stream. It keeps its
+// fractional read position and the previous chunk's last frame between calls,
+// so consecutive chunks resample as one continuous signal: no frames are
+// dropped or duplicated at chunk boundaries.
+export class StereoResampler {
+  private readonly step: number
+  // Read position of the next output frame, in input frames relative to the
+  // start of the next chunk. -1 <= position means "between the previous
+  // chunk's last frame and this chunk's first".
+  private position = 0
+  private previous: [number, number] | null = null
 
-// Normalize to stereo at `outRate`, returned as one interleaved-by-plane
-// buffer (left plane then right plane) ready for an f32-planar AudioSample.
-export function normalizeAudio(
-  audio: PlanarAudio,
-  outRate: number
-): { data: Float32Array; frames: number } {
-  const [left, right] = toStereo(audio.channels)
-  const inFrames = left.length
-  if (inFrames === 0) return { data: new Float32Array(0), frames: 0 }
-  if (audio.sampleRate === outRate) {
-    const data = new Float32Array(inFrames * 2)
-    data.set(left, 0)
-    data.set(right, inFrames)
-    return { data, frames: inFrames }
+  constructor(inRate: number, outRate: number) {
+    this.step = inRate / outRate
   }
-  const ratio = audio.sampleRate / outRate
-  const frames = Math.max(1, Math.round(inFrames / ratio))
-  const data = new Float32Array(frames * 2)
-  data.set(resampleChannel(left, ratio, frames), 0)
-  data.set(resampleChannel(right, ratio, frames), frames)
-  return { data, frames }
+
+  // Resample one chunk. Returns planar stereo (left plane, then right plane).
+  process(left: Float32Array, right: Float32Array): { data: Float32Array; frames: number } {
+    const inFrames = left.length
+    if (inFrames === 0) return { data: new Float32Array(0), frames: 0 }
+    if (this.step === 1 && this.previous === null && this.position === 0) {
+      // Same rate: pass through untouched.
+      const data = new Float32Array(inFrames * 2)
+      data.set(left, 0)
+      data.set(right, inFrames)
+      return { data, frames: inFrames }
+    }
+
+    const prev = this.previous
+    const sampleAt = (channel: Float32Array, index: number, side: 0 | 1): number =>
+      index < 0 ? (prev ? prev[side] : channel[0]) : channel[index]
+
+    const outLeft: number[] = []
+    const outRight: number[] = []
+    let position = this.position
+    // Interpolating needs the frame after floor(position) inside this chunk.
+    while (position < inFrames - 1) {
+      const index = Math.floor(position)
+      const fraction = position - index
+      outLeft.push(
+        sampleAt(left, index, 0) * (1 - fraction) + sampleAt(left, index + 1, 0) * fraction
+      )
+      outRight.push(
+        sampleAt(right, index, 1) * (1 - fraction) + sampleAt(right, index + 1, 1) * fraction
+      )
+      position += this.step
+    }
+    // Carry the remainder into the next chunk, whose index -1 is our last frame.
+    this.position = position - inFrames
+    this.previous = [left[inFrames - 1], right[inFrames - 1]]
+
+    const frames = outLeft.length
+    const data = new Float32Array(frames * 2)
+    data.set(outLeft, 0)
+    data.set(outRight, frames)
+    return { data, frames }
+  }
 }

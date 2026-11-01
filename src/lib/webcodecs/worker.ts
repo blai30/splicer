@@ -60,12 +60,20 @@ async function runExport(job: ExportJob): Promise<void> {
 
     // Slices are in output-timeline order with cumulative timestamps, so feeding
     // them sequentially produces the concatenated output.
+    // Audio is written on one continuous frame grid across slices.
+    let audioFrame = 0
     for (const slice of plan.slices) {
       if (canceled) throw new CanceledError()
       const reader = await sources.get(slice.sourceIndex)
       await encodeVideoSlice({ reader, slice, plan, out, onFrameEncoded, shouldCancel })
       if (plan.hasAudioOutput) {
-        await encodeAudioSlice({ reader, slice, out, shouldCancel })
+        audioFrame = await encodeAudioSlice({
+          reader,
+          slice,
+          out,
+          startFrame: audioFrame,
+          shouldCancel,
+        })
       }
     }
 

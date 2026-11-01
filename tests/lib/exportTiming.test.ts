@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { audioFrameRange } from '@/lib/webcodecs/audioEncode'
-import { normalizeAudio, resampleChannel, toStereo } from '@/lib/webcodecs/audioNormalize'
+import { StereoResampler, toStereo } from '@/lib/webcodecs/audioNormalize'
 import { frameOutputSpan } from '@/lib/webcodecs/videoEncode'
 
 describe('frameOutputSpan', () => {
@@ -46,7 +46,7 @@ describe('audioFrameRange', () => {
   })
 })
 
-describe('normalizeAudio', () => {
+describe('StereoResampler', () => {
   it('duplicates mono to stereo', () => {
     const mono = new Float32Array([0.1, 0.2])
     const [left, right] = toStereo([mono])
@@ -54,25 +54,31 @@ describe('normalizeAudio', () => {
     expect(right).toBe(mono)
   })
 
-  it('passes matching-rate stereo through as planar data', () => {
-    const result = normalizeAudio(
-      { sampleRate: 48_000, channels: [new Float32Array([1, 2]), new Float32Array([3, 4])] },
-      48_000
-    )
+  it('passes matching-rate audio through unchanged', () => {
+    const resampler = new StereoResampler(48_000, 48_000)
+    const result = resampler.process(new Float32Array([1, 2]), new Float32Array([3, 4]))
     expect(result.frames).toBe(2)
     expect(Array.from(result.data)).toEqual([1, 2, 3, 4])
   })
 
-  it('resamples 44.1 kHz to 48 kHz preserving duration', () => {
-    const input = new Float32Array(44_100).fill(0.5)
-    const result = normalizeAudio({ sampleRate: 44_100, channels: [input] }, 48_000)
-    expect(result.frames).toBe(48_000)
-    expect(result.data[0]).toBeCloseTo(0.5)
-    expect(result.data[result.data.length - 1]).toBeCloseTo(0.5)
-  })
-
-  it('linearly interpolates between input frames', () => {
-    const output = resampleChannel(new Float32Array([0, 1]), 0.5, 3)
-    expect(Array.from(output)).toEqual([0, 0.5, 1])
+  it('resamples chunked 44.1 kHz audio as one continuous stream', () => {
+    const total = 44_100
+    const ramp = Float32Array.from({ length: total }, (_, i) => i / total)
+    const chunked = new StereoResampler(44_100, 48_000)
+    const pieces: number[] = []
+    for (let start = 0; start < total; start += 1024) {
+      const chunk = ramp.subarray(start, Math.min(total, start + 1024))
+      const { data, frames } = chunked.process(chunk, chunk)
+      pieces.push(...data.subarray(0, frames))
+    }
+    const whole = new StereoResampler(44_100, 48_000).process(ramp, ramp)
+    // Same frames as resampling all at once: nothing dropped at chunk edges.
+    expect(pieces.length).toBe(whole.frames)
+    expect(Math.abs(pieces.length - 48_000)).toBeLessThanOrEqual(2)
+    for (let i = 0; i < pieces.length; i++) {
+      expect(pieces[i]).toBeCloseTo(whole.data[i], 6)
+    }
+    // A ramp stays monotonic: no jumps backwards at chunk boundaries.
+    for (let i = 1; i < pieces.length; i++) expect(pieces[i]).toBeGreaterThanOrEqual(pieces[i - 1])
   })
 })
