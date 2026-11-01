@@ -10,7 +10,6 @@ import {
   attachAdvancedPreview,
   projectDuration,
   seek,
-  setPlaybackRate,
   stepFrame,
   togglePlay,
 } from '@/lib/advanced/advancedPlayback'
@@ -19,14 +18,15 @@ import { clampStageHeight } from '@/lib/advanced/stageHeight'
 import { clampZoom, fitToContent, zoomAtPoint } from '@/lib/advanced/viewportMath'
 import { formatTimecode } from '@/lib/format'
 import {
+  PLAYBACK_SPEED_OPTIONS,
   advancedPlayhead,
   advancedPlaying,
   advancedSegments,
   advancedStageHeight,
   advancedViewport,
+  playbackRate,
 } from '@/lib/store'
 
-const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 const FIT_PADDING = 40
 
 const TRANSPORT_BUTTON =
@@ -39,7 +39,6 @@ export function AdvancedPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const didFit = useRef(false)
-  const playbackSpeed = useSignal(1)
   const cropMode = useSignal(false)
   const stageSize = useSignal({ width: 0, height: 0 })
 
@@ -217,12 +216,11 @@ export function AdvancedPreview() {
           </div>
           <div class="flex items-center justify-end gap-2 sm:gap-4">
             <select
-              value={playbackSpeed.value}
-              onChange={(event) => {
-                const nextSpeed = Number((event.currentTarget as HTMLSelectElement).value)
-                playbackSpeed.value = nextSpeed
-                setPlaybackRate(nextSpeed)
-              }}
+              value={playbackRate.value}
+              onChange={(event) =>
+                (playbackRate.value = Number((event.currentTarget as HTMLSelectElement).value))
+              }
+              aria-label="Playback speed"
               class="rounded border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-700 transition-colors outline-none hover:duration-0 focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
               title="Playback speed"
             >

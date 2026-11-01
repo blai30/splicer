@@ -41,8 +41,9 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 ### Playback
 
 - Segment-aware preview player.
-- Playback speed: `0.25x` to `2x`.
-- Frame stepping controls.
+- Playback speed: `0.25x` to `2x`, shared by both editors and remembered across reloads.
+- J/K/L shuttle in Basic: reverse and forward play that speeds up with each press (up to `8x`).
+- Frame stepping controls, one-second steps, and jumps between cuts.
 - Automatic segment advance during playback.
 
 ### Export
@@ -68,6 +69,9 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 - `Space`: Play/Pause
 - `ArrowLeft` or `,`: Step back one frame
 - `ArrowRight` or `.`: Step forward one frame
+- `Shift` + `ArrowLeft` / `ArrowRight`: Step back/forward one second, across cuts (Basic)
+- `ArrowUp` / `ArrowDown`: Jump to the previous/next cut (Basic)
+- `J` / `K` / `L`: Play in reverse / stop / play forward; press `J` or `L` again to go faster (Basic)
 - `-`: Zoom timeline out (anchored on the playhead)
 - `=`: Zoom timeline in (anchored on the playhead)
 - `Shift` + `Z`: Fit the whole timeline in view
@@ -82,6 +86,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 - `Ctrl` + `Z`: Undo
 - `Ctrl` + `Shift` + `Z` or `Ctrl` + `Y`: Redo
 - `Home`: Go to start
+- `End`: Go to end
 
 ## Tech Stack
 

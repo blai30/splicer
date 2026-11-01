@@ -1,5 +1,5 @@
 import type { Signal } from '@preact/signals'
-import { effect, signal } from '@preact/signals'
+import { computed, effect, signal } from '@preact/signals'
 
 import {
   STAGE_DEFAULT_HEIGHT,
@@ -194,8 +194,20 @@ export const advancedSelectedId = signal<string | null>(null)
 export const advancedPlayhead = signal<number>(0)
 export const advancedPlaying = signal<boolean>(false)
 
+// Preview speed chosen in either editor's speed selector. Shared and persisted,
+// so the two selectors agree and the choice survives remounts and reloads.
+export const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
+export const playbackRate = signal<number>(
+  loadFromStorage('playbackRate', 1, oneOf(...PLAYBACK_SPEED_OPTIONS))
+)
+
 // Playback output signals. Written only by the playback module (lib/playback.ts).
 export const playing = signal(false)
+// J/K/L shuttle speed in Basic: positive plays forward faster than the chosen
+// speed, negative plays in reverse, null is normal playback.
+export const shuttleRate = signal<number | null>(null)
+// True while the Basic preview moves on its own, forward or in reverse.
+export const transportRunning = computed(() => playing.value || (shuttleRate.value ?? 0) < 0)
 export const currentPlaybackTime = signal(0)
 export const currentSegmentDuration = signal(0)
 
@@ -206,6 +218,7 @@ persistSignal('webmCodec', webmCodec)
 persistSignal('mkvCodec', mkvCodec)
 persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
+persistSignal('playbackRate', playbackRate)
 persistSignal('logPanelVisible', logPanelVisible)
 persistSignal('appMode', appMode)
 persistSignal('advancedOutputLock', advancedOutputLock)

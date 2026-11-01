@@ -12,8 +12,12 @@ import {
   toggleAdvancedMute,
 } from '@/lib/advanced/advancedTimelineEditing'
 import {
+  goToAdjacentCut,
+  goToEnd as basicGoToEnd,
   goToStart as basicGoToStart,
+  shuttle,
   stepFrame as basicStepFrame,
+  stepSeconds,
   togglePlay as basicTogglePlay,
 } from '@/lib/playback'
 import { advancedSnapEnabled, appMode } from '@/lib/store'
@@ -48,6 +52,19 @@ function goToStart() {
   if (isAdvanced()) advancedSeek(0)
   else basicGoToStart()
   revealTimelinePlayhead()
+}
+function goToEnd() {
+  // Advanced seeks clamp to the project end.
+  if (isAdvanced()) advancedSeek(Number.POSITIVE_INFINITY)
+  else basicGoToEnd()
+  revealTimelinePlayhead()
+}
+// Basic-only transport moves; each reveals the playhead it moved.
+function revealing(move: () => void) {
+  return () => {
+    move()
+    revealTimelinePlayhead()
+  }
 }
 function setIn() {
   if (isAdvanced()) setAdvancedInPoint()
@@ -112,11 +129,57 @@ export const SHORTCUTS: Shortcut[] = [
     description: 'Step Forward One Frame',
     run: () => stepFrame(1),
   },
+  {
+    keys: ['ArrowLeft'],
+    shift: true,
+    mode: 'basic',
+    display: 'Shift ←',
+    description: 'Back One Second',
+    run: revealing(() => stepSeconds(-1)),
+  },
+  {
+    keys: ['ArrowRight'],
+    shift: true,
+    mode: 'basic',
+    display: 'Shift →',
+    description: 'Forward One Second',
+    run: revealing(() => stepSeconds(1)),
+  },
+  {
+    keys: ['ArrowUp'],
+    mode: 'basic',
+    display: '↑',
+    description: 'Previous Cut',
+    run: revealing(() => goToAdjacentCut(-1)),
+  },
+  {
+    keys: ['ArrowDown'],
+    mode: 'basic',
+    display: '↓',
+    description: 'Next Cut',
+    run: revealing(() => goToAdjacentCut(1)),
+  },
+  {
+    keys: ['j'],
+    mode: 'basic',
+    display: 'J',
+    description: 'Play Reverse (press again for faster)',
+    run: () => shuttle('j'),
+  },
+  { keys: ['k'], mode: 'basic', display: 'K', description: 'Stop', run: () => shuttle('k') },
+  {
+    keys: ['l'],
+    mode: 'basic',
+    display: 'L',
+    description: 'Play Forward (press again for faster)',
+    run: () => shuttle('l'),
+  },
   { keys: ['i'], display: 'I', description: 'Set In-Point', run: setIn },
   { keys: ['o'], display: 'O', description: 'Set Out-Point', run: setOut },
   { keys: ['c'], display: 'C', description: 'Cut at Playhead', run: cut },
   { keys: ['m'], display: 'M', description: 'Mute Segment', run: muteSegment },
   { keys: ['Home'], display: 'Home', description: 'Go to Start', run: goToStart },
+  { keys: ['End'], display: 'End', description: 'Go to End', run: goToEnd },
   {
     keys: ['s'],
     mode: 'advanced',

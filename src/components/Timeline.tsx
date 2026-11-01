@@ -29,10 +29,10 @@ import {
   ZOOM_MIN,
   dragState,
   playheadTime,
-  playing,
   pxPerSec,
   selectedSegmentId,
   timeline,
+  transportRunning,
 } from '@/lib/store'
 import {
   buildSegmentLayout,
@@ -101,7 +101,8 @@ export function Timeline() {
         ),
     },
     playheadX,
-    playing,
+    // Reverse shuttle moves the playhead too.
+    playing: transportRunning,
     isEmpty,
   })
 

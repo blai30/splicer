@@ -13,6 +13,7 @@ import {
   advancedTracks,
   advancedViewport,
   getClipById,
+  playbackRate,
   previewMuted,
   previewVolume,
 } from '@/lib/store'
@@ -29,7 +30,6 @@ let canvasEl: HTMLCanvasElement | null = null
 let ctx: CanvasRenderingContext2D | null = null
 let videoHost: HTMLDivElement | null = null
 let rafId = 0
-let playbackRate = 1
 let lastTickMs: number | null = null
 let disposeDraw: (() => void) | null = null
 
@@ -267,7 +267,7 @@ function syncVideos(requested: number, playing: boolean) {
     if (shouldSeekToFrame(seekArgs)) requestSeek(video, segment.id, expected)
     video.muted = previewMuted.value || segment.muted === true || trackMuted(segment.trackId)
     video.volume = segmentPreviewVolume(previewVolume.value, segment.volume)
-    video.playbackRate = playbackRate
+    video.playbackRate = playbackRate.peek()
     if (playing && video.paused) void video.play().catch(() => {})
     if (!playing && !video.paused) video.pause()
   }
@@ -275,7 +275,7 @@ function syncVideos(requested: number, playing: boolean) {
 
 function tick(nowMs: number) {
   if (lastTickMs === null) lastTickMs = nowMs
-  const deltaSec = ((nowMs - lastTickMs) / 1000) * playbackRate
+  const deltaSec = ((nowMs - lastTickMs) / 1000) * playbackRate.peek()
   lastTickMs = nowMs
 
   const duration = projectDuration(advancedSegments.value)
@@ -318,8 +318,6 @@ function stopPlayback() {
 
 export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
   canvasEl = canvas
-  // The speed selector starts at 1x on every mount; match it.
-  playbackRate = 1
   ctx = canvas.getContext('2d')
   videoHost = document.createElement('div')
   videoHost.style.display = 'none'
@@ -393,11 +391,6 @@ export function seek(time: number) {
   advancedPlayhead.value = next
   syncVideos(next, advancedPlaying.value)
   drawComposite(next)
-}
-
-export function setPlaybackRate(rate: number) {
-  playbackRate = rate
-  for (const video of videoPool.values()) video.playbackRate = rate
 }
 
 // Re-export for the timeline math used by the preview component.

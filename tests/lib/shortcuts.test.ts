@@ -54,6 +54,48 @@ describe('keyboard shortcuts', () => {
     expect(pxPerSec.value).toBe(100)
   })
 
+  it('maps the Basic transport keys only in Basic', () => {
+    const basic = shortcutsForMode('basic')
+    const find = (key: string, init: KeyboardEventInit = {}) =>
+      basic.find((shortcut) => matchesShortcut(shortcut, keyEvent(key, init), 'basic'))
+    expect(find('ArrowLeft', { shiftKey: true })?.description).toBe('Back One Second')
+    expect(find('ArrowRight', { shiftKey: true })?.description).toBe('Forward One Second')
+    // Without Shift the arrows still step frames.
+    expect(find('ArrowLeft')?.description).toBe('Step Back One Frame')
+    expect(find('ArrowUp')?.description).toBe('Previous Cut')
+    expect(find('ArrowDown')?.description).toBe('Next Cut')
+    expect(find('End')?.description).toBe('Go to End')
+    expect(find('j')?.description).toMatch(/Reverse/)
+    expect(find('K')?.description).toBe('Stop')
+    expect(find('l')?.description).toMatch(/Forward/)
+
+    const advanced = shortcutsForMode('advanced')
+    for (const key of ['j', 'k', 'l', 'ArrowUp', 'ArrowDown']) {
+      expect(
+        advanced.some((shortcut) => matchesShortcut(shortcut, keyEvent(key), 'advanced'))
+      ).toBe(false)
+    }
+    // End works in both editors.
+    expect(
+      advanced.some((shortcut) => matchesShortcut(shortcut, keyEvent('End'), 'advanced'))
+    ).toBe(true)
+  })
+
+  it('reveals the playhead after Basic transport jumps', () => {
+    const calls: string[] = []
+    const unregister = registerTimelineNavigator({
+      zoomStep: noop,
+      fit: noop,
+      revealPlayhead: () => calls.push('reveal'),
+    })
+    press('ArrowDown')
+    press('ArrowUp')
+    press('ArrowRight', { shiftKey: true })
+    press('End')
+    unregister()
+    expect(calls).toEqual(['reveal', 'reveal', 'reveal', 'reveal'])
+  })
+
   it('ignores keys typed into text fields', () => {
     const input = document.createElement('input')
     document.body.append(input)
@@ -75,6 +117,10 @@ describe('keyboard shortcuts', () => {
 
   it('does not run a plain-key shortcut when Shift is held on a letter or named key', () => {
     expect(press('C', { shiftKey: true }).handled).toBe(false)
+    expect(press('Home', { shiftKey: true }).handled).toBe(false)
+    // Shift+Arrow is its own Basic shortcut (one-second steps), never a frame
+    // step; Advanced leaves it unbound.
+    appMode.value = 'advanced'
     expect(press('ArrowRight', { shiftKey: true }).handled).toBe(false)
   })
 
