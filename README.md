@@ -34,6 +34,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
   - cut at playhead
   - delete
 - Drag segment trim handles for interactive left/right trimming. The preview shows the edge frame, a readout shows the in/out point and duration, and edges snap to the clip's start and end, the playhead, and where they began (hold `Alt` to place freely). Trims land on the clip's frame grid.
+- Right-click (or long-press) a segment, or press `Shift` + `F10`, for its menu: Duplicate, Split here, Reset trim, Mute/Unmute, Move left/right, and Delete.
 - Setting an in/out point with the playhead outside the selected segment shows a short notice instead of doing nothing.
 - Seek by clicking or dragging the playhead, the time ruler, or empty track. Scrubbing crosses cuts (marked on the ruler), and presses in gaps or padding land on the nearest segment edge.
 - The view follows the playhead during playback and after keyboard seeks, pausing briefly after you scroll by hand.
@@ -61,7 +62,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 ### Per-Segment Mute
 
 - Toggle mute on a selected segment via the timeline toolbar button or `M` key.
-- Muted segments show a 🔇 indicator on the segment block.
+- Muted segments show a muted-speaker icon on the segment block.
 - Preview playback respects per-segment mute immediately.
 - Exported video silences muted segments (the WebCodecs engine fills the segment with silence).
 
@@ -84,6 +85,8 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 - `C`: Cut at playhead
 - `M`: Toggle mute on selected segment
 - `Delete` / `Backspace`: Delete selected segment
+- `Ctrl` + `D`: Duplicate selected segment (Basic)
+- `Shift` + `F10` or the `Menu` key: Open the selected segment's menu (Basic)
 - `Ctrl` + `Z`: Undo
 - `Ctrl` + `Shift` + `Z` or `Ctrl` + `Y`: Redo
 - `Home`: Go to start

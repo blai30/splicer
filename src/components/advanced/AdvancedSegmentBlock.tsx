@@ -1,6 +1,7 @@
 import type { ReadonlySignal } from '@preact/signals'
 import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
+import { VolumeX } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
 import type { ScrollWindow } from '@/components/useTimelineNavigation'
@@ -397,7 +398,13 @@ export function AdvancedSegmentBlock({
         {width >= BLOCK_NAME_MIN_WIDTH_PX && (
           <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
             {clip?.name ?? 'Clip'}
-            {segment.muted && <span class="ml-1">{'\u{1F507}'}</span>}
+            {segment.muted && (
+              <VolumeX
+                class="ml-1 inline-block size-3.5 align-middle"
+                role="img"
+                aria-label="Muted"
+              />
+            )}
           </span>
         )}
         {width >= BLOCK_DURATION_MIN_WIDTH_PX && (

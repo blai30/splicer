@@ -4,7 +4,12 @@ import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
   Maximize2,
+  RotateCcw,
+  Volume2,
   Scissors,
   Plus,
   Redo2,
@@ -17,6 +22,7 @@ import {
 } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu'
 import { SegmentBlock } from '@/components/SegmentBlock'
 import { TimelinePlayhead } from '@/components/TimelinePlayhead'
 import { TimeRuler } from '@/components/TimeRuler'
@@ -36,8 +42,10 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
   dragState,
+  getClipById,
   playheadTime,
   pxPerSec,
+  segmentMenu,
   selectedSegmentId,
   timeline,
   transportRunning,
@@ -48,8 +56,11 @@ import {
   createScrubHandler,
   cutMarkerXs,
   globalTimeToX,
+  MIN_SEGMENT_DURATION,
   layoutDuration,
   playheadXInLayout,
+  trackXToHit,
+  viewportToTrackX,
   xToGlobalTime,
 } from '@/lib/timelineDomain'
 import {
@@ -57,7 +68,11 @@ import {
   canUndo,
   cutAtPlayhead,
   deleteSegment,
+  duplicateSegment,
+  isSegmentTrimmed,
+  moveSegment,
   redo,
+  resetSegmentTrim,
   setInPoint,
   setOutPoint,
   toggleMute,
@@ -135,6 +150,21 @@ export function Timeline() {
       },
     })
     scrubHandlerRef.current.onPointerDown(event, seekOnPress)
+  }
+
+  // Right-click (or long-press) anywhere on the track opens the menu of the
+  // segment under the pointer (the playhead or ruler may be on top of it) and
+  // moves the playhead there, so "Split here" splits where it was opened.
+  function onTrackContextMenu(event: MouseEvent) {
+    const track = trackRef.current
+    if (!track) return
+    const x = viewportToTrackX(event.clientX, track.getBoundingClientRect(), track.scrollLeft)
+    const hit = trackXToHit(layoutSignal.peek(), x)
+    if (!hit) return
+    event.preventDefault()
+    selectedSegmentId.value = hit.segment.id
+    seek(hit.time)
+    segmentMenu.value = { segmentId: hit.segment.id, x: event.clientX, y: event.clientY }
   }
 
   function onTrackPointerDown(event: PointerEvent) {
@@ -261,7 +291,7 @@ export function Timeline() {
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
               )}
               disabled={disabled}
-              onClick={toggleMute}
+              onClick={() => toggleMute()}
               title="Toggle mute on selected segment (M)"
               aria-label="Toggle mute on selected segment"
             >
@@ -272,7 +302,7 @@ export function Timeline() {
             <button
               class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
               disabled={disabled}
-              onClick={deleteSegment}
+              onClick={() => deleteSegment()}
               title="Delete segment (Delete)"
               aria-label="Delete selected segment"
             >
@@ -345,6 +375,7 @@ export function Timeline() {
         aria-label="Timeline scrubber - click to seek, drag edges to trim segments"
         class="relative min-h-30 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto overflow-y-hidden md:min-h-0 dark:scrollbar-thumb-slate-700"
         onPointerDown={onTrackPointerDown}
+        onContextMenu={onTrackContextMenu}
       >
         {isEmpty.value ? (
           <div class="flex h-full items-center justify-center px-4 md:pb-5">
@@ -421,6 +452,8 @@ export function Timeline() {
         )}
       </div>
 
+      <SegmentMenu />
+
       {/* Why an edit did nothing; a live region, so it is announced too. */}
       <div
         role="status"
@@ -495,5 +528,76 @@ function TrimReadout({
         {label}
       </div>
     </>
+  )
+}
+
+// The right-click menu of the Basic segment it was opened on.
+function SegmentMenu() {
+  const menu = segmentMenu.value
+  if (!menu) return null
+  const segments = timeline.value
+  const index = segments.findIndex((segment) => segment.id === menu.segmentId)
+  if (index === -1) return null
+  const segment = segments[index]
+  // Read once: the menu must not re-render with the playhead every frame.
+  const playhead = playheadTime.peek()
+  const canSplit =
+    playhead - segment.startTime >= MIN_SEGMENT_DURATION &&
+    segment.endTime - playhead >= MIN_SEGMENT_DURATION
+  const items: ContextMenuItem[] = [
+    {
+      label: 'Duplicate',
+      icon: Copy,
+      shortcut: { display: 'Ctrl D', aria: 'Control+D' },
+      run: () => duplicateSegment(segment.id),
+    },
+    {
+      label: 'Split here',
+      icon: Scissors,
+      shortcut: { display: 'C', aria: 'C' },
+      disabled: !canSplit,
+      run: cutAtPlayhead,
+    },
+    {
+      label: 'Reset trim',
+      icon: RotateCcw,
+      disabled: !isSegmentTrimmed(segment),
+      run: () => resetSegmentTrim(segment.id),
+    },
+    {
+      label: segment.muted ? 'Unmute' : 'Mute',
+      icon: segment.muted ? Volume2 : VolumeX,
+      shortcut: { display: 'M', aria: 'M' },
+      run: () => toggleMute(segment.id),
+    },
+    {
+      label: 'Move left',
+      icon: ChevronLeft,
+      disabled: index === 0,
+      run: () => moveSegment(segment.id, -1),
+    },
+    {
+      label: 'Move right',
+      icon: ChevronRight,
+      disabled: index === segments.length - 1,
+      run: () => moveSegment(segment.id, 1),
+    },
+    {
+      label: 'Delete',
+      icon: Trash2,
+      shortcut: { display: 'Delete', aria: 'Delete' },
+      danger: true,
+      run: () => deleteSegment(segment.id),
+    },
+  ]
+  const name = getClipById(segment.clipId)?.name ?? 'Clip'
+  return (
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      label={`${name} segment actions`}
+      items={items}
+      onClose={() => (segmentMenu.value = null)}
+    />
   )
 }

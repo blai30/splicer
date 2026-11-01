@@ -198,3 +198,66 @@ test('In with the playhead on a segment edge explains why nothing changed', asyn
   )
   await expect(page.locator('[data-edit-notice]')).toHaveCount(0, { timeout: 5000 })
 })
+
+test('the segment context menu splits, mutes, duplicates, moves, and deletes', async ({ page }) => {
+  await importClips(page, 2)
+  const menu = page.getByRole('menu')
+  const first = (await segments(page).first().boundingBox())!
+  const middleY = first.y + first.height / 2
+
+  // Right-click one second in: the menu opens with its first item focused.
+  await page.mouse.click(first.x + 80, middleY, { button: 'right' })
+  await expect(menu).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Duplicate' })).toBeFocused()
+  await expect(page.getByRole('menuitem', { name: 'Move left' })).toBeDisabled()
+  await expect(page.getByRole('menuitem', { name: 'Reset trim' })).toBeDisabled()
+  // Arrow keys walk the enabled items; Enter runs one.
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('menuitem', { name: 'Split here' })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(menu).toHaveCount(0)
+  await expect(segments(page)).toHaveCount(3)
+
+  // Escape closes without acting.
+  const split = (await segments(page).first().boundingBox())!
+  await page.mouse.click(split.x + 20, middleY, { button: 'right' })
+  await expect(menu).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await expect(segments(page)).toHaveCount(3)
+
+  // Mute shows the muted icon on the block.
+  await page.mouse.click(split.x + 20, middleY, { button: 'right' })
+  await page.getByRole('menuitem', { name: 'Mute' }).click()
+  await expect(segments(page).first().getByRole('img', { name: 'Muted' })).toBeVisible()
+
+  // Reset trim brings the split piece back to the full clip.
+  await page.mouse.click(split.x + 20, middleY, { button: 'right' })
+  await page.getByRole('menuitem', { name: 'Reset trim' }).click()
+  await expect(timecode(page, ' / 0:05.0')).toBeVisible()
+
+  // Duplicate from the menu and with Ctrl+D.
+  await page.mouse.click(split.x + 20, middleY, { button: 'right' })
+  await page.getByRole('menuitem', { name: 'Duplicate' }).click()
+  await expect(segments(page)).toHaveCount(4)
+  await page.locator('body').press('Control+d')
+  await expect(segments(page)).toHaveCount(5)
+
+  // Move right swaps the first block with its neighbour; the selection moves with it.
+  await page.mouse.click(split.x + 20, middleY, { button: 'right' })
+  await page.getByRole('menuitem', { name: 'Move right' }).click()
+  await expect(segments(page).nth(1)).toHaveClass(/ring-violet-400/)
+  await expect(segments(page).first()).not.toHaveClass(/ring-violet-400/)
+
+  // Shift+F10 opens the menu for the selected segment; Delete removes it.
+  await page.locator('body').press('Shift+F10')
+  await expect(menu).toBeVisible()
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await expect(segments(page)).toHaveCount(4)
+
+  // A press outside closes the menu.
+  await page.mouse.click(split.x + 20, middleY, { button: 'right' })
+  await expect(menu).toBeVisible()
+  await page.mouse.click(5, 5)
+  await expect(menu).toHaveCount(0)
+})

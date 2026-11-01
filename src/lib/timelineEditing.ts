@@ -185,9 +185,8 @@ export function cutAtPlayhead() {
   commit(split.nextSegments, split.newSegmentId)
 }
 
-export function toggleMute() {
-  const segmentId = selectedSegmentId.value
-  if (!segmentId || !getSelectedSegment()) return
+export function toggleMute(segmentId = selectedSegmentId.value) {
+  if (!segmentId || !timeline.value.some((segment) => segment.id === segmentId)) return
   commit(
     timeline.value.map((segment) =>
       segment.id === segmentId ? { ...segment, muted: !segment.muted } : segment
@@ -223,13 +222,48 @@ export function reorderSegment(segmentId: string, dropIndex: number) {
   commit(segments)
 }
 
-export function deleteSegment() {
-  const segmentId = selectedSegmentId.value
+export function deleteSegment(segmentId = selectedSegmentId.value) {
   if (!segmentId) return
   const currentIndex = timeline.value.findIndex((segment) => segment.id === segmentId)
   if (currentIndex === -1) return
   const next = timeline.value.filter((segment) => segment.id !== segmentId)
   commit(next, next[currentIndex]?.id ?? next[currentIndex - 1]?.id ?? null)
+}
+
+// Insert a copy right after the segment and select the copy.
+export function duplicateSegment(segmentId = selectedSegmentId.value) {
+  const index = timeline.value.findIndex((segment) => segment.id === segmentId)
+  if (index === -1) return
+  const copy = { ...timeline.value[index], id: crypto.randomUUID() }
+  const next = [...timeline.value]
+  next.splice(index + 1, 0, copy)
+  commit(next, copy.id)
+}
+
+// The segment back at the clip's full length.
+export function resetSegmentTrim(segmentId = selectedSegmentId.value) {
+  const segment = timeline.value.find((entry) => entry.id === segmentId)
+  const clip = segment && getClipById(segment.clipId)
+  if (!segment || !clip) return
+  commit(
+    timeline.value.map((entry) =>
+      entry.id === segment.id ? { ...entry, startTime: 0, endTime: clip.duration } : entry
+    )
+  )
+}
+
+export function isSegmentTrimmed(segment: Segment): boolean {
+  const clip = getClipById(segment.clipId)
+  return !!clip && (segment.startTime > 0 || segment.endTime < clip.duration)
+}
+
+// Swap the segment with its neighbour on one side.
+export function moveSegment(segmentId: string, direction: -1 | 1) {
+  const index = timeline.value.findIndex((segment) => segment.id === segmentId)
+  const target = index + direction
+  if (index === -1 || target < 0 || target >= timeline.value.length) return
+  // reorderSegment takes the gap index to drop into.
+  reorderSegment(segmentId, direction === -1 ? index - 1 : index + 2)
 }
 
 export function clearTimeline() {

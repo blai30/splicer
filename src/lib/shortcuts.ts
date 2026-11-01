@@ -20,10 +20,11 @@ import {
   stepSeconds,
   togglePlay as basicTogglePlay,
 } from '@/lib/playback'
-import { advancedSnapEnabled, appMode } from '@/lib/store'
+import { advancedSnapEnabled, appMode, segmentMenu, selectedSegmentId } from '@/lib/store'
 import {
   cutAtPlayhead,
   deleteSegment,
+  duplicateSegment,
   redo,
   setInPoint,
   setOutPoint,
@@ -64,6 +65,24 @@ function revealing(move: () => void) {
   return () => {
     move()
     revealTimelinePlayhead()
+  }
+}
+// Keyboard access to the Basic segment menu, opened under the selected block.
+function openSegmentMenu() {
+  const segmentId = selectedSegmentId.value
+  if (!segmentId) return
+  const block = document.querySelector(`[data-segment-id="${segmentId}"]`)
+  if (!block) return
+  const rect = block.getBoundingClientRect()
+  // The browser follows these keys with its own contextmenu event; that one
+  // must not open the native menu over this one.
+  const suppress = (event: Event) => event.preventDefault()
+  window.addEventListener('contextmenu', suppress, { capture: true, once: true })
+  setTimeout(() => window.removeEventListener('contextmenu', suppress, { capture: true }), 500)
+  segmentMenu.value = {
+    segmentId,
+    x: rect.left + Math.min(rect.width / 2, 24),
+    y: rect.bottom,
   }
 }
 function setIn() {
@@ -188,6 +207,29 @@ export const SHORTCUTS: Shortcut[] = [
     run: () => (advancedSnapEnabled.value = !advancedSnapEnabled.value),
   },
   {
+    keys: ['d'],
+    ctrl: true,
+    mode: 'basic',
+    display: 'Ctrl D',
+    description: 'Duplicate Segment',
+    run: () => duplicateSegment(),
+  },
+  {
+    keys: ['ContextMenu'],
+    mode: 'basic',
+    display: 'Menu',
+    description: 'Segment Actions Menu',
+    run: openSegmentMenu,
+  },
+  {
+    keys: ['F10'],
+    shift: true,
+    mode: 'basic',
+    display: 'Shift F10',
+    description: 'Segment Actions Menu',
+    run: openSegmentMenu,
+  },
+  {
     keys: ['Delete', 'Backspace'],
     display: 'Delete',
     description: 'Delete Segment',
@@ -282,6 +324,8 @@ export function handleShortcut(event: KeyboardEvent): boolean {
   if (CONTROL_KEYS.has(event.key) && isActivatable(event.target)) return false
   // Arrow keys inside a radio group or tab list move between its options.
   if (event.key.startsWith('Arrow') && isInsideComposite(event.target)) return false
+  // An open menu owns every key (arrows, letters) until it closes.
+  if (event.target instanceof Element && event.target.closest('[role="menu"]')) return false
 
   // Unmatched combinations (e.g. Alt+Arrow history navigation) stay with the
   // browser because nothing is prevented unless a shortcut matches.

@@ -96,6 +96,32 @@ describe('keyboard shortcuts', () => {
     expect(calls).toEqual(['reveal', 'reveal', 'reveal', 'reveal'])
   })
 
+  it('leaves every key to an open menu', () => {
+    const menu = document.createElement('div')
+    menu.setAttribute('role', 'menu')
+    const item = document.createElement('button')
+    menu.append(item)
+    document.body.append(menu)
+    expect(press('ArrowDown', {}, item).handled).toBe(false)
+    expect(press('m', {}, item).handled).toBe(false)
+    expect(press('=', {}, item).handled).toBe(false)
+  })
+
+  it('binds Ctrl+D and the menu keys in Basic only', () => {
+    const basic = shortcutsForMode('basic')
+    const find = (key: string, init: KeyboardEventInit = {}) =>
+      basic.find((shortcut) => matchesShortcut(shortcut, keyEvent(key, init), 'basic'))
+    expect(find('d', { ctrlKey: true })?.description).toBe('Duplicate Segment')
+    expect(find('d', { metaKey: true })?.description).toBe('Duplicate Segment')
+    expect(find('ContextMenu')?.description).toBe('Segment Actions Menu')
+    expect(find('F10', { shiftKey: true })?.description).toBe('Segment Actions Menu')
+    expect(
+      shortcutsForMode('advanced').some((shortcut) =>
+        matchesShortcut(shortcut, keyEvent('d', { ctrlKey: true }), 'advanced')
+      )
+    ).toBe(false)
+  })
+
   it('ignores keys typed into text fields', () => {
     const input = document.createElement('input')
     document.body.append(input)

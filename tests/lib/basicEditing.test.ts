@@ -5,11 +5,18 @@ import { clips, playheadTime, selectedSegmentId, timeline } from '@/lib/store'
 import {
   appendClipToTimeline,
   beginGesture,
+  deleteSegment,
+  duplicateSegment,
   endGesture,
+  isSegmentTrimmed,
+  moveSegment,
   redo,
+  resetSegmentTrim,
   resetHistory,
   setInPoint,
   setOutPoint,
+  toggleMute,
+  trimSegmentEnd,
   trimSegmentStart,
   undo,
 } from '@/lib/timelineEditing'
@@ -115,5 +122,68 @@ describe('in and out points', () => {
     selectedSegmentId.value = null
     setInPoint()
     expect(editNotice.value).toBeNull()
+  })
+})
+
+describe('segment menu commands', () => {
+  it('duplicates a segment right after itself and selects the copy', () => {
+    const [first, second] = segmentIds()
+    trimSegmentStart(first, 2)
+    duplicateSegment(first)
+    const ids = segmentIds()
+    expect(ids).toHaveLength(3)
+    expect(ids[0]).toBe(first)
+    expect(ids[2]).toBe(second)
+    expect(ids[1]).not.toBe(first)
+    expect(timeline.value[1]).toMatchObject({ clipId: 'a', startTime: 2, endTime: 10 })
+    expect(selectedSegmentId.value).toBe(ids[1])
+
+    undo()
+    expect(segmentIds()).toEqual([first, second])
+    expect(selectedSegmentId.value).toBe(first)
+  })
+
+  it('duplicates the selected segment by default', () => {
+    const [, second] = segmentIds()
+    selectedSegmentId.value = second
+    duplicateSegment()
+    expect(timeline.value.map((segment) => segment.clipId)).toEqual(['a', 'b', 'b'])
+  })
+
+  it('resets a trim to the full clip as one undoable step', () => {
+    const [first] = segmentIds()
+    trimSegmentStart(first, 2)
+    trimSegmentEnd(first, 7)
+    expect(isSegmentTrimmed(timeline.value[0])).toBe(true)
+    resetSegmentTrim(first)
+    expect(timeline.value[0]).toMatchObject({ startTime: 0, endTime: 10 })
+    expect(isSegmentTrimmed(timeline.value[0])).toBe(false)
+    undo()
+    expect(timeline.value[0]).toMatchObject({ startTime: 2, endTime: 7 })
+  })
+
+  it('moves a segment one place and ignores moves past the ends', () => {
+    const [first, second] = segmentIds()
+    moveSegment(first, 1)
+    expect(segmentIds()).toEqual([second, first])
+    moveSegment(first, 1)
+    moveSegment(second, -1)
+    expect(segmentIds()).toEqual([second, first])
+    moveSegment(first, -1)
+    expect(segmentIds()).toEqual([first, second])
+    undo()
+    expect(segmentIds()).toEqual([second, first])
+  })
+
+  it('mutes and deletes the segment it is given, not only the selected one', () => {
+    const [first, second] = segmentIds()
+    toggleMute(second)
+    expect(timeline.value[1].muted).toBe(true)
+    expect(timeline.value[0].muted).toBeFalsy()
+    deleteSegment(second)
+    expect(segmentIds()).toEqual([first])
+    undo()
+    undo()
+    expect(timeline.value[1].muted).toBeFalsy()
   })
 })
