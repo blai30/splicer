@@ -246,6 +246,24 @@ describe('Basic transport', () => {
     expect(video.playbackRate).toBe(0.5)
   })
 
+  it('ends a forward shuttle when playback runs off the end of the timeline', () => {
+    selectedSegmentId.value = 'b'
+    finishLoading()
+    video.currentTime = 59
+    shuttle('l')
+    playing.value = true
+    shuttle('l')
+    expect(video.playbackRate).toBe(2)
+    // Reaching the end rewinds to 'a', a different source, before any pause
+    // event could arrive.
+    video.currentTime = 60
+    video.listeners.get('timeupdate')?.()
+    expect(selectedSegmentId.value).toBe('a')
+    expect(playing.value).toBe(false)
+    expect(shuttleRate.value).toBeNull()
+    expect(video.playbackRate).toBe(1)
+  })
+
   it('plays in reverse across a cut, faster with each J', () => {
     selectedSegmentId.value = 'b'
     finishLoading()

@@ -155,6 +155,9 @@ function advanceAtSegmentEnd() {
     } else {
       video.pause()
       playing.value = false
+      // The rewind below can switch sources, which drops the queued pause
+      // event, so a forward shuttle is ended here rather than in onPause.
+      shuttleRate.value = null
       currentPlaybackTime.value = 0
       const first = segments[0]
       if (first) {
