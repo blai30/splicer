@@ -180,7 +180,13 @@ export function setOutPoint() {
 export function cutAtPlayhead() {
   const segment = getSelectedSegment()
   if (!segment) return
-  const split = splitSegmentAtPlayhead(timeline.value, segment.id, playheadTime.value)
+  splitSegmentAt(segment.id, playheadTime.value)
+}
+
+// Split a segment at a source time, selecting the second piece. Does nothing
+// when either piece would be shorter than the minimum length.
+export function splitSegmentAt(segmentId: string, time: number) {
+  const split = splitSegmentAtPlayhead(timeline.value, segmentId, time)
   if (!split) return
   commit(split.nextSegments, split.newSegmentId)
 }

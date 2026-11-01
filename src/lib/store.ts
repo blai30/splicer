@@ -233,7 +233,14 @@ export const PADDING_PX = 16
 export const pxPerSec = signal(80)
 export const dragState = signal<DragState | null>(null)
 // The Basic segment whose context menu is open, and where (viewport px).
-export const segmentMenu = signal<{ segmentId: string; x: number; y: number } | null>(null)
+// `time` is the source time the menu was opened at, where "Split here" splits;
+// playback may move the playhead on while the menu is open.
+export const segmentMenu = signal<{
+  segmentId: string
+  time: number
+  x: number
+  y: number
+} | null>(null)
 // The Basic trim drag in progress, for its readout and snap guide (transient).
 export const trimFeedback = signal<{
   segmentId: string

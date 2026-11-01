@@ -20,7 +20,13 @@ import {
   stepSeconds,
   togglePlay as basicTogglePlay,
 } from '@/lib/playback'
-import { advancedSnapEnabled, appMode, segmentMenu, selectedSegmentId } from '@/lib/store'
+import {
+  advancedSnapEnabled,
+  appMode,
+  playheadTime,
+  segmentMenu,
+  selectedSegmentId,
+} from '@/lib/store'
 import {
   cutAtPlayhead,
   deleteSegment,
@@ -74,13 +80,25 @@ function openSegmentMenu() {
   const block = document.querySelector(`[data-segment-id="${segmentId}"]`)
   if (!block) return
   const rect = block.getBoundingClientRect()
-  // The browser follows these keys with its own contextmenu event; that one
-  // must not open the native menu over this one.
-  const suppress = (event: Event) => event.preventDefault()
-  window.addEventListener('contextmenu', suppress, { capture: true, once: true })
-  setTimeout(() => window.removeEventListener('contextmenu', suppress, { capture: true }), 500)
+  // The browser follows these keys with its own contextmenu event, aimed at
+  // the focused element; that one must neither open the native menu nor
+  // re-target this one. A real right-click starts with a pointerdown, so one
+  // that comes next is left alone.
+  const suppress = (event: Event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    stopSuppressing()
+  }
+  const stopSuppressing = () => {
+    window.removeEventListener('contextmenu', suppress, { capture: true })
+    window.removeEventListener('pointerdown', stopSuppressing, { capture: true })
+  }
+  window.addEventListener('contextmenu', suppress, { capture: true })
+  window.addEventListener('pointerdown', stopSuppressing, { capture: true })
+  setTimeout(stopSuppressing, 500)
   segmentMenu.value = {
     segmentId,
+    time: playheadTime.peek(),
     x: rect.left + Math.min(rect.width / 2, 24),
     y: rect.bottom,
   }

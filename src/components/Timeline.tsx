@@ -75,6 +75,7 @@ import {
   resetSegmentTrim,
   setInPoint,
   setOutPoint,
+  splitSegmentAt,
   toggleMute,
   undo,
 } from '@/lib/timelineEditing'
@@ -156,6 +157,9 @@ export function Timeline() {
   // segment under the pointer (the playhead or ruler may be on top of it) and
   // moves the playhead there, so "Split here" splits where it was opened.
   function onTrackContextMenu(event: MouseEvent) {
+    // Shift+F10 or the Menu key already opened the menu for the selection;
+    // the browser's follow-up event (claimed then) must not re-target it.
+    if (event.defaultPrevented) return
     const track = trackRef.current
     if (!track) return
     const x = viewportToTrackX(event.clientX, track.getBoundingClientRect(), track.scrollLeft)
@@ -164,7 +168,12 @@ export function Timeline() {
     event.preventDefault()
     selectedSegmentId.value = hit.segment.id
     seek(hit.time)
-    segmentMenu.value = { segmentId: hit.segment.id, x: event.clientX, y: event.clientY }
+    segmentMenu.value = {
+      segmentId: hit.segment.id,
+      time: hit.time,
+      x: event.clientX,
+      y: event.clientY,
+    }
   }
 
   function onTrackPointerDown(event: PointerEvent) {
@@ -539,11 +548,11 @@ function SegmentMenu() {
   const index = segments.findIndex((segment) => segment.id === menu.segmentId)
   if (index === -1) return null
   const segment = segments[index]
-  // Read once: the menu must not re-render with the playhead every frame.
-  const playhead = playheadTime.peek()
+  // The point the menu was opened at, not the live playhead, which keeps
+  // moving while playback runs.
   const canSplit =
-    playhead - segment.startTime >= MIN_SEGMENT_DURATION &&
-    segment.endTime - playhead >= MIN_SEGMENT_DURATION
+    menu.time - segment.startTime >= MIN_SEGMENT_DURATION &&
+    segment.endTime - menu.time >= MIN_SEGMENT_DURATION
   const items: ContextMenuItem[] = [
     {
       label: 'Duplicate',
@@ -556,7 +565,7 @@ function SegmentMenu() {
       icon: Scissors,
       shortcut: { display: 'C', aria: 'C' },
       disabled: !canSplit,
-      run: cutAtPlayhead,
+      run: () => splitSegmentAt(segment.id, menu.time),
     },
     {
       label: 'Reset trim',

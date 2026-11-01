@@ -15,6 +15,7 @@ import {
   resetHistory,
   setInPoint,
   setOutPoint,
+  splitSegmentAt,
   toggleMute,
   trimSegmentEnd,
   trimSegmentStart,
@@ -173,6 +174,26 @@ describe('segment menu commands', () => {
     expect(segmentIds()).toEqual([first, second])
     undo()
     expect(segmentIds()).toEqual([second, first])
+  })
+
+  it('splits the segment it is given at a stored time, not at the playhead', () => {
+    const [first, second] = segmentIds()
+    selectedSegmentId.value = second
+    playheadTime.value = 3
+    splitSegmentAt(first, 4)
+    expect(
+      timeline.value.map(({ clipId, startTime, endTime }) => [clipId, startTime, endTime])
+    ).toEqual([
+      ['a', 0, 4],
+      ['a', 4, 10],
+      ['b', 0, 10],
+    ])
+    expect(selectedSegmentId.value).toBe(timeline.value[1].id)
+    // Too close to an edge: nothing changes.
+    splitSegmentAt(second, 0.01)
+    expect(timeline.value).toHaveLength(3)
+    undo()
+    expect(segmentIds()).toEqual([first, second])
   })
 
   it('mutes and deletes the segment it is given, not only the selected one', () => {

@@ -261,3 +261,63 @@ test('the segment context menu splits, mutes, duplicates, moves, and deletes', a
   await page.mouse.click(5, 5)
   await expect(menu).toHaveCount(0)
 })
+
+test('Split here splits where the menu was opened while playback runs on', async ({ page }) => {
+  await importClips(page, 3)
+  const first = (await segments(page).first().boundingBox())!
+  await page.locator('body').press('Space')
+  // Half a second into the first segment (80 px/s).
+  await page.mouse.click(first.x + 40, first.y + first.height / 2, { button: 'right' })
+  await expect(page.getByRole('menu')).toBeVisible()
+  // Let playback cross the cut into the second segment before choosing.
+  await expect(segments(page).nth(1)).toHaveClass(/ring-violet-400/, { timeout: 5000 })
+  await page.getByRole('menuitem', { name: 'Split here' }).click()
+  await expect(segments(page)).toHaveCount(4)
+  const widths = await segments(page).evaluateAll((blocks) =>
+    blocks.map((block) => Math.round(block.getBoundingClientRect().width))
+  )
+  expect(widths[0]).toBeCloseTo(40, -1)
+  expect(widths[1]).toBeCloseTo(120, -1)
+  expect(widths.slice(2)).toEqual([160, 160])
+})
+
+test('Shift+F10 on the focused track keeps the menu on the selected segment', async ({ page }) => {
+  await importClips(page, 2)
+  await page.locator('body').press('ArrowDown')
+  await expect(segments(page).nth(1)).toHaveClass(/ring-violet-400/)
+  await expect(timecode(page, '0:02.0 / 0:04.0')).toBeVisible()
+  await track(page).evaluate((element) => {
+    element.tabIndex = -1
+    element.focus()
+  })
+  await page.keyboard.press('Shift+F10')
+  await expect(page.getByRole('menu')).toBeVisible()
+  // The browser follows the key with a contextmenu event on the focused
+  // element at its own position, over the first segment.
+  const first = (await segments(page).first().boundingBox())!
+  await track(page).dispatchEvent('contextmenu', {
+    button: 0,
+    clientX: first.x + 20,
+    clientY: first.y + first.height / 2,
+  })
+  await expect(segments(page).nth(1)).toHaveClass(/ring-violet-400/)
+  await expect(timecode(page, '0:02.0 / 0:04.0')).toBeVisible()
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await expect(segments(page)).toHaveCount(1)
+})
+
+test('a forward shuttle ends when playback runs off the end', async ({ page }) => {
+  await importClips(page, 2)
+  const body = page.locator('body')
+  await body.press('ArrowDown')
+  await expect(timecode(page, '0:02.0 / 0:04.0')).toBeVisible()
+  await body.press('l')
+  await body.press('l')
+  await expect(page.getByRole('status').filter({ hasText: 'Forward' })).toBeVisible()
+  // At 2x the last 2 s segment ends in about a second; the timeline rewinds.
+  await expect(segments(page).first()).toHaveClass(/ring-violet-400/, { timeout: 5000 })
+  await expect(page.getByRole('status').filter({ hasText: '×' })).toHaveCount(0)
+  await expect
+    .poll(() => page.locator('video').evaluate((video: HTMLVideoElement) => video.playbackRate))
+    .toBe(1)
+})
