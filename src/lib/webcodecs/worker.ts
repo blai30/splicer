@@ -9,7 +9,11 @@ import {
   type ExportResult,
   type PacketCounts,
 } from './exportTarget'
-import { canPassThrough } from './framePassthrough'
+import {
+  canPassThroughExport,
+  createPassThroughGate,
+  withPassThroughFallback,
+} from './framePassthrough'
 import { SourceCache } from './mediabunnyInput'
 import { createOutput, OUTPUT_SAMPLE_RATE } from './mediabunnyOutput'
 import {
@@ -73,7 +77,8 @@ async function encodeOnce(
   sources: SourceCache,
   storageDir: string | undefined,
   counts: PacketCounts | null,
-  totalSec: number
+  totalSec: number,
+  passThrough: boolean
 ): Promise<ExportResult> {
   const exportTarget = await createExportTarget({
     storageDir,
@@ -96,6 +101,8 @@ async function encodeOnce(
       }
     }
     const shouldCancel = () => canceled
+    // One gate for the whole export, so every slice's frames share a color space.
+    const passThroughGate = passThrough ? createPassThroughGate(plan) : null
 
     // Slices are in output-timeline order with cumulative timestamps, so feeding
     // them sequentially produces the concatenated output.
@@ -124,7 +131,7 @@ async function encodeOnce(
             if (audio) await audioPacer.videoReached(outTimeSec)
           },
           shouldCancel,
-          passThrough: canPassThrough(slice, job.sources[slice.sourceIndex], plan),
+          passThrough: passThroughGate,
         })
         await audioPacer.drain()
         if (audio) audioFrame = await audio.finish()
@@ -155,10 +162,17 @@ async function runExport(job: ExportJob, storageDir: string | undefined): Promis
     )
     const indexed = job.container === 'mp4' || job.container === 'mov'
     const counts = indexed ? await packetCounts(plan, sources, totalSec) : null
-    const result = await withReserveFallback(
-      counts,
-      (attemptCounts) => encodeOnce(job, plan, sources, storageDir, attemptCounts, totalSec),
-      () => canceled
+    const isCanceled = () => canceled
+    const result = await withPassThroughFallback(
+      canPassThroughExport(plan.slices, job.sources, plan),
+      (passThrough) =>
+        withReserveFallback(
+          counts,
+          (attemptCounts) =>
+            encodeOnce(job, plan, sources, storageDir, attemptCounts, totalSec, passThrough),
+          isCanceled
+        ),
+      isCanceled
     )
     post({ type: 'progress', progress: 1 })
     const { message, transfer } = doneMessage(result)

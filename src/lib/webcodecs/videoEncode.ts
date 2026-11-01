@@ -1,7 +1,7 @@
 import { VideoSample } from 'mediabunny'
 
 import type { EditPlan, EditSlice } from './editPlan'
-import { isPassThroughFrame } from './framePassthrough'
+import type { PassThroughGate } from './framePassthrough'
 import type { SourceReader } from './mediabunnyInput'
 import type { OutputHandle } from './mediabunnyOutput'
 
@@ -14,9 +14,9 @@ export type VideoEncodeOptions = {
   // Awaited, so it can write other tracks up to that time before the next.
   onFrameEncoded: (outTimeSec: number) => void | Promise<void>
   shouldCancel: () => boolean
-  // The slice passed canPassThrough: frames that also pass the per-frame
-  // check skip the canvas.
-  passThrough?: boolean
+  // Set when the whole export passes through (see canPassThroughExport):
+  // every frame skips the canvas, or the gate throws.
+  passThrough?: PassThroughGate | null
 }
 
 // Fallback frame length when a decoded sample reports no duration.
@@ -53,10 +53,10 @@ export async function encodeVideoSlice(options: VideoEncodeOptions): Promise<voi
   const { reader, slice, plan, out, onFrameEncoded, shouldCancel } = options
   const outWidth = plan.outputWidth
   const outHeight = plan.outputHeight
-  const sliceCanPassThrough = options.passThrough ?? false
+  const passThrough = options.passThrough ?? null
 
-  // Created on the first frame that needs drawing, so passthrough slices never
-  // allocate one.
+  // Created on the first frame that needs drawing, so passthrough slices
+  // allocate one only for the black hold of a slice without frames.
   let drawing: { canvas: OffscreenCanvas; ctx: OffscreenCanvasRenderingContext2D } | null = null
   function blackCanvas() {
     if (!drawing) {
@@ -109,7 +109,8 @@ export async function encodeVideoSlice(options: VideoEncodeOptions): Promise<voi
         if (!span) continue
         const frameStart: number = pending ? span.start : outStart
 
-        if (sliceCanPassThrough && isPassThroughFrame(sample, plan)) {
+        if (passThrough) {
+          passThrough.admit(sample)
           await flush(frameStart)
           sample.setTimestamp(frameStart)
           sample.setDuration(0)
@@ -138,7 +139,9 @@ export async function encodeVideoSlice(options: VideoEncodeOptions): Promise<voi
     }
     if (!pending && !emittedAny) {
       // The source has no frames in this range (e.g. its audio outlasts its
-      // video): hold black so the output timeline stays continuous.
+      // video): hold black so the output timeline stays continuous. Black
+      // looks the same under either color range tag, so passthrough exports
+      // can draw it too.
       pending = new VideoSample(blackCanvas().canvas, { timestamp: outStart, duration: 0 })
     }
     await flush(outEnd)
