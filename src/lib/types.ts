@@ -23,6 +23,12 @@ export type Clip = {
   videoCodec?: string
   audioBitrate?: number
   audioCodec?: string
+  // Identifies the exact decoder setup (codec string, coded size, and a hash
+  // of the out-of-band description such as avcC), so stream copy can tell
+  // whether packets from different clips can share one output track.
+  decoderConfigKey?: string
+  // False when the track uses non-square pixels. Absent on older probes.
+  squarePixels?: boolean
 }
 
 export type CropParams = {
@@ -111,7 +117,14 @@ export type AdvancedSegment = {
 }
 
 export type ExportFormat = 'mp4' | 'mkv' | 'mov' | 'webm'
+// An encoder preset. Stored as 'lossless' for Maximum so persisted settings
+// keep working.
 export type Quality = 'lossless' | 'high' | 'medium' | 'low'
+// What the Quality control offers: a preset, a stream copy of the source
+// packets ('original'), or a file size to aim for ('target').
+export type QualityChoice = Quality | 'original' | 'target'
+// A cap on the output's shorter side; 'original' keeps the source size.
+export type Resolution = 'original' | '1080' | '720' | '480' | '360'
 export type Framerate = 'original' | '60' | '30' | '24'
 export type WebmCodec = 'vp9' | 'vp8'
 export type MkvCodec = 'h264' | 'vp9'

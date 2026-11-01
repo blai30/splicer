@@ -1,6 +1,13 @@
 import { ensureAacEncoder } from './aacFallback'
 import { AudioSliceWriter } from './audioEncode'
-import { buildEditPlan, type EditPlan } from './editPlan'
+import {
+  copySlicePackets,
+  copyTrackInfo,
+  planTrackSlice,
+  type CopyTrackInfo,
+  type PlannedCopySlice,
+} from './copyVideo'
+import { buildEditPlan, type EditPlan, type EditSlice } from './editPlan'
 import {
   audioPacketBound,
   createExportTarget,
@@ -15,7 +22,7 @@ import {
   withPassThroughFallback,
 } from './framePassthrough'
 import { SourceCache } from './mediabunnyInput'
-import { createOutput, OUTPUT_SAMPLE_RATE } from './mediabunnyOutput'
+import { createCopyOutput, createOutput, OUTPUT_SAMPLE_RATE } from './mediabunnyOutput'
 import {
   UnsupportedSourceError,
   type ExportJob,
@@ -150,9 +157,166 @@ async function encodeOnce(
   }
 }
 
+// Plan every slice of a stream copy up front: the actual cut points decide
+// each slice's output start, the exact packet count for a reserved index, and
+// the size.
+async function planCopy(
+  plan: EditPlan,
+  sources: SourceCache
+): Promise<{ slices: PlannedCopySlice[]; track: CopyTrackInfo }> {
+  const slices: PlannedCopySlice[] = []
+  const tracks = []
+  let outStartSec = 0
+  for (const slice of plan.slices) {
+    const reader = await sources.get(slice.sourceIndex)
+    tracks.push(reader.videoTrack)
+    const { plan: copyPlan, keyPacket } = await planTrackSlice(
+      reader.videoTrack,
+      slice.sourceStart,
+      slice.sourceEnd
+    )
+    slices.push({ ...copyPlan, outStartSec, keyPacket })
+    outStartSec += copyPlan.end - copyPlan.snappedStart
+  }
+  return { slices, track: await copyTrackInfo(tracks) }
+}
+
+async function copyOnce(
+  job: ExportJob,
+  plan: EditPlan,
+  sources: SourceCache,
+  copy: { slices: PlannedCopySlice[]; track: CopyTrackInfo },
+  storageDir: string | undefined,
+  counts: PacketCounts | null,
+  totalSec: number
+): Promise<ExportResult> {
+  const videoBytes = copy.slices.reduce((sum, slice) => sum + slice.byteLength, 0)
+  const exportTarget = await createExportTarget({
+    storageDir,
+    container: job.container,
+    estimatedBytes: videoBytes + (plan.audioBitrate * totalSec) / 8,
+    packetCounts: counts,
+    onStorageFile: (storageName) => post({ type: 'storage', storageName }),
+  })
+  const out = createCopyOutput(
+    {
+      copyCodec: copy.track.codec,
+      rotation: copy.track.rotation,
+      hasAudioOutput: plan.hasAudioOutput,
+      audioCodec: plan.audioCodec,
+      audioBitrate: plan.audioBitrate,
+    },
+    job.container,
+    { exportTarget, packetCounts: counts }
+  )
+  try {
+    await out.start()
+    let lastReported = 0
+    const shouldCancel = () => canceled
+    let decoderConfig: VideoDecoderConfig | null = copy.track.decoderConfig
+    let audioFrame = 0
+    for (const [index, copySlice] of copy.slices.entries()) {
+      if (canceled) throw new CanceledError()
+      const editSlice = plan.slices[index]
+      const reader = await sources.get(editSlice.sourceIndex)
+      // Audio is re-encoded over exactly the copied span: from the key frame
+      // the video starts on to the video's actual end, on the shared grid.
+      const outEndSec = copySlice.outStartSec + (copySlice.end - copySlice.snappedStart)
+      const audioSlice: EditSlice = {
+        ...editSlice,
+        sourceStart: copySlice.snappedStart,
+        sourceEnd:
+          copySlice.snappedStart + (audioFrameAt(outEndSec) - audioFrame) / OUTPUT_SAMPLE_RATE,
+        outStartTimestampUs: Math.round(copySlice.outStartSec * 1_000_000),
+      }
+      const audio = plan.hasAudioOutput
+        ? new AudioSliceWriter({
+            reader,
+            slice: audioSlice,
+            out,
+            startFrame: audioFrame,
+            shouldCancel,
+          })
+        : null
+      const audioPacer = createTrackPacer(
+        async (untilSec) => audio?.advanceTo(audioFrameAt(untilSec)),
+        AUDIO_PACE
+      )
+      try {
+        await copySlicePackets({
+          track: reader.videoTrack,
+          slice: copySlice,
+          videoSource: out.videoSource,
+          decoderConfig,
+          onPacket: async (outTimeSec) => {
+            // Copying is fast next to the audio encode, which takes the rest.
+            const progress = Math.min(0.95, (outTimeSec / totalSec) * 0.95)
+            if (progress - lastReported >= 0.005) {
+              lastReported = progress
+              post({ type: 'progress', progress })
+            }
+            if (audio) await audioPacer.videoReached(outTimeSec)
+          },
+          shouldCancel,
+        })
+        decoderConfig = null
+        await audioPacer.drain()
+        if (audio) audioFrame = await audio.finish()
+      } finally {
+        await audioPacer.drain().catch(() => {})
+        await audio?.dispose()
+      }
+    }
+    if (canceled) throw new CanceledError()
+    return await out.finalize()
+  } catch (err) {
+    await out.cancel().catch(() => {})
+    throw err
+  }
+}
+
+async function runCopyExport(
+  job: ExportJob,
+  plan: EditPlan,
+  sources: SourceCache,
+  storageDir: string | undefined
+): Promise<ExportResult> {
+  const copy = await planCopy(plan, sources)
+  const totalSec = Math.max(
+    0.001,
+    copy.slices.reduce((sum, slice) => sum + (slice.end - slice.snappedStart), 0)
+  )
+  const indexed = job.container === 'mp4' || job.container === 'mov'
+  const counts: PacketCounts | null = indexed
+    ? {
+        video: copy.slices.reduce((sum, slice) => sum + slice.sequenceNumbers.length, 0),
+        audio: plan.hasAudioOutput
+          ? audioPacketBound(totalSec, OUTPUT_SAMPLE_RATE, plan.audioCodec, plan.slices.length)
+          : 0,
+      }
+    : null
+  return withReserveFallback(
+    counts,
+    (attemptCounts) => copyOnce(job, plan, sources, copy, storageDir, attemptCounts, totalSec),
+    () => canceled
+  )
+}
+
 async function runExport(job: ExportJob, storageDir: string | undefined): Promise<void> {
   const plan = buildEditPlan(job)
   await ensureAacEncoder(job.audioCodec)
+  if (job.videoMode === 'copy') {
+    const sources = new SourceCache(job.sources.map((source) => source.file))
+    try {
+      const result = await runCopyExport(job, plan, sources, storageDir)
+      post({ type: 'progress', progress: 1 })
+      const { message, transfer } = doneMessage(result)
+      post(message, transfer)
+    } finally {
+      await sources.disposeAll()
+    }
+    return
+  }
 
   const sources = new SourceCache(job.sources.map((source) => source.file))
   try {

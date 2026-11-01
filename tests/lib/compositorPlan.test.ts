@@ -140,3 +140,32 @@ describe('buildCompositorPlan source-aware bitrate', () => {
     expect(plan.videoBitrate).toBe(Math.round(12_000_000 * 0.65))
   })
 })
+
+describe('buildCompositorPlan resolution and target size', () => {
+  it('scales the canvas and every layer to the chosen resolution', () => {
+    const plan = buildCompositorPlan(
+      makeJob({
+        maxShortSide: 360,
+        layers: [
+          {
+            ...makeJob().layers[0],
+            transform: { x: 960, y: 540, width: 960, height: 540 },
+          },
+        ],
+      })
+    )
+    expect(plan.outputWidth).toBe(640)
+    expect(plan.outputHeight).toBe(360)
+    expect(plan.layers[0].transform).toEqual({ x: 320, y: 180, width: 320, height: 180 })
+  })
+
+  it('fits a target size by shrinking and lowering the frame grid', () => {
+    const plan = buildCompositorPlan(
+      makeJob({ durationSec: 60, fps: '30', targetBytes: 2_400_000 })
+    )
+    expect(plan.targetFit?.feasible).toBe(true)
+    expect(plan.outputHeight).toBe(360)
+    expect(plan.fpsGrid).toBe(24)
+    expect(plan.videoBitrate).toBe(plan.targetFit?.videoBitrate)
+  })
+})

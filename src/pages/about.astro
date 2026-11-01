@@ -4,7 +4,7 @@ import '@/styles/global.css'
 
 const pageTitle = 'Export & Quality Guide | Splicer'
 const pageDescription =
-  'How Splicer exports video: why exporting re-encodes, what WebM and the quality presets actually do, and how to avoid quality loss.'
+  'How Splicer exports video: when exporting re-encodes, what WebM and the quality presets actually do, how Original copies without loss, and how to hit a file size.'
 ---
 
 <Layout title={pageTitle} description={pageDescription}>
@@ -43,13 +43,14 @@ const pageDescription =
 
       <section class="flex flex-col gap-2">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
-          Exporting re-encodes your video
+          Exporting usually re-encodes your video
         </h2>
         <p class="leading-relaxed text-slate-700 dark:text-slate-300">
-          When you export, Splicer decodes your video back to raw frames and encodes them again
-          from scratch. Your source file is already compressed (and that first compression already
-          discarded some detail), so this second encode is a fresh round of compression on top of
-          it. That is the key thing to keep in mind: every export is a re-encode, not a copy.
+          With a quality preset, Splicer decodes your video back to raw frames and encodes them
+          again from scratch. Your source file is already compressed (and that first compression
+          already discarded some detail), so this second encode is a fresh round of compression on
+          top of it. The one exception is <span class="font-medium">Original (no re-encode)</span>,
+          which copies the compressed video as it is.
         </p>
       </section>
 
@@ -72,8 +73,9 @@ const pageDescription =
           Re-encoding an already-compressed video is like photocopying a photocopy: each pass
           loses a little, an effect called generation loss. You cannot add back detail that was
           already thrown away, so a re-encode can never increase quality. Getting a smaller file
-          with truly zero quality loss is not achievable by re-encoding, and every export
-          re-encodes.
+          with truly zero quality loss is not achievable by re-encoding. Original avoids the loss by
+          not re-encoding at all, which also means it keeps the source size; Resolution and Target
+          size make a file smaller by re-encoding it.
         </p>
       </section>
 
@@ -114,7 +116,36 @@ const pageDescription =
           High about the same as the source, Medium about 60%, and Low about 35%. When the source
           bitrate cannot be measured, they fall back to fixed bitrates for the output size.
           &ldquo;Maximum&rdquo; is not mathematically lossless. If your goal is to keep every pixel
-          identical, a re-encode is not the way to do it.
+          identical, use Original instead.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
+          Original (no re-encode)
+        </h2>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          Original copies the source video's compressed frames straight into the new file, so
+          nothing is lost and the export takes seconds. Compressed video stores a full picture only
+          at key frames, and a copy has to start on one, so each cut moves back to the key frame
+          before it. The export panel lists how far each cut moves and the timeline marks it with
+          a dashed line. Audio is re-encoded to stay in sync. Original works in Basic mode when
+          every clip on the timeline was encoded the same way, nothing is cropped, FPS and
+          Resolution are on Original, and the format can hold the source codec: MP4, MOV, or MKV
+          for H.264 and HEVC, WebM or MKV for VP9 and VP8.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">
+          Resolution and Target size
+        </h2>
+        <p class="leading-relaxed text-slate-700 dark:text-slate-300">
+          Resolution caps the shorter side of the output (1080p, 720p, 480p, or 360p) and never
+          scales up. Fewer pixels need fewer bits, which is the most reliable way to shrink a file
+          the encoder cannot compress further at full size. Target size aims the whole file a
+          little under the size you pick. When that leaves too few bits for a clear picture, it
+          lowers the resolution, then the frame rate, and the panel tells you what it chose.
         </p>
       </section>
 
@@ -123,12 +154,13 @@ const pageDescription =
           How to keep quality as high as possible
         </h2>
         <p class="leading-relaxed text-slate-700 dark:text-slate-300">
-          Export to the <span class="font-medium">same format as your source</span>, at
+          Pick <span class="font-medium">Original (no re-encode)</span>: it keeps every frame as it
+          was. When Original is unavailable, export to the
+          <span class="font-medium">same format as your source</span>, at
           <span class="font-medium">Maximum</span> quality, with FPS left on
-          <span class="font-medium">Original</span>. Every export re-encodes, so this will not be a
-          perfect copy, but Maximum aims above the source bitrate to keep generation loss small.
-          Changing the format, lowering the quality, or reducing the FPS increases the amount of
-          quality lost.
+          <span class="font-medium">Original</span>. That re-encodes, so it is not a perfect copy,
+          but Maximum aims above the source bitrate to keep generation loss small. Changing the
+          format, lowering the quality, or reducing the FPS increases the amount of quality lost.
         </p>
       </section>
 
@@ -151,8 +183,8 @@ const pageDescription =
         <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-50">Recommendations</h2>
         <ul class="flex flex-col gap-1.5 pl-5 text-slate-700 dark:text-slate-300">
           <li class="list-disc leading-relaxed">
-            Want the highest quality? Export to the same format as your source at Maximum quality
-            with Original FPS.
+            Want the highest quality? Use Original (no re-encode), or Maximum quality in the same
+            format as your source when Original is unavailable.
           </li>
           <li class="list-disc leading-relaxed">
             Want a smaller file that looks the same? Use WebM with VP9 and accept a small,

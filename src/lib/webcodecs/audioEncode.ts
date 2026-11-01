@@ -8,7 +8,7 @@ import { OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE, type OutputHandle } from './mediab
 export type AudioEncodeOptions = {
   reader: SourceReader | null
   slice: EditSlice
-  out: OutputHandle
+  out: Pick<OutputHandle<unknown>, 'audioSource'>
   // Output frame (at OUTPUT_SAMPLE_RATE) where this slice's audio begins: the
   // previous slice's returned end frame, so slices join without gaps.
   startFrame: number
@@ -41,7 +41,7 @@ export function audioFrameRange(
 // Writes stereo audio on an integer output-frame grid, never past `endFrame`.
 class FrameWriter {
   constructor(
-    private out: OutputHandle,
+    private out: Pick<OutputHandle<unknown>, 'audioSource'>,
     public frame: number,
     private readonly endFrame: number
   ) {}

@@ -4,7 +4,7 @@ import { buildJob } from '@/lib/exportEngine'
 import { clips } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
-function makeClip(id: string): Clip {
+function makeClip(id: string, overrides: Partial<Clip> = {}): Clip {
   return {
     id,
     file: new File([new Uint8Array([0])], `${id}.mp4`, { type: 'video/mp4' }),
@@ -15,6 +15,11 @@ function makeClip(id: string): Clip {
     objectUrl: `blob:${id}`,
     waveformPeaks: new Float32Array(0),
     hasAudio: true,
+    videoCodec: 'avc',
+    decoderConfigKey: 'avc1.640028|1920x1088|abc',
+    squarePixels: true,
+    rotation: 0,
+    ...overrides,
   }
 }
 
@@ -42,6 +47,48 @@ describe('buildJob', () => {
     const job = buildJob([makeSegment('a')], 'webm', 'high', '30')
     expect(job?.container).toBe('webm')
     expect(job?.audioCodec).toBe('opus')
+  })
+
+  it('copies the video for Original when nothing blocks it', () => {
+    const job = buildJob([makeSegment('a')], 'mp4', 'original', 'original', { resolution: '720' })
+    expect(job?.videoMode).toBe('encode')
+    const copy = buildJob([makeSegment('a')], 'mkv', 'original', 'original')
+    expect(copy?.videoMode).toBe('copy')
+    // Audio is still encoded, at High.
+    expect(copy?.quality).toBe('high')
+    expect(copy?.maxShortSide).toBeUndefined()
+  })
+
+  it('encodes at High when Original cannot copy', () => {
+    for (const job of [
+      buildJob([makeSegment('a')], 'mp4', 'original', '30'),
+      buildJob([makeSegment('a')], 'webm', 'original', 'original'),
+      buildJob(
+        [{ ...makeSegment('a'), crop: { x: 0, y: 0, width: 960, height: 1080 } }],
+        'mp4',
+        'original',
+        'original'
+      ),
+    ]) {
+      expect(job?.videoMode).toBe('encode')
+      expect(job?.quality).toBe('high')
+    }
+    clips.value = [
+      makeClip('a'),
+      makeClip('b', { decoderConfigKey: 'avc1.640028|1920x1088|other' }),
+    ]
+    expect(
+      buildJob([makeSegment('a'), makeSegment('b')], 'mp4', 'original', 'original')?.videoMode
+    ).toBe('encode')
+  })
+
+  it('passes the resolution cap and target size to the job', () => {
+    const capped = buildJob([makeSegment('a')], 'mp4', 'high', 'original', { resolution: '480' })
+    expect(capped?.maxShortSide).toBe(480)
+    expect(capped?.targetBytes).toBeNull()
+    const target = buildJob([makeSegment('a')], 'mp4', 'target', 'original', { targetSizeMB: 8 })
+    expect(target?.targetBytes).toBe(8_000_000)
+    expect(target?.quality).toBe('high')
   })
 
   it('returns null when a referenced clip is missing', () => {

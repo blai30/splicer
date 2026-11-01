@@ -2,6 +2,7 @@ import type { MbAudioCodec, MbVideoCodec } from '../exportCodecs'
 import type { Framerate, Quality } from '../types'
 import {
   coveredSourceBytes,
+  fitTargetSize,
   sourceEquivalentBitrate,
   targetAudioBitrate,
   targetVideoBitrate,
@@ -9,8 +10,12 @@ import {
   type SourceAudio,
   type SourceEquivalent,
   type SourceSlice,
+  type TargetSizeFit,
 } from './bitrateModel'
+import { capShortSide, evenFloor, type Size } from './outputSize'
 import type { ExportJob, JobSlice } from './protocol'
+
+export { evenFloor } from './outputSize'
 
 export type EditSlice = JobSlice & {
   // Where this slice begins on the continuous output timeline (microseconds).
@@ -34,6 +39,17 @@ export type EditPlan = {
   // Average rate frames reach the encoder at ("original" resolved).
   nominalFrameRate: number
   sizeBasis: SizeBasis
+  // Constant bitrate for target size with VP8/VP9, whose VBR undershoots or
+  // overshoots a fixed size by up to a third; H.264 follows its target either way.
+  bitrateMode: BitrateMode
+  // How a target size was met; null for quality presets.
+  targetFit: TargetSizeFit | null
+}
+
+export type BitrateMode = 'variable' | 'constant'
+
+export function bitrateModeFor(codec: MbVideoCodec, targetSize: boolean): BitrateMode {
+  return targetSize && (codec === 'vp9' || codec === 'vp8') ? 'constant' : 'variable'
 }
 
 const FPS_BY_PRESET: Record<Exclude<Framerate, 'original'>, number> = {
@@ -91,12 +107,6 @@ export function computeEncodeParams(
   }
 }
 
-// Codecs reject odd dimensions for yuv420; floor to even (minimum 2).
-export function evenFloor(value: number): number {
-  const floored = Math.max(2, Math.floor(value))
-  return floored % 2 === 0 ? floored : floored - 1
-}
-
 // The frame size one slice shows: its crop, or the whole source.
 function sliceFrameSize(job: ExportJob, slice: JobSlice): { width: number; height: number } {
   if (slice.crop && slice.crop.width > 0 && slice.crop.height > 0) {
@@ -110,10 +120,15 @@ function sliceFrameSize(job: ExportJob, slice: JobSlice): { width: number; heigh
 // taking its settings from its first clip; the resolution is the largest
 // segment with that same aspect ratio, so mixing 720p and 1080p of the same
 // shape exports at 1080p. Every segment is contain-fitted into the frame
-// (letterboxed/pillarboxed), so mixed aspect ratios never stretch.
+// (letterboxed/pillarboxed), so mixed aspect ratios never stretch. A
+// resolution choice then caps the shorter side (job.maxShortSide).
 const ASPECT_TOLERANCE = 0.01
 
-export function outputDimensions(job: ExportJob): { width: number; height: number } {
+export function outputDimensions(job: ExportJob): Size {
+  return capShortSide(sourceOutputSize(job), job.maxShortSide)
+}
+
+function sourceOutputSize(job: ExportJob): Size {
   const first = job.slices[0]
   if (!first) return { width: 2, height: 2 }
   let best = sliceFrameSize(job, first)
@@ -166,7 +181,7 @@ function meanSourceFrameRate(job: ExportJob): number {
 }
 
 export function buildEditPlan(job: ExportJob): EditPlan {
-  const { width, height } = outputDimensions(job)
+  const requestedSize = outputDimensions(job)
 
   let cursorUs = 0
   const slices: EditSlice[] = job.slices.map((slice) => {
@@ -182,23 +197,57 @@ export function buildEditPlan(job: ExportJob): EditPlan {
       const source = job.sources[slice.sourceIndex]
       return { bitrate: source?.audioBitrate, codec: source?.audioCodec }
     })
-  const sourceEquivalent = sourceEquivalentBitrate(sourceSlices(job, width, height), job.videoCodec)
-  const params = computeEncodeParams(width, height, job.fps, job.quality, {
-    videoCodec: job.videoCodec,
-    audioCodec: job.audioCodec,
-    sourceEquivalent,
-    sourceAudio: audibleSources,
-  })
-
   const hasAudioOutput = job.slices.some(
     (slice) => job.sources[slice.sourceIndex]?.hasAudio === true
   )
+  const durationSec = job.slices.reduce((sum, slice) => sum + sliceDurationSec(slice), 0)
+  const paramsAt = (size: Size, fps: Framerate) => {
+    const sourceEquivalent = sourceEquivalentBitrate(
+      sourceSlices(job, size.width, size.height),
+      job.videoCodec
+    )
+    const params = computeEncodeParams(size.width, size.height, fps, job.quality, {
+      videoCodec: job.videoCodec,
+      audioCodec: job.audioCodec,
+      sourceEquivalent,
+      sourceAudio: audibleSources,
+    })
+    return { sourceEquivalent, params }
+  }
 
-  const nominalFrameRate = params.frameRate ?? meanSourceFrameRate(job)
+  let size = requestedSize
+  let { sourceEquivalent, params } = paramsAt(size, job.fps)
+  let nominalFrameRate = params.frameRate ?? meanSourceFrameRate(job)
+  let targetFit: TargetSizeFit | null = null
+  if (job.targetBytes) {
+    targetFit = fitTargetSize({
+      targetBytes: job.targetBytes,
+      durationSec,
+      size,
+      frameRate: nominalFrameRate,
+      videoCodec: job.videoCodec,
+      audioCodec: job.audioCodec,
+      sourceAudio: audibleSources,
+      hasAudio: hasAudioOutput,
+      sourceBitrateBound: sourceEquivalent?.raw ?? null,
+      maxVideoBitrate: (candidate) => paramsAt(candidate, job.fps).params.videoBitrate,
+    })
+    size = targetFit.size
+    ;({ sourceEquivalent, params } = paramsAt(size, job.fps))
+    const frameRate = targetFit.frameRateLowered ? targetFit.frameRate : params.frameRate
+    params = {
+      ...params,
+      frameRate,
+      frameDurationUs: frameRate === null ? null : Math.round(1_000_000 / frameRate),
+      videoBitrate: targetFit.videoBitrate,
+      audioBitrate: targetFit.audioBitrate,
+    }
+    nominalFrameRate = frameRate ?? nominalFrameRate
+  }
 
   return {
-    outputWidth: width,
-    outputHeight: height,
+    outputWidth: size.width,
+    outputHeight: size.height,
     slices,
     frameDurationUs: params.frameDurationUs,
     frameRate: params.frameRate,
@@ -209,8 +258,10 @@ export function buildEditPlan(job: ExportJob): EditPlan {
     audioCodec: job.audioCodec,
     hasAudioOutput,
     nominalFrameRate,
+    bitrateMode: bitrateModeFor(job.videoCodec, targetFit !== null),
+    targetFit,
     sizeBasis: {
-      durationSec: job.slices.reduce((sum, slice) => sum + sliceDurationSec(slice), 0),
+      durationSec,
       frameRate: nominalFrameRate,
       sourceEquivalent,
       sourceBitrateBound: sourceEquivalent?.raw ?? null,

@@ -48,6 +48,7 @@ function job(overrides: Partial<ExportJob> = {}): ExportJob {
     container: 'webm',
     videoCodec: 'vp9',
     audioCodec: 'opus',
+    videoMode: 'encode',
     ...overrides,
   }
 }
@@ -263,5 +264,57 @@ describe('buildEditPlan source-aware bitrate', () => {
     const plan = buildEditPlan(mp4Job({ sources: [source({ width: 1280, height: 720 })] }))
     expect(plan.sizeBasis.sourceEquivalent).toBeNull()
     expect(plan.videoBitrate).toBeGreaterThan(1_000_000)
+  })
+})
+
+describe('buildEditPlan resolution and target size', () => {
+  it('caps the output at the chosen resolution, keeping the aspect ratio', () => {
+    const plan = buildEditPlan(job({ maxShortSide: 360 }))
+    expect(plan.outputWidth).toBe(640)
+    expect(plan.outputHeight).toBe(360)
+    // The bitrate follows the smaller picture.
+    expect(plan.videoBitrate).toBeLessThan(buildEditPlan(job()).videoBitrate)
+  })
+
+  it('never upscales past the source', () => {
+    const plan = buildEditPlan(
+      job({ sources: [source({ width: 640, height: 360 })], maxShortSide: 1080 })
+    )
+    expect(plan.outputHeight).toBe(360)
+  })
+
+  it('aims a target size with constant bitrate on VP9', () => {
+    const plan = buildEditPlan(job({ targetBytes: 2_000_000, slices: [slice({ sourceEnd: 10 })] }))
+    expect(plan.targetFit?.feasible).toBe(true)
+    expect(plan.bitrateMode).toBe('constant')
+    expect(plan.videoBitrate).toBe(plan.targetFit?.videoBitrate)
+    expect(plan.audioBitrate).toBe(plan.targetFit?.audioBitrate)
+    const bytes = ((plan.videoBitrate + plan.audioBitrate) * 10) / 8
+    expect(bytes).toBeLessThan(2_000_000)
+    expect(bytes).toBeGreaterThan(2_000_000 * 0.9)
+  })
+
+  it('keeps variable bitrate for H.264 and for quality presets', () => {
+    expect(buildEditPlan(job()).bitrateMode).toBe('variable')
+    expect(
+      buildEditPlan(
+        job({ targetBytes: 2_000_000, container: 'mp4', videoCodec: 'avc', audioCodec: 'aac' })
+      ).bitrateMode
+    ).toBe('variable')
+  })
+
+  it('shrinks and drops frames when the target leaves too few bits', () => {
+    const plan = buildEditPlan(
+      job({
+        sources: [source({ hasAudio: false })],
+        slices: [slice({ sourceEnd: 60 })],
+        fps: '30',
+        targetBytes: 2_000_000,
+      })
+    )
+    expect(plan.outputHeight).toBe(360)
+    expect(plan.frameRate).toBe(24)
+    expect(plan.frameDurationUs).toBe(Math.round(1_000_000 / 24))
+    expect(plan.nominalFrameRate).toBe(24)
   })
 })

@@ -1,6 +1,6 @@
 import type { MbAudioCodec, MbContainer, MbVideoCodec } from '../exportCodecs'
 import type { CropParams, ExportFormat, Framerate, Quality, Transform } from '../types'
-import type { JobSource, WorkerResponse } from './protocol'
+import type { JobSource, OutputSizing, WorkerResponse } from './protocol'
 
 // One placed clip to composite. timelineStart is where it begins on the output
 // timeline (seconds); transform is its destination box on the project canvas.
@@ -24,7 +24,7 @@ export type CompositorAudioLayer = {
   volume: number
 }
 
-export type CompositorJob = {
+export type CompositorJob = OutputSizing & {
   canvas: { width: number; height: number }
   sources: JobSource[]
   layers: CompositorLayer[]

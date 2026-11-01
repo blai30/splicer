@@ -9,6 +9,7 @@ import {
 } from 'mediabunny'
 
 import { appendClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
+import { decoderConfigKey } from '@/lib/fastCopy'
 import { info, warn, error as logError } from '@/lib/logger'
 import { clips, exporting, getClipById, importErrors, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
@@ -59,6 +60,8 @@ export type MediaProbe = StreamStats & {
   frameRate: number
   rotation: number
   hasAudio: boolean
+  decoderConfigKey?: string
+  squarePixels: boolean
 }
 
 function positive(value: number): number | undefined {
@@ -123,8 +126,12 @@ export async function probeMedia(file: File): Promise<MediaProbe> {
       audioTrack && hasAudio ? audioTrack : null,
       await hasPacketIndex(input)
     )
+    const decoderConfig = await videoTrack.getDecoderConfig().catch(() => null)
+    const pixelAspect = await videoTrack.getPixelAspectRatio()
     return {
       ...stats,
+      decoderConfigKey: decoderConfig ? decoderConfigKey(decoderConfig) : undefined,
+      squarePixels: pixelAspect.num === pixelAspect.den,
       duration,
       width: await videoTrack.getDisplayWidth(),
       height: await videoTrack.getDisplayHeight(),
@@ -326,6 +333,8 @@ export async function createClip(file: File): Promise<Clip | null> {
       videoCodec: probe.videoCodec,
       audioBitrate: probe.audioBitrate,
       audioCodec: probe.audioCodec,
+      decoderConfigKey: probe.decoderConfigKey,
+      squarePixels: probe.squarePixels,
     }
   } catch (err) {
     URL.revokeObjectURL(objectUrl)

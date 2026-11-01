@@ -51,7 +51,8 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 ### Export
 
 - Formats: `mp4`, `mkv`, `mov`, `webm`
-- Quality presets: `lossless`, `high`, `medium`, `low`
+- Quality: `Original (no re-encode)` stream copy, presets `Maximum`, `High`, `Medium`, `Low`, or `Target size` (8/10/25/50 MB or a custom size)
+- Resolution cap: `original`, `1080p`, `720p`, `480p`, `360p`
 - Framerate options: `original`, `60`, `30`, `24`
 - WebM codec choice: `VP9` (recommended, smaller files) or `VP8` (faster to encode).
 - A single WebCodecs export engine (runs in a Web Worker) handles every format and resolution, including HD sources, with bounded memory regardless of clip length.
@@ -125,13 +126,14 @@ Every export runs through the browser's native WebCodecs API:
 - A capability gate checks encoder/decoder support up front. When WebCodecs is unavailable or the source is not demuxable, the export surfaces an honest error rather than falling back.
 - This path handles HD sources (e.g. 1080p60) in-browser.
 - The first segment sets the output aspect ratio. The resolution is the largest segment with that same shape. Other segments are letterboxed (never stretched).
-- Cuts are frame accurate for video and sample accurate for audio. Audio is normalized to 48 kHz stereo, and segments without audio (or muted ones) get silence to keep A/V in sync.
+- `Original (no re-encode)` copies the source's video packets instead (Basic mode, one shared codec setup, no crop, original FPS and resolution). Cuts snap back to the key frame before each in-point, and audio is re-encoded over the copied span.
+- Cuts are frame accurate for video and sample accurate for audio when re-encoding. Audio is normalized to 48 kHz stereo, and segments without audio (or muted ones) get silence to keep A/V in sync.
 
 ## Usage Guidelines
 
-- Use `high`/`medium` presets for smaller files; use `lossless` to stay closest to the source.
+- Use `Original` for a lossless trim at the source size, `High`/`Medium` for smaller files, a lower `Resolution` when the encoder cannot shrink the file further, and `Target size` to fit a limit.
 - For WebM, prefer `VP9` for smaller files at similar quality; choose `VP8` when encode speed matters more than size.
-- Every export re-encodes, so a perfectly lossless copy is not possible. To keep quality highest, export to the same format as your source at `lossless + original fps`. See the in-app FAQ or `/about` for the full explanation.
+- Every export except `Original` re-encodes. When `Original` is unavailable, keep quality highest by exporting to the same format as your source at `Maximum` with original FPS. See the in-app FAQ or `/about` for the full explanation.
 - The finished file is held in memory until it is downloaded or removed from the export library.
 
 ## Current Limitations

@@ -5,7 +5,8 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import type { ScrollWindow } from '@/components/useTimelineNavigation'
 import { WaveformView } from '@/components/WaveformView'
-import { formatTime } from '@/lib/format'
+import { copyPreview } from '@/lib/copyExport'
+import { formatPreciseTime, formatSignedSeconds, formatTime } from '@/lib/format'
 import {
   beginEdgePreview,
   endEdgePreview,
@@ -50,6 +51,9 @@ export function SegmentBlock({
   const clip = clips.value.find((clip) => clip.id === segment.clipId) ?? getClipById(segment.clipId)
   const segmentDuration = segment.endTime - segment.startTime
   const isSelected = selectedSegmentId.value === segment.id
+  const preview = copyPreview.value
+  const copyShift = preview?.status === 'ready' ? preview.shifts.get(segment.id) : undefined
+  const showCopyShift = copyShift !== undefined && Math.abs(copyShift.shiftSec) >= 0.0005
   const leftRef = useRef<HTMLDivElement>(null)
   const rightRef = useRef<HTMLDivElement>(null)
 
@@ -239,6 +243,26 @@ export function SegmentBlock({
           scrollWindow={scrollWindow}
           class="opacity-80"
         />
+      )}
+      {showCopyShift && (
+        // Where an Original export really starts: the key frame before the in
+        // point sits left of the block, so the line marks its edge with how
+        // far back it is; a key frame after the in point is drawn in place.
+        <div
+          data-copy-snap
+          role="img"
+          aria-label={`Original export starts at the key frame at ${formatPreciseTime(copyShift.snappedStart)}, ${formatSignedSeconds(-copyShift.shiftSec)} from the cut`}
+          class="pointer-events-none absolute inset-y-0 z-10 border-l-2 border-dashed border-amber-300"
+          style={{
+            left: `${Math.max(0, -copyShift.shiftSec) * (segmentDuration > 0 ? width / segmentDuration : 0)}px`,
+          }}
+        >
+          {width >= BLOCK_NAME_MIN_WIDTH_PX && (
+            <span class="absolute bottom-0.5 left-3 rounded bg-slate-900/70 px-1 text-xs text-amber-200 tabular-nums">
+              {formatSignedSeconds(-copyShift.shiftSec)}
+            </span>
+          )}
+        </div>
       )}
       {/* Labels would only be clipped noise on a block this narrow. */}
       {width >= BLOCK_NAME_MIN_WIDTH_PX && (

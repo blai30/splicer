@@ -17,7 +17,8 @@ import type {
   ExportRecord,
   Framerate,
   MkvCodec,
-  Quality,
+  QualityChoice,
+  Resolution,
   Segment,
   Track,
   Viewport,
@@ -168,8 +169,23 @@ export function getClipById(id: string): Clip | undefined {
 export const exportFormat = signal<ExportFormat>(
   loadFromStorage('exportFormat', 'mp4', oneOf('mp4', 'mkv', 'mov', 'webm'))
 )
-export const quality = signal<Quality>(
-  loadFromStorage('quality', 'lossless', oneOf('lossless', 'high', 'medium', 'low'))
+export const quality = signal<QualityChoice>(
+  loadFromStorage(
+    'quality',
+    'lossless',
+    oneOf('original', 'lossless', 'high', 'medium', 'low', 'target')
+  )
+)
+export const resolution = signal<Resolution>(
+  loadFromStorage('resolution', 'original', oneOf('original', '1080', '720', '480', '360'))
+)
+// The file size Target size mode aims for, in megabytes (10^6 bytes, as the
+// size readouts use).
+export const TARGET_SIZE_PRESETS_MB = [8, 10, 25, 50]
+export const TARGET_SIZE_MIN_MB = 0.1
+export const TARGET_SIZE_MAX_MB = 100_000
+export const targetSizeMB = signal<number>(
+  loadFromStorage('targetSizeMB', 10, isNumberIn(TARGET_SIZE_MIN_MB, TARGET_SIZE_MAX_MB))
 )
 export const framerate = signal<Framerate>(
   loadFromStorage('framerate', 'original', oneOf('original', '60', '30', '24'))
@@ -258,6 +274,8 @@ export const currentSegmentDuration = signal(0)
 persistSignal('exportFormat', exportFormat)
 persistSignal('quality', quality)
 persistSignal('framerate', framerate)
+persistSignal('resolution', resolution)
+persistSignal('targetSizeMB', targetSizeMB)
 persistSignal('webmCodec', webmCodec)
 persistSignal('mkvCodec', mkvCodec)
 persistSignal('previewVolume', previewVolume)

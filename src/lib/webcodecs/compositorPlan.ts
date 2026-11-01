@@ -1,12 +1,15 @@
 import type { MbAudioCodec, MbVideoCodec } from '../exportCodecs'
 import {
   coveredSourceBytes,
+  fitTargetSize,
   sourceEquivalentBitrate,
   type SizeBasis,
   type SourceSlice,
+  type TargetSizeFit,
 } from './bitrateModel'
 import type { CompositorJob, CompositorLayer } from './compositorProtocol'
-import { computeEncodeParams } from './editPlan'
+import { bitrateModeFor, computeEncodeParams, type BitrateMode } from './editPlan'
+import { capShortSide, evenFloor, type Size } from './outputSize'
 
 export type CompositorLayerPlan = CompositorLayer & {
   // Where this layer begins on the output timeline (microseconds).
@@ -31,14 +34,40 @@ export type CompositorPlan = {
   // Frames are emitted on the fps grid, so the encoder sees exactly this rate.
   nominalFrameRate: number
   sizeBasis: SizeBasis
+  bitrateMode: BitrateMode
+  targetFit: TargetSizeFit | null
 }
 
 const OVERLAP_EPSILON_SEC = 1e-6
 
-// Codecs reject odd dimensions for yuv420; floor to even.
-function evenFloor(value: number): number {
-  const floored = Math.floor(value)
-  return floored % 2 === 0 ? floored : floored - 1
+// The job with every layer placed on an output of `size` instead of the
+// project canvas, for a resolution cap or a target size that shrinks it.
+export function scaleCompositorJob(job: CompositorJob, size: Size): CompositorJob {
+  const scaleX = size.width / Math.max(1, job.canvas.width)
+  const scaleY = size.height / Math.max(1, job.canvas.height)
+  if (scaleX === 1 && scaleY === 1) return job
+  return {
+    ...job,
+    canvas: { ...size },
+    layers: job.layers.map((layer) => ({
+      ...layer,
+      transform: {
+        x: layer.transform.x * scaleX,
+        y: layer.transform.y * scaleY,
+        width: layer.transform.width * scaleX,
+        height: layer.transform.height * scaleY,
+      },
+    })),
+  }
+}
+
+// Output size before any target size fit: the canvas, even, with the
+// resolution cap applied.
+export function compositorOutputSize(job: CompositorJob): Size {
+  return capShortSide(
+    { width: evenFloor(job.canvas.width), height: evenFloor(job.canvas.height) },
+    job.maxShortSide
+  )
 }
 
 // "Original" for a composition: the fastest source frame rate (so no source
@@ -135,35 +164,71 @@ export function layeredSourceBitrate(
   return coveredDuration > 0 ? bits / coveredDuration : null
 }
 
-export function buildCompositorPlan(job: CompositorJob): CompositorPlan {
-  const outputWidth = evenFloor(job.canvas.width)
-  const outputHeight = evenFloor(job.canvas.height)
-  const sequentialSlices = sequentialLayerSlices(job, outputWidth, outputHeight)
-  const sourceEquivalent = sequentialSlices
-    ? sourceEquivalentBitrate(sequentialSlices, job.videoCodec)
-    : null
-  const sourceAudio = job.audioLayers
-    .filter((layer) => job.sources[layer.sourceIndex]?.hasAudio === true)
+export function buildCompositorPlan(projectJob: CompositorJob): CompositorPlan {
+  const sourceAudio = projectJob.audioLayers
+    .filter((layer) => projectJob.sources[layer.sourceIndex]?.hasAudio === true)
     .map((layer) => {
-      const source = job.sources[layer.sourceIndex]
+      const source = projectJob.sources[layer.sourceIndex]
       return { bitrate: source?.audioBitrate, codec: source?.audioCodec }
     })
-  const params = computeEncodeParams(outputWidth, outputHeight, job.fps, job.quality, {
-    videoCodec: job.videoCodec,
-    audioCodec: job.audioCodec,
-    sourceEquivalent,
-    sourceAudio,
-  })
+  const paramsAt = (size: Size) => {
+    const scaled = scaleCompositorJob(projectJob, size)
+    const sequentialSlices = sequentialLayerSlices(scaled, size.width, size.height)
+    const sourceEquivalent = sequentialSlices
+      ? sourceEquivalentBitrate(sequentialSlices, projectJob.videoCodec)
+      : null
+    const params = computeEncodeParams(
+      size.width,
+      size.height,
+      projectJob.fps,
+      projectJob.quality,
+      {
+        videoCodec: projectJob.videoCodec,
+        audioCodec: projectJob.audioCodec,
+        sourceEquivalent,
+        sourceAudio,
+      }
+    )
+    return { job: scaled, sourceEquivalent, params }
+  }
+
+  const hasMixedAudio = projectJob.audioLayers.some(
+    (layer) => projectJob.sources[layer.sourceIndex]?.hasAudio === true
+  )
+  let size = compositorOutputSize(projectJob)
+  let fpsGrid =
+    projectJob.fps === 'original' ? originalFrameRate(projectJob) : Number(projectJob.fps)
+  let { job, sourceEquivalent, params } = paramsAt(size)
+  let targetFit: TargetSizeFit | null = null
+  if (projectJob.targetBytes) {
+    targetFit = fitTargetSize({
+      targetBytes: projectJob.targetBytes,
+      durationSec: projectJob.durationSec,
+      size,
+      frameRate: fpsGrid,
+      videoCodec: projectJob.videoCodec,
+      audioCodec: projectJob.audioCodec,
+      sourceAudio,
+      hasAudio: hasMixedAudio,
+      sourceBitrateBound: layeredSourceBitrate(job, size.width, size.height),
+      maxVideoBitrate: (candidate) => paramsAt(candidate).params.videoBitrate,
+    })
+    size = targetFit.size
+    ;({ job, sourceEquivalent, params } = paramsAt(size))
+    params = {
+      ...params,
+      videoBitrate: targetFit.videoBitrate,
+      audioBitrate: targetFit.audioBitrate,
+    }
+    if (targetFit.frameRateLowered) fpsGrid = targetFit.frameRate
+  }
+  const outputWidth = size.width
+  const outputHeight = size.height
 
   const layers: CompositorLayerPlan[] = job.layers.map((layer) => ({
     ...layer,
     outStartUs: Math.round(layer.timelineStart * 1_000_000),
   }))
-
-  const fpsGrid = job.fps === 'original' ? originalFrameRate(job) : Number(job.fps)
-  const hasMixedAudio = job.audioLayers.some(
-    (layer) => job.sources[layer.sourceIndex]?.hasAudio === true
-  )
 
   return {
     outputWidth,
@@ -182,6 +247,8 @@ export function buildCompositorPlan(job: CompositorJob): CompositorPlan {
     tracksOrder: job.tracksOrder,
     layers,
     nominalFrameRate: fpsGrid,
+    bitrateMode: bitrateModeFor(job.videoCodec, targetFit !== null),
+    targetFit,
     sizeBasis: {
       durationSec: job.durationSec,
       frameRate: fpsGrid,

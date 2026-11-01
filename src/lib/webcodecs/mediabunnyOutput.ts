@@ -1,5 +1,6 @@
 import {
   AudioSampleSource,
+  EncodedVideoPacketSource,
   MkvOutputFormat,
   MovOutputFormat,
   Mp4OutputFormat,
@@ -7,6 +8,8 @@ import {
   VideoSampleSource,
   WebMOutputFormat,
   type OutputFormat,
+  type Rotation,
+  type VideoCodec,
 } from 'mediabunny'
 
 import type { MbAudioCodec, MbContainer, MbVideoCodec } from '../exportCodecs'
@@ -38,6 +41,17 @@ export type OutputParams = {
   hasAudioOutput: boolean
   audioCodec: MbAudioCodec
   audioBitrate: number
+  bitrateMode: 'variable' | 'constant'
+}
+
+// What a stream copy output needs: the copied track's codec and display
+// rotation, and the audio it re-encodes.
+export type CopyOutputParams = Pick<
+  OutputParams,
+  'hasAudioOutput' | 'audioCodec' | 'audioBitrate'
+> & {
+  copyCodec: VideoCodec
+  rotation: Rotation
 }
 
 function outputFormatFor(container: MbContainer, fastStart: FastStart): OutputFormat {
@@ -54,8 +68,8 @@ function outputFormatFor(container: MbContainer, fastStart: FastStart): OutputFo
   }
 }
 
-export type OutputHandle = {
-  videoSource: VideoSampleSource
+export type OutputHandle<Video = VideoSampleSource> = {
+  videoSource: Video
   audioSource: AudioSampleSource | null
   start: () => Promise<void>
   finalize: () => Promise<ExportResult>
@@ -76,18 +90,12 @@ export type OutputOptions = {
 export function createOutput(
   plan: OutputParams,
   container: MbContainer,
-  { exportTarget, packetCounts }: OutputOptions
+  options: OutputOptions
 ): OutputHandle {
-  const fastStart = chooseFastStart(exportTarget.streaming, packetCounts)
-  const output = new Output({
-    format: outputFormatFor(container, fastStart),
-    target: exportTarget.target,
-  })
-  const reserve = fastStart === 'reserve' && packetCounts !== null
-
   const videoSource = new VideoSampleSource({
     codec: plan.videoCodec,
     bitrate: plan.videoBitrate,
+    bitrateMode: plan.bitrateMode,
     keyFrameInterval: plan.keyFrameIntervalUs / 1_000_000,
     // Frames are always drawn at the output size, but guard against drift.
     sizeChangeBehavior: 'contain',
@@ -101,10 +109,38 @@ export function createOutput(
       config.framerate ??= plan.nominalFrameRate
     },
   })
-  output.addVideoTrack(
-    videoSource,
-    reserve ? { maximumPacketCount: packetBudget(packetCounts.video) } : {}
-  )
+  return buildOutput(plan, container, options, videoSource, 0)
+}
+
+// The stream copy variant: the video track takes encoded packets as they are
+// (see copyVideo.ts); audio is still encoded from samples.
+export function createCopyOutput(
+  plan: CopyOutputParams,
+  container: MbContainer,
+  options: OutputOptions
+): OutputHandle<EncodedVideoPacketSource> {
+  const videoSource = new EncodedVideoPacketSource(plan.copyCodec)
+  return buildOutput(plan, container, options, videoSource, plan.rotation)
+}
+
+function buildOutput<Video extends VideoSampleSource | EncodedVideoPacketSource>(
+  plan: Pick<OutputParams, 'hasAudioOutput' | 'audioCodec' | 'audioBitrate'>,
+  container: MbContainer,
+  { exportTarget, packetCounts }: OutputOptions,
+  videoSource: Video,
+  rotation: Rotation
+): OutputHandle<Video> {
+  const fastStart = chooseFastStart(exportTarget.streaming, packetCounts)
+  const output = new Output({
+    format: outputFormatFor(container, fastStart),
+    target: exportTarget.target,
+  })
+  const reserve = fastStart === 'reserve' && packetCounts !== null
+
+  output.addVideoTrack(videoSource, {
+    ...(rotation ? { rotation } : {}),
+    ...(reserve ? { maximumPacketCount: packetBudget(packetCounts.video) } : {}),
+  })
 
   let audioSource: AudioSampleSource | null = null
   if (plan.hasAudioOutput) {

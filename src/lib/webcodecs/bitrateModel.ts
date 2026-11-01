@@ -1,5 +1,6 @@
 import type { MbAudioCodec, MbVideoCodec } from '../exportCodecs'
 import type { Quality } from '../types'
+import { capShortSide, smallerStandardSides, type Size } from './outputSize'
 
 // Bits each codec needs for similar quality, relative to H.264. Used both to
 // convert a source's bitrate into the output codec and to scale the fallback
@@ -64,7 +65,8 @@ const VP9_ADHERENCE = { lowBpp: 0.02, atLow: 1.05, highBpp: 0.05, atHigh: 0.85 }
 // a few times the source.
 const FLOOR_SOURCE_MULTIPLE = { low: 0.7, expected: 1.5, high: 3 }
 const CEILING_SOURCE_MULTIPLE = 4
-const MUX_OVERHEAD = 1.01
+// Container framing and index on top of the codec bytes.
+export const MUX_OVERHEAD = 1.01
 
 const AUDIO_PRESETS: Record<MbAudioCodec, Record<Quality, number>> = {
   aac: { lossless: 128_000, high: 128_000, medium: 96_000, low: 64_000 },
@@ -236,12 +238,23 @@ function vp9Adherence(bitsPerPixel: number): number {
   return atLow + (atHigh - atLow) * progress
 }
 
+// Lowest bitrate the encoder follows on complex content at this size and
+// rate (see ENCODER_FLOOR).
+export function complexEncoderFloor(
+  codec: MbVideoCodec,
+  width: number,
+  height: number,
+  frameRate: number
+): number {
+  const floorModel = ENCODER_FLOOR[codec] ?? ENCODER_FLOOR.avc
+  return (floorModel.baseBitsPerFrame + floorModel.bitsPerPixel * width * height) * frameRate
+}
+
 export function estimateOutputBytes(input: EstimateInput): SizeEstimate {
   const frameRate = Math.max(1, input.frameRate)
   const pixels = input.width * input.height
   const pixelRate = pixels * frameRate
-  const floorModel = ENCODER_FLOOR[input.videoCodec] ?? ENCODER_FLOOR.avc
-  const complexFloor = (floorModel.baseBitsPerFrame + floorModel.bitsPerPixel * pixels) * frameRate
+  const complexFloor = complexEncoderFloor(input.videoCodec, input.width, input.height, frameRate)
   const bound = input.sourceBitrateBound
   const floorAt = (multiple: number) =>
     bound !== null ? Math.min(complexFloor, bound * multiple) : complexFloor
@@ -324,4 +337,106 @@ export function coveredSourceBytes(spans: SourceSpan[]): number | null {
     total += span.fileBytes * Math.min(1, Math.max(0, span.durationSec) / span.sourceDurationSec)
   }
   return spans.length > 0 ? total : null
+}
+
+// Target size mode. The request is a whole-file size, so after a safety
+// margin and the container overhead, audio takes its share and video gets
+// the rest. A bitrate under the encoder floor would be ignored (the file
+// would overshoot), so the output shrinks first, then drops frames, until the
+// video bitrate clears the floor with some margin.
+export const TARGET_SIZE_SAFETY = 0.95
+const TARGET_FLOOR_MARGIN = 1.1
+// Under this total rate, audio steps down a preset to leave video more room.
+const TARGET_LOW_AUDIO_BELOW = 1_000_000
+const FALLBACK_FRAME_RATES = [24, 15]
+
+export type TargetSizeInput = {
+  targetBytes: number
+  durationSec: number
+  // Output size before fitting (resolution choice already applied).
+  size: Size
+  frameRate: number
+  videoCodec: MbVideoCodec
+  audioCodec: MbAudioCodec
+  // Audible sources; empty when the output has no audio.
+  sourceAudio: SourceAudio[]
+  hasAudio: boolean
+  // Raw source bits per second shown at `size`, when measured. Simple content
+  // goes under the complex-content floor, and this bounds how far.
+  sourceBitrateBound: number | null
+  // Most worth asking for at a size (the High preset there): more bits than
+  // the source carries add size, not quality.
+  maxVideoBitrate: (size: Size) => number
+}
+
+export type TargetSizeFit = {
+  size: Size
+  // True when the output is smaller than the resolution choice alone makes it.
+  shrunk: boolean
+  frameRate: number
+  // True when frames are dropped to fit, so the output runs at frameRate.
+  frameRateLowered: boolean
+  videoBitrate: number
+  audioBitrate: number
+  feasible: boolean
+  // Smallest target this duration can reach at the lowest size and rate.
+  minimumBytes: number
+}
+
+function targetFloor(input: TargetSizeInput, size: Size, frameRate: number): number {
+  const complex = complexEncoderFloor(input.videoCodec, size.width, size.height, frameRate)
+  if (input.sourceBitrateBound === null) return complex
+  const pixelShare = (size.width * size.height) / Math.max(1, input.size.width * input.size.height)
+  return Math.min(complex, input.sourceBitrateBound * pixelShare * FLOOR_SOURCE_MULTIPLE.expected)
+}
+
+export function fitTargetSize(input: TargetSizeInput): TargetSizeFit {
+  const duration = Math.max(0.001, input.durationSec)
+  const totalBitrate = (input.targetBytes * 8 * TARGET_SIZE_SAFETY) / MUX_OVERHEAD / duration
+  const audioBitrate = input.hasAudio
+    ? targetAudioBitrate(
+        totalBitrate < TARGET_LOW_AUDIO_BELOW ? 'low' : 'medium',
+        input.audioCodec,
+        input.sourceAudio
+      )
+    : 0
+  const videoBudget = totalBitrate - audioBitrate
+  const sizes = [
+    input.size,
+    ...smallerStandardSides(input.size).map((side) => capShortSide(input.size, side)),
+  ]
+  const rates = [
+    input.frameRate,
+    ...FALLBACK_FRAME_RATES.filter((rate) => rate < input.frameRate - 0.5),
+  ]
+  // Shrink first; dropping frames hurts motion more than resolution hurts detail.
+  const attempts = [
+    ...sizes.map((size) => ({ size, frameRate: input.frameRate })),
+    ...rates.slice(1).map((frameRate) => ({ size: sizes[sizes.length - 1], frameRate })),
+  ]
+  for (const attempt of attempts) {
+    if (videoBudget >= targetFloor(input, attempt.size, attempt.frameRate) * TARGET_FLOOR_MARGIN) {
+      return {
+        ...attempt,
+        shrunk: attempt.size !== input.size,
+        frameRateLowered: attempt.frameRate !== input.frameRate,
+        videoBitrate: Math.round(Math.min(videoBudget, input.maxVideoBitrate(attempt.size))),
+        audioBitrate,
+        feasible: true,
+        minimumBytes: 0,
+      }
+    }
+  }
+  const last = attempts[attempts.length - 1]
+  const neededBitrate =
+    targetFloor(input, last.size, last.frameRate) * TARGET_FLOOR_MARGIN + audioBitrate
+  return {
+    ...last,
+    shrunk: last.size !== input.size,
+    frameRateLowered: last.frameRate !== input.frameRate,
+    videoBitrate: Math.max(MIN_SOURCE_VIDEO_BITRATE, Math.round(videoBudget)),
+    audioBitrate,
+    feasible: false,
+    minimumBytes: Math.ceil((neededBitrate * duration * MUX_OVERHEAD) / 8 / TARGET_SIZE_SAFETY),
+  }
 }

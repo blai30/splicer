@@ -46,8 +46,21 @@ export type JobSlice = {
   muted: boolean
 }
 
+// 'copy' writes the source's own video packets (see fastCopy.ts and
+// copyVideo.ts); 'encode' decodes, draws, and re-encodes every frame.
+export type VideoMode = 'encode' | 'copy'
+
+// How big the output may be, shared by Basic and Advanced jobs.
+export type OutputSizing = {
+  // Cap on the output's shorter side; absent or null keeps the source size.
+  maxShortSide?: number | null
+  // Aim the whole file at this many bytes instead of following the quality
+  // preset; absent or null uses the preset.
+  targetBytes?: number | null
+}
+
 // The serializable job posted to the worker.
-export type ExportJob = {
+export type ExportJob = OutputSizing & {
   sources: JobSource[]
   slices: JobSlice[]
   quality: Quality
@@ -56,6 +69,7 @@ export type ExportJob = {
   container: MbContainer
   videoCodec: MbVideoCodec
   audioCodec: MbAudioCodec
+  videoMode: VideoMode
 }
 
 // Where streamed exports live in the origin private file system. Each tab

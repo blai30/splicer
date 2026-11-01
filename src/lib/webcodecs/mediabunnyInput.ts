@@ -12,6 +12,7 @@ import {
 import { UnsupportedSourceError } from './protocol'
 
 export type SourceReader = {
+  videoTrack: InputVideoTrack
   videoSink: VideoSampleSink
   audioSink: AudioSampleSink | null
   // Video frames shown in [start, end), counted from the container index;
@@ -57,6 +58,7 @@ export async function openSource(file: File): Promise<SourceReader> {
 
     const indexed = (await input.getFormat()) instanceof IsobmffInputFormat
     return {
+      videoTrack,
       videoSink: new VideoSampleSink(videoTrack),
       audioSink: audioDecodable && audioTrack ? new AudioSampleSink(audioTrack) : null,
       countVideoFrames: async (start, end) =>
