@@ -5,6 +5,7 @@ import {
   projectDuration,
   segmentEndTime,
   segmentsActiveAt,
+  trackEndTime,
 } from '@/lib/advanced/advancedTimelineDomain'
 import type { AdvancedSegment, Track } from '@/lib/types'
 
@@ -29,6 +30,12 @@ describe('advancedTimelineDomain', () => {
   it('computes segment end and project duration', () => {
     expect(segmentEndTime(seg('a', 'top', 2, 3))).toBe(5)
     expect(projectDuration([seg('a', 'top', 2, 3), seg('b', 'bot', 0, 4)])).toBe(5)
+  })
+
+  it('computes where one track ends, ignoring other tracks', () => {
+    const list = [seg('a', 'top', 2, 3), seg('b', 'bot', 0, 9)]
+    expect(trackEndTime(list, 'top')).toBe(5)
+    expect(trackEndTime(list, 'empty')).toBe(0)
   })
 
   it('finds segments active at a time (inclusive start, exclusive end)', () => {

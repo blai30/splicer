@@ -19,6 +19,11 @@ export function projectDuration(segments: AdvancedSegment[]): number {
   return max
 }
 
+// Where the content on one track ends (0 for an empty track).
+export function trackEndTime(segments: AdvancedSegment[], trackId: string): number {
+  return projectDuration(segments.filter((segment) => segment.trackId === trackId))
+}
+
 // Segments covering `time` on the output timeline (start inclusive, end exclusive).
 export function segmentsActiveAt(segments: AdvancedSegment[], time: number): AdvancedSegment[] {
   return segments.filter(

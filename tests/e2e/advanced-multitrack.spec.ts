@@ -17,8 +17,14 @@ test('places two clips and exports the multi-track composition', async ({ page }
   await expect(page.locator('[data-advanced-segment]')).toHaveCount(1)
   await page.locator('input[type="file"]').setInputFiles(fixture)
 
-  // Two segment blocks exist on the timeline.
-  await expect(page.locator('[data-advanced-segment]')).toHaveCount(2)
+  // Two segment blocks exist on the timeline, the second placed after the first
+  // on the same (top) track rather than stacked on it.
+  const blocks = page.locator('[data-advanced-segment]')
+  await expect(blocks).toHaveCount(2)
+  const first = (await blocks.nth(0).boundingBox())!
+  const second = (await blocks.nth(1).boundingBox())!
+  expect(second.y).toBeCloseTo(first.y, 0)
+  expect(second.x).toBeGreaterThanOrEqual(first.x + first.width - 2)
 
   // Export the composition.
   const exportButton = page.getByRole('button', { name: /export video/i })

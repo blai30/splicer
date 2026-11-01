@@ -8,9 +8,9 @@ import {
   type InputVideoTrack,
 } from 'mediabunny'
 
-import { addClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
+import { appendClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
 import { info, warn, error as logError } from '@/lib/logger'
-import { advancedTracks, clips, getClipById, importErrors, importing } from '@/lib/store'
+import { clips, getClipById, importErrors, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
 import type { Clip } from '@/lib/types'
 
@@ -356,8 +356,7 @@ export function importFiles(files: File[]): Promise<void> {
 
 export function importFilesIntoAdvanced(files: File[], trackId?: string): Promise<void> {
   return importBatch(files, (clip) => {
-    const targetTrack = trackId ?? advancedTracks.value[0]?.id
-    if (targetTrack) addClipToTrack(clip, targetTrack, 0)
+    appendClipToTrack(clip, trackId)
   })
 }
 

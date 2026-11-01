@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   addClipToTrack,
+  appendClipToTrack,
   moveSegment,
   removeAdvancedSegment,
   setSegmentCrop,
@@ -10,7 +11,7 @@ import {
   trimSegmentEnd,
   trimSegmentStart,
 } from '@/lib/advanced/advancedSegmentEditing'
-import { advancedSegments, advancedSelectedId, clips } from '@/lib/store'
+import { advancedSegments, advancedSelectedId, advancedTracks, clips } from '@/lib/store'
 import type { Clip } from '@/lib/types'
 
 function makeClip(id: string): Clip {
@@ -31,6 +32,7 @@ describe('advancedSegmentEditing', () => {
     clips.value = []
     advancedSegments.value = []
     advancedSelectedId.value = null
+    advancedTracks.value = [{ id: 'track-1', name: 'Track 1' }]
   })
 
   it('adds multiple clips as separate segments at native size at the world origin', () => {
@@ -41,6 +43,24 @@ describe('advancedSegmentEditing', () => {
     const segment = advancedSegments.value.find((entry) => entry.id === first)
     expect(segment?.transform).toEqual({ x: 0, y: 0, width: 1280, height: 720 })
     expect(segment?.timelineStart).toBe(0)
+  })
+
+  it('appends imported clips one after another on the target track', () => {
+    advancedTracks.value = [
+      { id: 'track-2', name: 'Track 2' },
+      { id: 'track-1', name: 'Track 1' },
+    ]
+    addClipToTrack(makeClip('existing'), 'track-1', 10)
+    appendClipToTrack(makeClip('a'))
+    appendClipToTrack(makeClip('b'))
+    appendClipToTrack(makeClip('c'), 'track-1')
+    const starts = advancedSegments.value.map((segment) => [segment.trackId, segment.timelineStart])
+    expect(starts).toEqual([
+      ['track-1', 10],
+      ['track-2', 0],
+      ['track-2', 6],
+      ['track-1', 16],
+    ])
   })
 
   it('moves a segment to another track and time, clamping start to zero', () => {

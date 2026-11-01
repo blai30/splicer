@@ -164,14 +164,21 @@ test('Advanced warns when clips playing together spread the auto canvas and lock
   const tiny = fixture('tiny.mp4')
   await page.goto('/splicer/')
   await page.getByRole('tab', { name: 'Advanced' }).click()
-  await page.locator('input[type="file"]').setInputFiles([tiny, tiny])
+  // Imports append on the top track, so give the second clip its own track to
+  // make both start together at 0s.
+  await page.locator('input[type="file"]').setInputFiles(tiny)
+  await expect(page.locator('[data-advanced-segment]')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Add track' }).click()
+  await page.locator('input[type="file"]').setInputFiles(tiny)
   await expect(page.locator('[data-advanced-segment]')).toHaveCount(2)
   await expect(page.getByText(/^320×240 ·/)).toBeVisible()
 
-  // Both clips start together at the origin; drag the selected one clear of
-  // the other so they play side by side.
+  // Both clips sit at the canvas origin; drag the selected one clear of the
+  // other so they play side by side.
   const box = page.locator('[data-canvas-wrapper] .border-violet-400').first()
   await expect(box).toBeVisible()
+  // Clicking Add track scrolled the page down to the timeline.
+  await page.locator('[data-canvas-wrapper]').scrollIntoViewIfNeeded()
   const before = (await box.boundingBox())!
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2)
   await page.mouse.down()

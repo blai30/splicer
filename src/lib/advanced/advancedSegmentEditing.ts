@@ -1,7 +1,7 @@
 import { consumeAdvancedGesture, recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
-import { ADV_MIN_SEGMENT_DURATION } from '@/lib/advanced/advancedTimelineDomain'
+import { ADV_MIN_SEGMENT_DURATION, trackEndTime } from '@/lib/advanced/advancedTimelineDomain'
 import { addClipToPool } from '@/lib/clipPool'
-import { advancedSegments, advancedSelectedId, getClipById } from '@/lib/store'
+import { advancedSegments, advancedSelectedId, advancedTracks, getClipById } from '@/lib/store'
 import type { Clip, CropParams, Transform } from '@/lib/types'
 
 export function addClipToTrack(clip: Clip, trackId: string, timelineStart: number): string {
@@ -22,6 +22,15 @@ export function addClipToTrack(clip: Clip, trackId: string, timelineStart: numbe
   advancedSegments.value = [...advancedSegments.value, segment]
   advancedSelectedId.value = segment.id
   return segment.id
+}
+
+// Imports land after the existing content on the target track (the top track
+// by default), so a multi-file import lays out in sequence instead of stacking
+// every clip at 0s.
+export function appendClipToTrack(clip: Clip, trackId?: string): string | null {
+  const targetTrack = trackId ?? advancedTracks.value[0]?.id
+  if (!targetTrack) return null
+  return addClipToTrack(clip, targetTrack, trackEndTime(advancedSegments.value, targetTrack))
 }
 
 export function moveSegment(id: string, trackId: string, timelineStart: number): void {
