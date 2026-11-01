@@ -435,7 +435,7 @@ export function ExportPanel() {
           {summary?.oversizedCanvas && (
             <div class="flex flex-wrap items-start gap-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
               <Info class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <p class="min-w-0 flex-1">
+              <p class="min-w-48 flex-1">
                 Clips that play together span {summary.oversizedCanvas.canvas.width}×
                 {summary.oversizedCanvas.canvas.height}, much larger than any single clip. The empty
                 area exports as black and makes the file bigger.
