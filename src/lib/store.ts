@@ -184,6 +184,14 @@ export const resolution = signal<Resolution>(
 export const TARGET_SIZE_PRESETS_MB = [8, 10, 25, 50]
 export const TARGET_SIZE_MIN_MB = 0.1
 export const TARGET_SIZE_MAX_MB = 100_000
+// A typed custom size, clamped into range; null for an empty or non-numeric
+// entry, which keeps the current size.
+export function parseTargetSizeMB(text: string): number | null {
+  if (text.trim() === '') return null
+  const value = Number(text)
+  if (!Number.isFinite(value)) return null
+  return Math.min(TARGET_SIZE_MAX_MB, Math.max(TARGET_SIZE_MIN_MB, value))
+}
 export const targetSizeMB = signal<number>(
   loadFromStorage('targetSizeMB', 10, isNumberIn(TARGET_SIZE_MIN_MB, TARGET_SIZE_MAX_MB))
 )

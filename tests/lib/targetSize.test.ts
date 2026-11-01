@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
+import { parseTargetSizeMB, TARGET_SIZE_MAX_MB, TARGET_SIZE_MIN_MB } from '@/lib/store'
 import {
   complexEncoderFloor,
   fitTargetSize,
   MUX_OVERHEAD,
+  overshootsTarget,
   TARGET_SIZE_SAFETY,
   type TargetSizeInput,
 } from '@/lib/webcodecs/bitrateModel'
@@ -96,5 +98,36 @@ describe('fitTargetSize', () => {
     const fit = fitTargetSize(input({ targetBytes: 200_000, frameRate: 15 }))
     expect(fit.frameRate).toBe(15)
     expect(fit.frameRateLowered).toBe(false)
+  })
+})
+
+describe('overshootsTarget', () => {
+  it('tolerates a small miss and flags a clear overshoot', () => {
+    expect(overshootsTarget(10_500_000, 10_000_000)).toBe(false)
+    expect(overshootsTarget(11_500_000, 10_000_000)).toBe(false)
+    expect(overshootsTarget(11_600_000, 10_000_000)).toBe(true)
+    expect(overshootsTarget(23_400_000, 8_000_000)).toBe(true)
+  })
+
+  it('never flags without a target', () => {
+    expect(overshootsTarget(1_000_000, 0)).toBe(false)
+  })
+})
+
+describe('parseTargetSizeMB', () => {
+  it('keeps an in-range entry', () => {
+    expect(parseTargetSizeMB('12.5')).toBe(12.5)
+  })
+
+  it('clamps an entry outside the range', () => {
+    expect(parseTargetSizeMB('0.05')).toBe(TARGET_SIZE_MIN_MB)
+    expect(parseTargetSizeMB('-3')).toBe(TARGET_SIZE_MIN_MB)
+    expect(parseTargetSizeMB('250000')).toBe(TARGET_SIZE_MAX_MB)
+  })
+
+  it('rejects an empty or non-numeric entry', () => {
+    expect(parseTargetSizeMB('')).toBeNull()
+    expect(parseTargetSizeMB('  ')).toBeNull()
+    expect(parseTargetSizeMB('abc')).toBeNull()
   })
 })

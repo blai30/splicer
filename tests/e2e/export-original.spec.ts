@@ -207,6 +207,26 @@ test('Original is unavailable with a reason when a setting needs a re-encode', a
   await expect(original).toHaveAttribute('title', /WebM cannot hold H\.264/)
 })
 
+test('Original stays available unless the resolution cap shrinks the video', async ({ page }) => {
+  // 320x240: a 720p cap leaves it as it is, so the copy is the same file.
+  await importClip(page, gopMp4)
+  const original = page.getByRole('radio', { name: 'Original (no re-encode)' })
+  const resolutionGroup = page.getByRole('radiogroup', { name: 'Resolution' })
+  await resolutionGroup.getByRole('radio', { name: '720p' }).click()
+  await expect(original).not.toHaveAttribute('aria-disabled')
+  await original.click()
+  await expect(page.getByText(/320×240 · .*video copied as is/)).toBeVisible()
+
+  await resolutionGroup.getByRole('radio', { name: '360p' }).click()
+  await expect(original).not.toHaveAttribute('aria-disabled')
+
+  // 1280x720 at 480p would be scaled, which a copy cannot do.
+  await importClip(page, detailed720p)
+  await resolutionGroup.getByRole('radio', { name: '480p' }).click()
+  await expect(original).toHaveAttribute('aria-disabled', 'true')
+  await expect(original).toHaveAttribute('title', /480p shrinks the video/)
+})
+
 test('360p caps the output size', async ({ page }) => {
   await importClip(page, detailed720p)
   await page
@@ -276,4 +296,20 @@ test('Target size lowers the resolution to fit and lands under the size', async 
   expect(probe.height).toBe(480)
   expect(bytes.length).toBeLessThanOrEqual(200_000 * 1.03)
   expect(bytes.length).toBeGreaterThan(200_000 * 0.6)
+  await expect(page.getByText(/over the .* target/)).toHaveCount(0)
+})
+
+test('a custom target size outside the range is clamped in the field', async ({ page }) => {
+  await importClip(page, detailed720p)
+  await page.getByRole('radio', { name: 'Target size' }).click()
+  const custom = page.getByLabel('Custom target size in megabytes')
+  await custom.fill('0.05')
+  await custom.press('Enter')
+  await expect(custom).toHaveValue('0.1')
+  await expect(page.getByRole('radio', { name: '10 MB' })).toHaveAttribute('aria-checked', 'false')
+
+  // An empty entry keeps the size it had.
+  await custom.fill('')
+  await custom.press('Enter')
+  await expect(custom).toHaveValue('0.1')
 })

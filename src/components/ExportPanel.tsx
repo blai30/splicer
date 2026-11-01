@@ -33,6 +33,7 @@ import {
   mkvCodec,
   quality,
   resolution,
+  parseTargetSizeMB,
   TARGET_SIZE_MAX_MB,
   TARGET_SIZE_MIN_MB,
   TARGET_SIZE_PRESETS_MB,
@@ -52,6 +53,7 @@ import type {
 import {
   estimatePlanBytes,
   MUX_OVERHEAD,
+  overshootsTarget,
   type SizeEstimate,
   type SourceEquivalent,
   type TargetSizeFit,
@@ -409,6 +411,7 @@ function formatKbps(bitsPerSecond: number): string {
 export function ExportPanel() {
   const error = useSignal<string | null>(null)
   const lastExport = useSignal<string | null>(null)
+  const overshoot = useSignal<{ actualBytes: number; targetBytes: number } | null>(null)
 
   const isAdvanced = appMode.value === 'advanced'
   const busy = exporting.value
@@ -429,12 +432,17 @@ export function ExportPanel() {
   )
   const copy = summary?.copy ?? null
   const targetInfeasible = summary?.targetFit?.feasible === false
+  // A copy whose key frames could not be read here has no estimate, but the
+  // worker plans the copy itself, so it may still succeed.
   const canExport =
-    summary !== null && summary.estimate !== null && !targetInfeasible && copy?.status !== 'loading'
+    summary !== null &&
+    (summary.estimate !== null || copy?.status === 'failed') &&
+    !targetInfeasible &&
+    copy?.status !== 'loading'
 
   async function handleExport() {
     // Read the live flag: a fast double-click lands before the re-render.
-    if (exporting.value || !summary || !summary.estimate || !canExport) return
+    if (exporting.value || !summary || !canExport) return
     const estimate = summary.estimate
     // Capture settings now: the user may change them while the export runs.
     const format = exportFormat.value
@@ -444,6 +452,7 @@ export function ExportPanel() {
     const filename = makeFilename(format)
     error.value = null
     lastExport.value = null
+    overshoot.value = null
     info('Export started', {
       mode: appMode.value,
       format,
@@ -465,17 +474,23 @@ export function ExportPanel() {
         width: output.width,
         height: output.height,
         format,
-        estimatedBytes: Math.round(estimate.expected),
+        ...(estimate ? { estimatedBytes: Math.round(estimate.expected) } : {}),
         storageName: output.storageName,
       }
       addExportRecord(record)
       lastExport.value = filename
+      const targetBytes = (options.targetSizeMB ?? 0) * 1_000_000
+      if (chosenQuality === 'target' && overshootsTarget(output.size, targetBytes)) {
+        overshoot.value = { actualBytes: output.size, targetBytes }
+      }
       // Actual against estimate, to recalibrate the model on real encoders.
       info('Export finished', {
         filename,
         size: record.size,
         estimatedBytes: record.estimatedBytes,
-        actualOverEstimate: Number((record.size / estimate.expected).toFixed(2)),
+        ...(estimate
+          ? { actualOverEstimate: Number((record.size / estimate.expected).toFixed(2)) }
+          : {}),
       })
     } catch (err) {
       if (err instanceof ExportCanceledError) {
@@ -739,6 +754,27 @@ export function ExportPanel() {
               Exported {lastExport.value}. Download it from the export library below.
             </p>
           )}
+          {!busy && overshoot.value && (
+            <div
+              role="status"
+              class="flex items-start gap-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+            >
+              <Info class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <p class="flex-1">
+                The file came out at {formatSize(overshoot.value.actualBytes)}, over the{' '}
+                {formatSize(overshoot.value.targetBytes)} target. This video is harder to compress
+                than expected; a lower resolution makes a smaller file.
+              </p>
+              <button
+                type="button"
+                onClick={() => (overshoot.value = null)}
+                class="shrink-0 rounded p-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                aria-label="Dismiss size note"
+              >
+                <X class="size-4" />
+              </button>
+            </div>
+          )}
           {error.value && (
             <div
               role="alert"
@@ -785,14 +821,12 @@ function TargetSizeRow({ disabled }: { disabled: boolean }) {
           value={current}
           disabled={disabled}
           onChange={(event) => {
-            const value = Number((event.currentTarget as HTMLInputElement).value)
-            if (
-              Number.isFinite(value) &&
-              value >= TARGET_SIZE_MIN_MB &&
-              value <= TARGET_SIZE_MAX_MB
-            ) {
-              targetSizeMB.value = value
-            }
+            const field = event.currentTarget as HTMLInputElement
+            const value = parseTargetSizeMB(field.value) ?? targetSizeMB.value
+            targetSizeMB.value = value
+            // Write it back: a clamped or rejected entry may leave the signal
+            // unchanged, and then nothing re-renders the field.
+            field.value = String(value)
           }}
           class="w-20 rounded border border-slate-300 bg-white/70 px-2 py-1 text-sm tabular-nums focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:outline-none disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800/70"
         />
@@ -839,8 +873,8 @@ function CopyShiftNote({ copy }: { copy: CopyPreview }) {
   if (copy.status === 'failed') {
     return (
       <p class="text-sm text-amber-700 dark:text-amber-300">
-        The key frames could not be read here, so the cut points and size are unknown. The export
-        still copies the video.
+        The key frames could not be read here, so the cut points and size are unknown. Export still
+        tries to copy the video; if it fails, pick a quality preset.
       </p>
     )
   }

@@ -33,8 +33,11 @@ function setIndexState(clipId: string, state: PacketIndexState) {
   packetIndexes.value = next
 }
 
+// A failed read is retried on the next call (the next timeline or setting
+// change), so a transient error does not stick for the session.
 export function ensurePacketIndex(clip: Clip): void {
-  if (packetIndexes.peek().has(clip.id)) return
+  const state = packetIndexes.peek().get(clip.id)
+  if (state && state.status !== 'failed') return
   setIndexState(clip.id, { status: 'loading' })
   readPacketIndex(clip.file).then(
     (index) => setIndexState(clip.id, { status: 'ready', index }),

@@ -350,6 +350,15 @@ const TARGET_FLOOR_MARGIN = 1.1
 const TARGET_LOW_AUDIO_BELOW = 1_000_000
 const FALLBACK_FRAME_RATES = [24, 15]
 
+// How far over the requested size a finished export may land before the panel
+// says so. Noisy or grainy video can need far more than the modeled encoder
+// floor, and v1 does not retry with a smaller size.
+export const TARGET_OVERSHOOT_MARGIN = 1.15
+
+export function overshootsTarget(actualBytes: number, targetBytes: number): boolean {
+  return targetBytes > 0 && actualBytes > targetBytes * TARGET_OVERSHOOT_MARGIN
+}
+
 export type TargetSizeInput = {
   targetBytes: number
   durationSec: number
