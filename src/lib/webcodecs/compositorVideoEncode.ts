@@ -1,5 +1,6 @@
 import { VideoSample } from 'mediabunny'
 
+import { segmentGainAt } from '../advanced/segmentGain'
 import type { CompositorLayerPlan, CompositorPlan } from './compositorPlan'
 import type { SourceReader } from './mediabunnyInput'
 import type { OutputHandle } from './mediabunnyOutput'
@@ -80,12 +81,18 @@ async function advanceCursor(cursor: LayerCursor, neededSource: number): Promise
   }
 }
 
+// The layer's opacity at output time `tSec`, through its fades.
+export function layerAlphaAt(layer: CompositorLayerPlan, tSec: number): number {
+  return layer.opacity * segmentGainAt(layer, tSec - layer.timelineStart)
+}
+
 function drawLayer(
   ctx: OffscreenCanvasRenderingContext2D,
   layer: CompositorLayerPlan,
-  sample: VideoSample
+  sample: VideoSample,
+  alpha: number
 ) {
-  ctx.globalAlpha = layer.opacity
+  ctx.globalAlpha = alpha
   const transform = layer.transform
   if (layer.crop) {
     sample.draw(
@@ -161,16 +168,20 @@ export async function encodeCompositedVideo(
       // The fill covers the whole canvas, so no clearRect is needed.
       ctx.fillStyle = '#000000'
       ctx.fillRect(0, 0, plan.outputWidth, plan.outputHeight)
+      const alphas = shown.map((cursor) => layerAlphaAt(cursor.layer, tSec))
       const firstVisible = firstVisibleLayerIndex(
-        shown.map((cursor) => ({
-          opacity: cursor.layer.opacity,
+        shown.map((cursor, i) => ({
+          opacity: alphas[i],
           transform: cursor.layer.transform,
           hasAlpha: cursor.current!.hasAlpha,
         })),
         plan.outputWidth,
         plan.outputHeight
       )
-      for (const cursor of shown.slice(firstVisible)) drawLayer(ctx, cursor.layer, cursor.current!)
+      for (let i = firstVisible; i < shown.length; i++) {
+        if (alphas[i] <= 0) continue
+        drawLayer(ctx, shown[i].layer, shown[i].current!, alphas[i])
+      }
 
       const outSample = new VideoSample(canvas, {
         timestamp: tSec,

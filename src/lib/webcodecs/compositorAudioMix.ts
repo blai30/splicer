@@ -1,5 +1,6 @@
 import { AudioSample } from 'mediabunny'
 
+import { hasFades, segmentGainAt } from '../advanced/segmentGain'
 import { audioFrameRange, readPlanes } from './audioEncode'
 import { StereoResampler, toStereo } from './audioNormalize'
 import type { CompositorAudioLayer } from './compositorProtocol'
@@ -18,6 +19,9 @@ export function createMixBuffer(durationSec: number): MixBuffer {
   return { left: new Float32Array(frames), right: new Float32Array(frames) }
 }
 
+// A constant gain, or one per mix frame (a fade envelope).
+export type MixGain = number | ((mixFrame: number) => number)
+
 // Add the first `count` frames of planar stereo `data` (each plane `stride`
 // frames long) into the mix at frame `at`, scaled by `gain`.
 export function addToMix(
@@ -26,14 +30,24 @@ export function addToMix(
   stride: number,
   count: number,
   at: number,
-  gain: number
+  gain: MixGain
 ): void {
   const end = Math.min(mix.left.length, at + count)
   for (let frame = Math.max(0, at); frame < end; frame++) {
     const offset = frame - at
-    mix.left[frame] += data[offset] * gain
-    mix.right[frame] += data[stride + offset] * gain
+    const frameGain = typeof gain === 'number' ? gain : gain(frame)
+    mix.left[frame] += data[offset] * frameGain
+    mix.right[frame] += data[stride + offset] * frameGain
   }
+}
+
+// The layer's gain for a mix whose first frame is output frame `mixStartFrame`:
+// its volume, shaped by its fades (the same envelope the preview uses).
+export function layerMixGain(layer: CompositorAudioLayer, mixStartFrame = 0): MixGain {
+  if (!hasFades(layer)) return layer.volume
+  return (mixFrame) =>
+    layer.volume *
+    segmentGainAt(layer, (mixStartFrame + mixFrame) / OUTPUT_SAMPLE_RATE - layer.timelineStart)
 }
 
 // A run of resampled planar stereo for the mix: the first `count` frames of
@@ -108,7 +122,7 @@ export async function mixLayer(
   shouldCancel: () => boolean
 ): Promise<void> {
   for await (const piece of layerAudioPieces(layer, reader, fileName, shouldCancel)) {
-    addToMix(mix, piece.data, piece.stride, piece.count, piece.at, layer.volume)
+    addToMix(mix, piece.data, piece.stride, piece.count, piece.at, layerMixGain(layer))
   }
 }
 
@@ -186,15 +200,9 @@ export class WindowedMixer {
         state.pending.push(next.value)
         decodedUntil = next.value
       }
+      const gain = layerMixGain(state.input.layer, startFrame)
       for (const piece of state.pending) {
-        addToMix(
-          mix,
-          piece.data,
-          piece.stride,
-          piece.count,
-          piece.at - startFrame,
-          state.input.layer.volume
-        )
+        addToMix(mix, piece.data, piece.stride, piece.count, piece.at - startFrame, gain)
       }
       state.pending = state.pending.filter((piece) => piece.at + piece.count > endFrame)
       if (exhausted || state.endFrame <= endFrame) await this.release(state)

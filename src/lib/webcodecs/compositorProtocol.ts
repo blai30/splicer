@@ -14,6 +14,9 @@ export type CompositorLayer = {
   crop?: CropParams
   muted: boolean
   opacity: number
+  // Fade durations in seconds; missing means none.
+  fadeIn?: number
+  fadeOut?: number
 }
 
 export type CompositorAudioLayer = {
@@ -22,6 +25,8 @@ export type CompositorAudioLayer = {
   sourceEnd: number
   timelineStart: number
   volume: number
+  fadeIn?: number
+  fadeOut?: number
 }
 
 export type CompositorJob = OutputSizing & {

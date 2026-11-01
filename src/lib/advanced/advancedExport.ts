@@ -80,6 +80,8 @@ export function buildCompositorJob(
       crop: segment.crop,
       muted: segment.muted === true,
       opacity: segment.opacity ?? 1,
+      fadeIn: segment.fadeIn,
+      fadeOut: segment.fadeOut,
     })
   }
 
@@ -96,6 +98,8 @@ export function buildCompositorJob(
       sourceEnd: segment.sourceEnd,
       timelineStart: segment.timelineStart,
       volume,
+      fadeIn: segment.fadeIn,
+      fadeOut: segment.fadeOut,
     })
   }
 

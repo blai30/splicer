@@ -6,6 +6,7 @@ import {
   segmentDuration,
   segmentsActiveAt,
 } from '@/lib/advanced/advancedTimelineDomain'
+import { segmentGainAt } from '@/lib/advanced/segmentGain'
 import {
   advancedPlayhead,
   advancedPlaying,
@@ -271,7 +272,9 @@ function drawComposite(requested: number) {
     const source = frameSource(segment.id, video)
     if (!source) continue
     const { x, y, width, height } = segment.transform
-    ctx.globalAlpha = segment.opacity ?? 1
+    const alpha = (segment.opacity ?? 1) * segmentGainAt(segment, playhead - segment.timelineStart)
+    if (alpha <= 0) continue
+    ctx.globalAlpha = alpha
     if (segment.crop) {
       const crop = segment.crop
       ctx.drawImage(source, crop.x, crop.y, crop.width, crop.height, x, y, width, height)
@@ -317,7 +320,11 @@ function syncVideos(requested: number, playing: boolean) {
     }
     if (shouldSeekToFrame(seekArgs)) requestSeek(video, segment.id, expected)
     video.muted = previewMuted.value || segment.muted === true || trackMuted(segment.trackId)
-    video.volume = segmentPreviewVolume(previewVolume.value, segment.volume)
+    // Fades re-apply every playback tick, which runs this sync each frame.
+    video.volume = segmentPreviewVolume(
+      previewVolume.value,
+      (segment.volume ?? 1) * segmentGainAt(segment, playhead - segment.timelineStart)
+    )
     video.playbackRate = playbackRate.peek()
     if (playing && video.paused) void video.play().catch(() => {})
     if (!playing && !video.paused) video.pause()

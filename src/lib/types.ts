@@ -112,8 +112,12 @@ export type AdvancedSegment = {
   transform: Transform
   crop?: CropParams
   opacity?: number
+  // 0..1 of the source level; the preview cannot play louder than the source.
   volume?: number
   muted?: boolean
+  // Linear fade durations in seconds (see lib/advanced/segmentGain.ts).
+  fadeIn?: number
+  fadeOut?: number
 }
 
 export type ExportFormat = 'mp4' | 'mkv' | 'mov' | 'webm'
