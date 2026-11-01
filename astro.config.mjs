@@ -23,9 +23,9 @@ export default defineConfig({
   ],
   vite: {
     plugins: [tailwindcss()],
-    // The WebCodecs export worker is a module worker that code-splits its
-    // demuxers via dynamic import; ES output is required (the default 'iife'
-    // cannot code-split).
+    // The export workers are module workers that load the WASM AAC encoder
+    // via dynamic import only when the browser lacks native AAC; ES output is
+    // required (the default 'iife' cannot code-split).
     worker: { format: 'es' },
     server: { headers: coopCoep },
     preview: { headers: coopCoep },

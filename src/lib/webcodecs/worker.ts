@@ -1,6 +1,4 @@
-import { registerAacEncoder } from '@mediabunny/aac-encoder'
-import { canEncodeAudio } from 'mediabunny'
-
+import { ensureAacEncoder } from './aacFallback'
 import { encodeAudioSlice } from './audioEncode'
 import { buildEditPlan } from './editPlan'
 import { SourceCache } from './mediabunnyInput'
@@ -19,14 +17,6 @@ function post(message: WorkerResponse, transfer?: Transferable[]): void {
   ;(self as unknown as Worker).postMessage(message, transfer ?? [])
 }
 
-// AAC encode is not native in every browser (notably Firefox). Register the
-// mediabunny AAC encoder extension only when the browser lacks native support.
-async function ensureAacEncoder(job: ExportJob): Promise<void> {
-  if (job.audioCodec === 'aac' && !(await canEncodeAudio('aac'))) {
-    registerAacEncoder()
-  }
-}
-
 class CanceledError extends Error {
   constructor() {
     super('canceled')
@@ -35,7 +25,7 @@ class CanceledError extends Error {
 
 async function runExport(job: ExportJob): Promise<void> {
   const plan = buildEditPlan(job)
-  await ensureAacEncoder(job)
+  await ensureAacEncoder(job.audioCodec)
 
   const sources = new SourceCache(job.sources.map((source) => source.file))
   let out: OutputHandle | null = null

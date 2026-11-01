@@ -1,6 +1,4 @@
-import { registerAacEncoder } from '@mediabunny/aac-encoder'
-import { canEncodeAudio } from 'mediabunny'
-
+import { ensureAacEncoder } from './aacFallback'
 import { createMixBuffer, encodeMix, mixLayer } from './compositorAudioMix'
 import { buildCompositorPlan } from './compositorPlan'
 import type { CompositorJob, CompositorWorkerRequest } from './compositorProtocol'
@@ -15,13 +13,9 @@ function post(message: WorkerResponse, transfer?: Transferable[]): void {
   ;(self as unknown as Worker).postMessage(message, transfer ?? [])
 }
 
-async function ensureAacEncoder(job: CompositorJob): Promise<void> {
-  if (job.audioCodec === 'aac' && !(await canEncodeAudio('aac'))) registerAacEncoder()
-}
-
 async function runExport(job: CompositorJob): Promise<void> {
   const plan = buildCompositorPlan(job)
-  await ensureAacEncoder(job)
+  await ensureAacEncoder(job.audioCodec)
 
   const out = createOutput(plan, job.container)
   await out.start()
