@@ -12,12 +12,20 @@ import {
 
 import type { MbAudioCodec, MbContainer, MbVideoCodec } from '../exportCodecs'
 
+// Every export writes audio in this layout. Encoders need constant parameters,
+// so sources with other rates/channel counts are normalized first (see
+// audioNormalize.ts).
+export const OUTPUT_SAMPLE_RATE = 48_000
+export const OUTPUT_CHANNELS = 2
+
 // The encode parameters createOutput reads. Both EditPlan and CompositorPlan
 // satisfy this shape structurally.
 export type OutputParams = {
   videoCodec: MbVideoCodec
   videoBitrate: number
   keyFrameIntervalUs: number
+  // Constant output frame interval; null passes source timing through.
+  frameDurationUs: number | null
   hasAudioOutput: boolean
   audioCodec: MbAudioCodec
   audioBitrate: number
@@ -26,9 +34,10 @@ export type OutputParams = {
 function outputFormatFor(container: MbContainer): OutputFormat {
   switch (container) {
     case 'mp4':
-      return new Mp4OutputFormat()
+      // Fast start puts the index up front so the file plays while streaming.
+      return new Mp4OutputFormat({ fastStart: 'in-memory' })
     case 'mov':
-      return new MovOutputFormat()
+      return new MovOutputFormat({ fastStart: 'in-memory' })
     case 'mkv':
       return new MkvOutputFormat()
     case 'webm':
@@ -41,6 +50,7 @@ export type OutputHandle = {
   audioSource: AudioSampleSource | null
   start: () => Promise<void>
   finalize: () => Promise<ArrayBuffer>
+  cancel: () => Promise<void>
 }
 
 // Build a mediabunny Output for the target container with one video source and,
@@ -53,6 +63,9 @@ export function createOutput(plan: OutputParams, container: MbContainer): Output
     codec: plan.videoCodec,
     bitrate: plan.videoBitrate,
     keyFrameInterval: plan.keyFrameIntervalUs / 1_000_000,
+    // Frames are always drawn at the output size, but guard against drift.
+    sizeChangeBehavior: 'contain',
+    transform: plan.frameDurationUs ? { frameRate: 1_000_000 / plan.frameDurationUs } : undefined,
   })
   output.addVideoTrack(videoSource)
 
@@ -71,6 +84,9 @@ export function createOutput(plan: OutputParams, container: MbContainer): Output
       const buffer = (output.target as BufferTarget).buffer
       if (!buffer) throw new Error('mediabunny output produced no buffer')
       return buffer
+    },
+    cancel: async () => {
+      if (output.state === 'started' || output.state === 'pending') await output.cancel()
     },
   }
 }

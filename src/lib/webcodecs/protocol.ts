@@ -7,6 +7,8 @@ export type JobSource = {
   width: number
   height: number
   hasAudio: boolean
+  // Average source frame rate, when known.
+  frameRate?: number
 }
 
 // One timeline segment resolved against its source. sourceStart/sourceEnd are

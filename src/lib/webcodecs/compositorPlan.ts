@@ -29,6 +29,18 @@ function evenFloor(value: number): number {
   return floored % 2 === 0 ? floored : floored - 1
 }
 
+// "Original" for a composition: the fastest source frame rate (so no source
+// drops frames), rounded and clamped to a sane range; 30 when unknown.
+export function originalFrameRate(job: CompositorJob): number {
+  let fastest = 0
+  for (const layer of job.layers) {
+    const rate = job.sources[layer.sourceIndex]?.frameRate ?? 0
+    if (Number.isFinite(rate)) fastest = Math.max(fastest, rate)
+  }
+  if (fastest <= 0) return 30
+  return Math.min(120, Math.max(1, Math.round(fastest)))
+}
+
 export function buildCompositorPlan(job: CompositorJob): CompositorPlan {
   const outputWidth = evenFloor(job.canvas.width)
   const outputHeight = evenFloor(job.canvas.height)
@@ -39,7 +51,7 @@ export function buildCompositorPlan(job: CompositorJob): CompositorPlan {
     outStartUs: Math.round(layer.timelineStart * 1_000_000),
   }))
 
-  const fpsGrid = job.fps === 'original' ? 30 : Number(job.fps)
+  const fpsGrid = job.fps === 'original' ? originalFrameRate(job) : Number(job.fps)
   const hasMixedAudio = job.mixedAudio != null && job.mixedAudio.channelData.length > 0
 
   return {

@@ -170,3 +170,16 @@ describe('buildEditPlan audio-omit rule', () => {
     expect(plan.hasAudioOutput).toBe(true)
   })
 })
+
+describe('outputDimensions with mixed aspect ratios', () => {
+  it('keeps the first segment aspect ratio instead of stretching to a max box', () => {
+    const plan = buildEditPlan(
+      job({
+        sources: [source({ width: 640, height: 360 }), source({ width: 360, height: 640 })],
+        slices: [slice({ sourceIndex: 0 }), slice({ sourceIndex: 1 })],
+      })
+    )
+    expect(plan.outputWidth).toBe(640)
+    expect(plan.outputHeight).toBe(360)
+  })
+})
