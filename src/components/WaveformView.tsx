@@ -113,14 +113,12 @@ export function WaveformView(props: WaveformProps) {
     props.contentX,
   ])
 
-  // Height or pixel-ratio changes.
+  // Height changes. The draw key includes the height and pixel ratio, so the
+  // resizes draw() itself causes (new canvas width) do not redraw again.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
-      lastDrawKey.current = ''
-      draw()
-    })
+    const observer = new ResizeObserver(() => draw())
     observer.observe(canvas)
     return () => observer.disconnect()
   }, [])
