@@ -89,3 +89,21 @@ describe('computeFrameRect', () => {
     })
   })
 })
+
+describe('auto output above the encoder limit', () => {
+  it('scales content down instead of cropping it', () => {
+    const wide = (id: string, x: number) => ({
+      id,
+      clipId: id,
+      trackId: 't',
+      timelineStart: 0,
+      sourceStart: 0,
+      sourceEnd: 1,
+      transform: { x, y: 0, width: 3840, height: 2160 },
+    })
+    const bounds = computeExportBounds([wide('a', 0), wide('b', 3940)], null)!
+    expect(bounds.width).toBeLessThanOrEqual(7680)
+    const right = bounds.mapTransform(wide('b', 3940).transform)
+    expect(right.x + right.width).toBeLessThanOrEqual(bounds.width + 1)
+  })
+})

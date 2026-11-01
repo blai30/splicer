@@ -28,11 +28,11 @@ test('infinite canvas: pan/zoom controls and output sizing', async ({ page }) =>
   expect(after).toBeGreaterThan(before)
 
   // In Auto, the export output is the bounding box of placed clips (WxH).
-  await expect(page.getByText(/Output:\s*\d+x\d+/)).toBeVisible()
+  await expect(page.getByText(/^\d+×\d+ ·/)).toBeVisible()
 
   // Locking a preset size makes the output exactly that size.
   await page.getByRole('button', { name: '720p' }).click()
-  await expect(page.getByText(/Output:\s*1280x720/)).toBeVisible()
+  await expect(page.getByText(/^1280×720 ·/)).toBeVisible()
 })
 
 test('drag the bottom handle to grow the work area vertically', async ({ page }) => {

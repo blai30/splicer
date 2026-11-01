@@ -10,7 +10,7 @@ const coopCoep = {
 }
 
 export default defineConfig({
-  site: 'https://github.com/blai30/splicer',
+  site: 'https://blai30.github.io',
   trailingSlash: 'always',
   base: process.env.NODE_ENV === 'production' ? '/splicer' : undefined,
   integrations: [

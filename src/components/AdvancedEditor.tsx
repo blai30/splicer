@@ -4,7 +4,7 @@ import { useRef } from 'preact/hooks'
 import { AdvancedTimeline } from '@/components/advanced/AdvancedTimeline'
 import { AdvancedPreview } from '@/components/AdvancedPreview'
 import { CanvasSizeControls } from '@/components/CanvasSizeControls'
-import { importIntoAdvanced } from '@/lib/videoImport'
+import { FILE_INPUT_ACCEPT, importFilesIntoAdvanced } from '@/lib/videoImport'
 
 const CARD =
   'rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40'
@@ -13,28 +13,18 @@ export function AdvancedEditor() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function onFileInputChange(event: Event) {
-    const files = Array.from((event.target as HTMLInputElement).files ?? [])
-    for (const file of files) await importIntoAdvanced(file)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  async function onDrop(event: DragEvent) {
-    event.preventDefault()
-    const files = Array.from(event.dataTransfer?.files ?? [])
-    for (const file of files) await importIntoAdvanced(file)
+    const input = event.currentTarget as HTMLInputElement
+    const files = Array.from(input.files ?? [])
+    input.value = ''
+    await importFilesIntoAdvanced(files)
   }
 
   return (
-    <section
-      aria-label="Advanced multi-track compositor"
-      class="flex flex-col gap-3"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={onDrop}
-    >
+    <section aria-label="Advanced multi-track compositor" class="flex flex-col gap-3">
       <div class={`flex flex-col gap-2 px-4 py-3 ${CARD}`}>
-        <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
-          Output
-        </span>
+        <h2 class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+          Output size
+        </h2>
         <CanvasSizeControls />
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -51,10 +41,11 @@ export function AdvancedEditor() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="video/*,.mp4,.mkv,.mov,.webm"
+        accept={FILE_INPUT_ACCEPT}
         multiple
         class="hidden"
         onChange={onFileInputChange}
+        aria-label="Select video files to add to the composition"
       />
     </section>
   )

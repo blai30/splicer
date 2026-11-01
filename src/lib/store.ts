@@ -1,7 +1,11 @@
 import type { Signal } from '@preact/signals'
 import { effect, signal } from '@preact/signals'
 
-import { STAGE_DEFAULT_HEIGHT } from '@/lib/advanced/stageHeight'
+import {
+  STAGE_DEFAULT_HEIGHT,
+  STAGE_MAX_HEIGHT,
+  STAGE_MIN_HEIGHT,
+} from '@/lib/advanced/stageHeight'
 import type {
   AdvancedSegment,
   CanvasSize,
@@ -20,15 +24,32 @@ import type {
 
 const PERSIST_KEY = 'splicer_state'
 
-function loadFromStorage<T>(key: string, defaultValue: T): T {
+// Load a persisted value, falling back to the default when it is missing,
+// unparseable, or no longer valid (e.g. an option removed in a later version).
+function loadFromStorage<T>(key: string, defaultValue: T, isValid: (value: unknown) => boolean): T {
   if (typeof localStorage === 'undefined') return defaultValue
   try {
     const stored = localStorage.getItem(`${PERSIST_KEY}:${key}`)
-    return stored ? JSON.parse(stored) : defaultValue
+    if (stored === null) return defaultValue
+    const parsed: unknown = JSON.parse(stored)
+    return isValid(parsed) ? (parsed as T) : defaultValue
   } catch {
     return defaultValue
   }
 }
+
+const oneOf =
+  (...allowed: readonly unknown[]) =>
+  (value: unknown) =>
+    allowed.includes(value)
+const isBoolean = (value: unknown) => typeof value === 'boolean'
+const isNumberIn = (min: number, max: number) => (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
+const isOutputLock = (value: unknown) =>
+  value === null ||
+  (typeof value === 'object' &&
+    isNumberIn(16, 7680)((value as CanvasSize).width) &&
+    isNumberIn(16, 7680)((value as CanvasSize).height))
 
 function saveToStorage<T>(key: string, value: T) {
   if (typeof localStorage === 'undefined') return
@@ -47,6 +68,8 @@ export const clips = signal<Clip[]>([])
 export const timeline = signal<Segment[]>([])
 export const playheadTime = signal<number>(0)
 export const selectedSegmentId = signal<string | null>(null)
+// True while an export worker is running (either editor).
+export const exporting = signal(false)
 export const exportProgress = signal<number>(0)
 
 // ETA in seconds during an active export (null when unknown).
@@ -71,7 +94,7 @@ export function clearLogs() {
 }
 
 // UI visibility for the log panel. Persisted so user preference survives reloads.
-export const logPanelVisible = signal<boolean>(loadFromStorage('logPanelVisible', false))
+export const logPanelVisible = signal<boolean>(loadFromStorage('logPanelVisible', false, isBoolean))
 
 export const EXPORT_HISTORY_LIMIT = 50
 
@@ -98,20 +121,26 @@ export function getClipById(id: string): Clip | undefined {
   return clipsMap.get(id)
 }
 
-export const exportFormat = signal<ExportFormat>(loadFromStorage('exportFormat', 'mp4'))
-export const quality = signal<Quality>(loadFromStorage('quality', 'lossless'))
-export const framerate = signal<Framerate>(loadFromStorage('framerate', 'original'))
+export const exportFormat = signal<ExportFormat>(
+  loadFromStorage('exportFormat', 'mp4', oneOf('mp4', 'mkv', 'mov', 'webm'))
+)
+export const quality = signal<Quality>(
+  loadFromStorage('quality', 'lossless', oneOf('lossless', 'high', 'medium', 'low'))
+)
+export const framerate = signal<Framerate>(
+  loadFromStorage('framerate', 'original', oneOf('original', '60', '30', '24'))
+)
 // VP9 is the default: the WebCodecs engine (primary path for WebM) encodes VP9
 // natively without the OOM problems of the old ffmpeg.wasm path, and it produces
 // smaller files at similar quality. VP8 stays available for faster encoding or
 // browsers that lack WebCodecs.
-export const webmCodec = signal<WebmCodec>(loadFromStorage('webmCodec', 'vp9'))
+export const webmCodec = signal<WebmCodec>(loadFromStorage('webmCodec', 'vp9', oneOf('vp9', 'vp8')))
 // MKV can carry H.264/AAC (broadest compatibility) or VP9/Opus (reuses the WebM
 // encoder path). H.264 is the default.
-export const mkvCodec = signal<MkvCodec>(loadFromStorage('mkvCodec', 'h264'))
+export const mkvCodec = signal<MkvCodec>(loadFromStorage('mkvCodec', 'h264', oneOf('h264', 'vp9')))
 
-export const previewVolume = signal(loadFromStorage('previewVolume', 0.5))
-export const previewMuted = signal(loadFromStorage('previewMuted', false))
+export const previewVolume = signal(loadFromStorage('previewVolume', 0.5, isNumberIn(0, 1)))
+export const previewMuted = signal(loadFromStorage('previewMuted', false, isBoolean))
 
 export const theme = signal<'light' | 'dark'>(
   typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
@@ -122,7 +151,9 @@ export const theme = signal<'light' | 'dark'>(
 // Which editor mode is active. Basic is today's single-track editor; Advanced
 // is the multi-track compositor. Persisted so the app reopens in the last-used
 // mode (Basic on first visit).
-export const appMode = signal<'basic' | 'advanced'>(loadFromStorage('appMode', 'basic'))
+export const appMode = signal<'basic' | 'advanced'>(
+  loadFromStorage('appMode', 'basic', oneOf('basic', 'advanced'))
+)
 
 // Advanced (multi-track compositor) project state, kept separate from Basic's
 // `timeline`. Only the output lock persists; placed clips reference Files that
@@ -131,7 +162,7 @@ export const appMode = signal<'basic' | 'advanced'>(loadFromStorage('appMode', '
 // bounding box of placed clips). A CanvasSize locks the output to that size,
 // contain-fitting and letterboxing the content at export.
 export const advancedOutputLock = signal<CanvasSize | null>(
-  loadFromStorage('advancedOutputLock', null)
+  loadFromStorage('advancedOutputLock', null, isOutputLock)
 )
 // Pan/zoom of the infinite-canvas viewport. View state only (not persisted);
 // reset to fit-content when the preview mounts.
@@ -139,7 +170,11 @@ export const advancedViewport = signal<Viewport>({ panX: 0, panY: 0, zoom: 1 })
 // Height of the resizable Advanced preview work area (CSS px). Persisted as a
 // workspace preference; the user drags the stage's bottom edge to change it.
 export const advancedStageHeight = signal<number>(
-  loadFromStorage('advancedStageHeight', STAGE_DEFAULT_HEIGHT)
+  loadFromStorage(
+    'advancedStageHeight',
+    STAGE_DEFAULT_HEIGHT,
+    isNumberIn(STAGE_MIN_HEIGHT, STAGE_MAX_HEIGHT)
+  )
 )
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])
@@ -166,12 +201,15 @@ persistSignal('advancedStageHeight', advancedStageHeight)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200
+// Must match the timeline track's DOM: gap-1 between blocks, px-4 padding.
 export const GAP_PX = 4
-export const PADDING_PX = 12
+export const PADDING_PX = 16
 
 export const pxPerSec = signal(80)
 export const dragState = signal<DragState | null>(null)
 export const importing = signal(false)
+// User-facing import failures, shown as a dismissible notice.
+export const importErrors = signal<string[]>([])
 
 export function clipColor(clipId: string): string {
   const colors = ['bg-violet-700', 'bg-teal-700', 'bg-cyan-700', 'bg-emerald-700', 'bg-sky-700']

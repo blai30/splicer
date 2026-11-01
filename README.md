@@ -27,7 +27,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 
 ### Timeline Editing
 
-- Append one or more video files to the timeline.
+- Append one or more video files to the timeline (click, drop anywhere on the page, or the Add button).
 - Select segments and:
   - set in-point
   - set out-point
@@ -77,6 +77,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 - `Delete` / `Backspace`: Delete selected segment
 - `Ctrl` + `Z`: Undo
 - `Ctrl` + `Shift` + `Z` or `Ctrl` + `Y`: Redo
+- `Home`: Go to start
 
 ## Tech Stack
 
@@ -110,17 +111,19 @@ Every export runs through the browser's native WebCodecs API:
 - Sources are demuxed and muxed with mediabunny, and re-encoded with the browser's `VideoEncoder` / `AudioEncoder` (AVC/AAC for MP4/MOV, VP8/VP9 + Opus for WebM, configurable for MKV).
 - A capability gate checks encoder/decoder support up front. When WebCodecs is unavailable or the source is not demuxable, the export surfaces an honest error rather than falling back.
 - This path handles HD sources (e.g. 1080p60) in-browser.
+- The first segment sets the output aspect ratio. The resolution is the largest segment with that same shape. Other segments are letterboxed (never stretched).
+- Cuts are frame accurate for video and sample accurate for audio. Audio is normalized to 48 kHz stereo, and segments without audio (or muted ones) get silence to keep A/V in sync.
 
 ## Usage Guidelines
 
 - Use `high`/`medium` presets for smaller files; use `lossless` to stay closest to the source.
 - For WebM, prefer `VP9` for smaller files at similar quality; choose `VP8` when encode speed matters more than size.
 - Every export re-encodes, so a perfectly lossless copy is not possible. To keep quality highest, export to the same format as your source at `lossless + original fps`. See the in-app FAQ or `/about` for the full explanation.
-- Large clips can consume significant memory in browser sessions; close/reload tab if memory pressure grows.
+- The finished file is held in memory until it is downloaded or removed from the export library.
 
 ## Current Limitations
 
 - Project state is in-memory only (no save/load project file).
 - Export history is session-only and clears on refresh.
-- No multi-track composition.
+- Advanced mode mixes audio in memory before encoding (fine for short compositions, heavy for very long ones).
 - WebCodecs export requires a supporting browser (recent Chromium, Edge, or Safari). Without it, export is unavailable.

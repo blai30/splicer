@@ -1,14 +1,11 @@
-import { mixAdvancedAudio } from '@/lib/advanced/advancedAudioMix'
 import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
 import { computeExportBounds } from '@/lib/advanced/exportLayout'
 import { selectCodecs } from '@/lib/exportCodecs'
-import { EtaTracker } from '@/lib/exportEta'
+import { runExportWorker } from '@/lib/exportRunner'
 import {
   advancedOutputLock,
   advancedSegments,
   advancedTracks,
-  exportEtaSeconds,
-  exportProgress,
   getClipById,
   mkvCodec,
   webmCodec,
@@ -20,10 +17,8 @@ import {
   type Framerate,
   type Quality,
 } from '@/lib/types'
-import type { CompositorJob, WorkerResponse } from '@/lib/webcodecs/compositorProtocol'
+import type { CompositorJob } from '@/lib/webcodecs/compositorProtocol'
 import type { JobSource } from '@/lib/webcodecs/protocol'
-
-let activeWorker: Worker | null = null
 
 // Resolve the Advanced project into a serializable compositor job. One source
 // per distinct clip; each segment becomes a layer referencing its source.
@@ -37,30 +32,43 @@ export function buildCompositorJob(
   const sources: JobSource[] = []
   const indexByClip = new Map<string, number>()
 
-  const hiddenTrackIds = new Set(
-    advancedTracks.value.filter((track) => track.hidden).map((track) => track.id)
-  )
-
-  const visibleSegments = segments.filter((segment) => !hiddenTrackIds.has(segment.trackId))
-
-  const exportBounds = computeExportBounds(visibleSegments, advancedOutputLock.value)
-  if (!exportBounds) return null
-
-  const layers = visibleSegments.map((segment) => {
-    const clip = getClipById(segment.clipId)
+  // Resolve a clip to its job source index, or null when the clip is gone.
+  function sourceFor(clipId: string): number | null {
+    const clip = getClipById(clipId)
     if (!clip) return null
-    let sourceIndex = indexByClip.get(segment.clipId)
+    let sourceIndex = indexByClip.get(clipId)
     if (sourceIndex === undefined) {
       sourceIndex = sources.length
-      indexByClip.set(segment.clipId, sourceIndex)
+      indexByClip.set(clipId, sourceIndex)
       sources.push({
         file: clip.file,
         width: clip.width,
         height: clip.height,
         hasAudio: clip.hasAudio !== false,
+        frameRate: clip.frameRate,
       })
     }
-    return {
+    return sourceIndex
+  }
+
+  const hiddenTrackIds = new Set(
+    advancedTracks.value.filter((track) => track.hidden).map((track) => track.id)
+  )
+  const mutedTrackIds = new Set(
+    advancedTracks.value.filter((track) => track.muted).map((track) => track.id)
+  )
+
+  // A hidden track turns its video off; its audio still plays (as in preview).
+  const visibleSegments = segments.filter((segment) => !hiddenTrackIds.has(segment.trackId))
+
+  const exportBounds = computeExportBounds(visibleSegments, advancedOutputLock.value)
+  if (!exportBounds) return null
+
+  const layers: CompositorJob['layers'] = []
+  for (const segment of visibleSegments) {
+    const sourceIndex = sourceFor(segment.clipId)
+    if (sourceIndex === null) return null
+    layers.push({
       sourceIndex,
       sourceStart: segment.sourceStart,
       sourceEnd: segment.sourceEnd,
@@ -70,15 +78,32 @@ export function buildCompositorJob(
       crop: segment.crop,
       muted: segment.muted === true,
       opacity: segment.opacity ?? 1,
-    }
-  })
+    })
+  }
 
-  if (layers.some((layer) => layer === null)) return null
+  const audioLayers: CompositorJob['audioLayers'] = []
+  for (const segment of segments) {
+    if (segment.muted || mutedTrackIds.has(segment.trackId)) continue
+    const volume = segment.volume ?? 1
+    if (volume <= 0) continue
+    const sourceIndex = sourceFor(segment.clipId)
+    if (sourceIndex === null) return null
+    audioLayers.push({
+      sourceIndex,
+      sourceStart: segment.sourceStart,
+      sourceEnd: segment.sourceEnd,
+      timelineStart: segment.timelineStart,
+      volume,
+    })
+  }
+
   const selection = selectCodecs(format, webmCodec.value, mkvCodec.value)
   return {
     canvas: { width: exportBounds.width, height: exportBounds.height },
     sources,
-    layers: layers as CompositorJob['layers'],
+    layers,
+    audioLayers,
+    durationSec: projectDuration(segments),
     tracksOrder: advancedTracks.value.map((track) => track.id),
     quality,
     fps,
@@ -89,76 +114,27 @@ export function buildCompositorJob(
   }
 }
 
-function runCompositorWorker(job: CompositorJob): Promise<{ url: string; size: number }> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('../webcodecs/compositorWorker.ts', import.meta.url), {
-      type: 'module',
-    })
-    activeWorker = worker
-
-    const eta = new EtaTracker()
-    exportProgress.value = 0
-    exportEtaSeconds.value = null
-
-    const cleanup = () => {
-      exportEtaSeconds.value = null
-      worker.terminate()
-      if (activeWorker === worker) activeWorker = null
-    }
-
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-      const message = event.data
-      if (message.type === 'progress') {
-        exportProgress.value = message.progress
-        eta.sample(message.progress, performance.now())
-        exportEtaSeconds.value = eta.etaSeconds(message.progress, performance.now())
-      } else if (message.type === 'done') {
-        cleanup()
-        const blob = new Blob([message.buffer], { type: MIME_TYPES[job.format] })
-        exportProgress.value = 1
-        resolve({ url: URL.createObjectURL(blob), size: blob.size })
-      } else if (message.type === 'canceled') {
-        cleanup()
-        reject(new Error('canceled'))
-      } else if (message.type === 'error') {
-        cleanup()
-        reject(new Error(message.message))
-      }
-    }
-
-    worker.onerror = (event) => {
-      cleanup()
-      reject(new Error(event.message || 'Compositor worker error'))
-    }
-
-    worker.postMessage({ type: 'export', job })
-  })
-}
-
 export async function runAdvancedExport(
   format: ExportFormat,
   quality: Quality,
   fps: Framerate
 ): Promise<{ url: string; size: number; width: number; height: number; duration: number }> {
   const segments = advancedSegments.value
-  if (segments.length === 0) throw new Error('No clips to export')
+  if (segments.length === 0) throw new Error('Nothing to export: add a clip first')
   const duration = projectDuration(segments)
 
   const job = buildCompositorJob(segments, format, quality, fps)
-  if (!job) throw new Error('Missing clip data for export')
-
-  job.mixedAudio = (await mixAdvancedAudio(segments, advancedTracks.value, duration)) ?? undefined
-
-  const result = await runCompositorWorker(job)
-  return { ...result, width: job.canvas.width, height: job.canvas.height, duration }
-}
-
-export function cancelAdvancedExport(): void {
-  if (activeWorker) {
-    activeWorker.postMessage({ type: 'cancel' })
-    activeWorker.terminate()
-    activeWorker = null
+  if (!job) {
+    throw new Error(
+      'Nothing visible to export, or a placed clip is no longer available. Check hidden tracks.'
+    )
   }
-  exportProgress.value = 0
-  exportEtaSeconds.value = null
+
+  const result = await runExportWorker(
+    () =>
+      new Worker(new URL('../webcodecs/compositorWorker.ts', import.meta.url), { type: 'module' }),
+    job,
+    MIME_TYPES[job.format]
+  )
+  return { ...result, width: job.canvas.width, height: job.canvas.height, duration }
 }

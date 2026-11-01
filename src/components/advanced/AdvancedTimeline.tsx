@@ -2,8 +2,10 @@ import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
+  Redo2,
   Scissors,
   Trash2,
+  Undo2,
   VolumeX,
   ZoomIn,
   ZoomOut,
@@ -13,9 +15,15 @@ import { useEffect, useRef } from 'preact/hooks'
 import { AdvancedSegmentBlock } from '@/components/advanced/AdvancedSegmentBlock'
 import { AdvancedTrackHeaders } from '@/components/advanced/AdvancedTrackHeaders'
 import { ZoomSlider } from '@/components/ZoomSlider'
+import {
+  canRedoAdvanced,
+  canUndoAdvanced,
+  redoAdvanced,
+  undoAdvanced,
+} from '@/lib/advanced/advancedHistory'
 import { seek } from '@/lib/advanced/advancedPlayback'
 import { moveSegment } from '@/lib/advanced/advancedSegmentEditing'
-import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
+import { projectDuration, TIMELINE_PAD_LEFT } from '@/lib/advanced/advancedTimelineDomain'
 import {
   cutAdvancedAtPlayhead,
   deleteAdvancedSelected,
@@ -35,7 +43,7 @@ import {
 import { computeZoomScroll, createRafThrottler } from '@/lib/timelineDomain'
 
 const LANE_HEIGHT = 56
-const PAD_LEFT = 8
+const PAD_LEFT = TIMELINE_PAD_LEFT
 const ZOOM_SCALE_FACTOR = 1.25
 
 export function AdvancedTimeline() {
@@ -79,12 +87,15 @@ export function AdvancedTimeline() {
       container.removeEventListener('pointerup', onUp)
       container.removeEventListener('pointercancel', onUp)
     }
+    // Clicking empty lane space also clears the clip selection.
+    advancedSelectedId.value = null
     container.addEventListener('pointermove', onMove)
     container.addEventListener('pointerup', onUp)
     container.addEventListener('pointercancel', onUp)
   }
 
   function onTrackPointerDown(event: PointerEvent) {
+    if (event.button !== 0) return
     const target = event.target as HTMLElement
     // Clip blocks handle their own drag/trim/selection; a press anywhere else
     // (blank lane or the playhead) scrubs the playhead from that point.
@@ -100,16 +111,15 @@ export function AdvancedTimeline() {
     if (!scroller) return
     const oldPx = pxPerSec.value
     const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
-    if (anchorX !== undefined) {
-      scroller.scrollLeft = computeZoomScroll(
-        oldPx,
-        clamped,
-        anchorX,
-        scroller.scrollLeft,
-        PAD_LEFT
-      )
-    }
+    if (clamped === oldPx) return
+    // Apply the anchored scroll after the re-render widens the lanes; set now,
+    // the browser would clamp it to the old scroll range.
+    const target =
+      anchorX === undefined
+        ? null
+        : computeZoomScroll(oldPx, clamped, anchorX, scroller.scrollLeft, PAD_LEFT)
     pxPerSec.value = clamped
+    if (target !== null) requestAnimationFrame(() => (scroller.scrollLeft = Math.max(0, target)))
   }
 
   function onWheel(event: WheelEvent) {
@@ -150,6 +160,25 @@ export function AdvancedTimeline() {
         </span>
         <div class="flex items-start gap-2.5 md:flex-1">
           <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <button
+              class="flex items-center justify-center rounded p-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              disabled={!canUndoAdvanced.value}
+              onClick={undoAdvanced}
+              title="Undo (Ctrl+Z)"
+              aria-label="Undo"
+            >
+              <Undo2 class="h-3.5 w-3.5" />
+            </button>
+            <button
+              class="flex items-center justify-center rounded p-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              disabled={!canRedoAdvanced.value}
+              onClick={redoAdvanced}
+              title="Redo (Ctrl+Shift+Z)"
+              aria-label="Redo"
+            >
+              <Redo2 class="h-3.5 w-3.5" />
+            </button>
+            <span class="mx-0.5 h-4 w-px bg-slate-300 dark:bg-slate-700" aria-hidden="true" />
             <button
               class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={toolbarDisabled}
@@ -199,7 +228,7 @@ export function AdvancedTimeline() {
               class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
               disabled={toolbarDisabled}
               onClick={deleteAdvancedSelected}
-              title="Delete clip"
+              title="Delete clip (Delete)"
               aria-label="Delete selected clip"
             >
               <Trash2 class="h-3.5 w-3.5" />
@@ -262,9 +291,14 @@ export function AdvancedTimeline() {
                   ))}
               </div>
             ))}
+            {segments.length === 0 && (
+              <p class="pointer-events-none absolute top-9 left-4 text-sm text-slate-500 dark:text-slate-400">
+                Drop video files anywhere, or use Add video above, to place clips here.
+              </p>
+            )}
             <div
               data-advanced-playhead
-              class="absolute top-2 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize"
+              class="absolute top-2 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize touch-none"
               style={{ left: `${playheadLeft}px` }}
             >
               <div class="pointer-events-none absolute inset-x-0 top-0 bottom-0 flex justify-center">

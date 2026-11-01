@@ -22,6 +22,8 @@ function makeJob(overrides: Partial<CompositorJob> = {}): CompositorJob {
       },
     ],
     tracksOrder: ['t'],
+    audioLayers: [],
+    durationSec: 4,
     quality: 'high',
     fps: 'original',
     format: 'mp4',
@@ -46,13 +48,12 @@ describe('buildCompositorPlan', () => {
     expect(plan.layers[0].outStartUs).toBe(2_000_000)
   })
 
-  it('reports audio output when mixedAudio is present', () => {
+  it('reports audio output when an audible layer has audio', () => {
     expect(buildCompositorPlan(makeJob()).hasAudioOutput).toBe(false)
-    expect(
-      buildCompositorPlan(
-        makeJob({ mixedAudio: { sampleRate: 48000, channelData: [new Float32Array(10)] } })
-      ).hasAudioOutput
-    ).toBe(true)
+    const audioLayers = [
+      { sourceIndex: 0, sourceStart: 0, sourceEnd: 4, timelineStart: 0, volume: 1 },
+    ]
+    expect(buildCompositorPlan(makeJob({ audioLayers })).hasAudioOutput).toBe(true)
   })
 
   it('resolves the fps grid (30 for original)', () => {

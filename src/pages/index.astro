@@ -6,6 +6,8 @@ import { ModeTabs } from '@/components/ModeTabs'
 import { EditorSurface } from '@/components/EditorSurface'
 import { ExportPanel } from '@/components/ExportPanel'
 import { ExportHistory } from '@/components/ExportHistory'
+import { FileDropZone } from '@/components/FileDropZone'
+import { ImportStatus } from '@/components/ImportStatus'
 import { LogPanel } from '@/components/LogPanel'
 import '@/styles/global.css'
 
@@ -20,12 +22,14 @@ const pageDescription =
   ogImage={assetPath('splash/hero-social.png')}
 >
   <main
-    class="mx-auto flex h-full w-full flex-col gap-3 px-3 py-3 md:px-4 md:py-4"
-    role="application"
-    aria-label="Video timeline editor and exporter application"
+    id="main"
+    class="mx-auto flex h-full w-full min-w-0 flex-col gap-3 px-3 py-3 md:px-4 md:py-4"
   >
+    <h1 class="sr-only">Splicer video editor</h1>
     <KeyboardShortcutsInit client:only="preact" />
+    <FileDropZone client:only="preact" />
     <ModeTabs client:only="preact" />
+    <ImportStatus client:only="preact" />
     <EditorSurface client:only="preact" />
     <section aria-label="Export settings and controls">
       <ExportPanel client:only="preact" />

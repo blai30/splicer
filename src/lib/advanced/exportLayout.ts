@@ -46,14 +46,21 @@ export function computeExportBounds(
 
   if (lock === null) {
     const { minX, minY } = bounds
+    // Content wider or taller than the encoder limit is scaled down to fit,
+    // rather than cropped.
+    const scale = Math.min(1, OUTPUT_MAX / bounds.width, OUTPUT_MAX / bounds.height)
     return {
-      width: clampEven(bounds.width),
-      height: clampEven(bounds.height),
-      mapTransform: (transform) => ({
-        ...transform,
-        x: transform.x - minX,
-        y: transform.y - minY,
-      }),
+      width: clampEven(bounds.width * scale),
+      height: clampEven(bounds.height * scale),
+      mapTransform: (transform) =>
+        scale === 1
+          ? { ...transform, x: transform.x - minX, y: transform.y - minY }
+          : {
+              x: (transform.x - minX) * scale,
+              y: (transform.y - minY) * scale,
+              width: transform.width * scale,
+              height: transform.height * scale,
+            },
     }
   }
 

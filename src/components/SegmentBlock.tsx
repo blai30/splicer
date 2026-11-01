@@ -5,11 +5,12 @@ import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
 import { seek } from '@/lib/playback'
 import { selectedSegmentId, timeline, getClipById, clips } from '@/lib/store'
-import { GAP_PX, clipColor, dragState, pxPerSec } from '@/lib/store'
+import { GAP_PX, PADDING_PX, clipColor, dragState, pxPerSec } from '@/lib/store'
 import { createRafThrottler } from '@/lib/timelineDomain'
 import { clampPlayheadForSegment, findDropIndexAtTrackX } from '@/lib/timelineDomain'
 import {
   beginGesture,
+  endGesture,
   reorderSegment,
   trimSegmentEnd,
   trimSegmentStart,
@@ -43,6 +44,7 @@ export function SegmentBlock({
   function onTrimPointerDown(side: 'left' | 'right') {
     return (event: PointerEvent) => {
       event.stopPropagation()
+      if (event.button !== 0) return
       const handle = side === 'left' ? leftRef.current! : rightRef.current!
       handle.setPointerCapture(event.pointerId)
       const startClientX = event.clientX
@@ -52,29 +54,34 @@ export function SegmentBlock({
       beginGesture()
       const throttler = createRafThrottler()
 
-      function onMove(moveEvent: PointerEvent) {
-        const deltaTime = (moveEvent.clientX - startClientX) / pxPerSec.value
-        throttler.queue(() => {
-          if (side === 'left') {
-            trimSegmentStart(segment.id, startTime + deltaTime)
-          } else {
-            trimSegmentEnd(segment.id, startTime + deltaTime)
-          }
-        })
+      function apply(pointerEvent: PointerEvent) {
+        const deltaTime = (pointerEvent.clientX - startClientX) / pxPerSec.value
+        if (side === 'left') trimSegmentStart(segment.id, startTime + deltaTime)
+        else trimSegmentEnd(segment.id, startTime + deltaTime)
       }
 
-      function onUp() {
+      function onMove(moveEvent: PointerEvent) {
+        throttler.queue(() => apply(moveEvent))
+      }
+
+      function onUp(upEvent: PointerEvent) {
         throttler.cancel()
+        // Land exactly where the pointer was released.
+        if (upEvent.type === 'pointerup') apply(upEvent)
+        endGesture()
         handle.removeEventListener('pointermove', onMove)
         handle.removeEventListener('pointerup', onUp)
+        handle.removeEventListener('pointercancel', onUp)
       }
 
       handle.addEventListener('pointermove', onMove)
       handle.addEventListener('pointerup', onUp)
+      handle.addEventListener('pointercancel', onUp)
     }
   }
 
   function onBodyPointerDown(event: PointerEvent) {
+    if (event.button !== 0) return
     const element = event.currentTarget as HTMLElement
     const trackElement = element.closest('[data-track]') as HTMLElement | null
     if (!trackElement) return
@@ -89,15 +96,23 @@ export function SegmentBlock({
       }
       if (moved && trackElement) {
         const rect = trackElement.getBoundingClientRect()
-        const x = moveEvent.clientX - rect.left + trackElement.scrollLeft - GAP_PX
+        const x = moveEvent.clientX - rect.left + trackElement.scrollLeft - PADDING_PX
         const dropIndex = findDropIndexAtTrackX(timeline.value, x, pxPerSec.value, GAP_PX)
         dragState.value = { segmentId: segment.id, dropIndex }
       }
     }
 
+    function onCancel() {
+      element.removeEventListener('pointermove', onMove)
+      element.removeEventListener('pointerup', onUp)
+      element.removeEventListener('pointercancel', onCancel)
+      dragState.value = null
+    }
+
     function onUp() {
       element.removeEventListener('pointermove', onMove)
       element.removeEventListener('pointerup', onUp)
+      element.removeEventListener('pointercancel', onCancel)
       if (moved && dragState.value) {
         reorderSegment(segment.id, dragState.value.dropIndex)
         dragState.value = null
@@ -116,13 +131,14 @@ export function SegmentBlock({
 
     element.addEventListener('pointermove', onMove)
     element.addEventListener('pointerup', onUp)
+    element.addEventListener('pointercancel', onCancel)
   }
 
   return (
     <div
       data-segment
       class={clsx(
-        'relative flex h-14 shrink-0 cursor-grab items-center overflow-hidden rounded border select-none',
+        'relative flex h-14 shrink-0 cursor-grab touch-none items-center overflow-hidden rounded border select-none',
         isSelected
           ? 'border-violet-400 ring-1 ring-violet-400'
           : 'border-black/10 dark:border-white/10',
@@ -150,13 +166,13 @@ export function SegmentBlock({
       </span>
       <div
         ref={leftRef}
-        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
+        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('left')}
         onClick={(event) => event.stopPropagation()}
       />
       <div
         ref={rightRef}
-        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
+        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('right')}
         onClick={(event) => event.stopPropagation()}
       />

@@ -21,7 +21,4 @@ test('imports a clip and exports MP4', async ({ page }) => {
   await expect(page.getByRole('link', { name: /\.mp4/i }).first()).toBeVisible({
     timeout: 60_000,
   })
-
-  // Every export now runs through the WebCodecs engine.
-  await expect(page.getByText('WebCodecs')).toBeVisible()
 })

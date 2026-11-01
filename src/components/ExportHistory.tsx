@@ -1,8 +1,14 @@
 import clsx from 'clsx/lite'
-import { Trash2 } from 'lucide-preact'
+import { Trash2, X } from 'lucide-preact'
 
 import { formatFps, formatSize, formatTime } from '@/lib/format'
 import { exportHistory } from '@/lib/store'
+import type { ExportRecord } from '@/lib/types'
+
+function removeRecord(record: ExportRecord) {
+  URL.revokeObjectURL(record.url)
+  exportHistory.value = exportHistory.value.filter((entry) => entry.id !== record.id)
+}
 import { MIME_TYPES } from '@/lib/types'
 
 export function ExportHistory() {
@@ -13,10 +19,12 @@ export function ExportHistory() {
   return (
     <div class="flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       <div class="flex shrink-0 items-center gap-2.5 px-4 pt-3 pb-2">
-        <span class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
-          Export Library
-        </span>
+        <h2 class="text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
+          Export library
+        </h2>
         <button
+          type="button"
+          title="Remove all exports from this session"
           onClick={() => {
             for (const record of exportHistory.value) {
               URL.revokeObjectURL(record.url)
@@ -47,6 +55,9 @@ export function ExportHistory() {
               </th>
               <th class="px-4 py-2 text-left text-sm font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
                 Dimensions
+              </th>
+              <th class="px-4 py-2">
+                <span class="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
@@ -84,6 +95,17 @@ export function ExportHistory() {
                 </td>
                 <td class="px-4 py-3 text-base whitespace-nowrap text-slate-700 dark:text-slate-300">
                   {record.width && record.height ? `${record.width}×${record.height}` : '–'}
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => removeRecord(record)}
+                    class="inline-flex size-7 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 hover:duration-0 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                    aria-label={`Remove ${record.filename}`}
+                    title="Remove from library"
+                  >
+                    <X class="size-4" />
+                  </button>
                 </td>
               </tr>
             ))}

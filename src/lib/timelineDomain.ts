@@ -6,8 +6,10 @@ export function clampPlayheadForSegment(segment: Segment, playhead: number): num
   return Math.min(segment.endTime, Math.max(segment.startTime, playhead))
 }
 
+// The lower bound wins over the minimum-length rule, so a start can never move
+// before the media origin even for a segment already shorter than the minimum.
 export function clampSegmentStartTime(nextStart: number, currentEnd: number, minStart = 0): number {
-  return Math.min(currentEnd - MIN_SEGMENT_DURATION, Math.max(minStart, nextStart))
+  return Math.max(minStart, Math.min(currentEnd - MIN_SEGMENT_DURATION, nextStart))
 }
 
 export function clampSegmentEndTime(
@@ -57,7 +59,9 @@ export function splitSegmentAtPlayhead(
 ): { nextSegments: Segment[]; newSegmentId: string } | null {
   const segment = segments.find((segment) => segment.id === segmentId)
   if (!segment) return null
-  if (splitTime <= segment.startTime || splitTime >= segment.endTime) return null
+  // Both pieces must be at least the minimum length (and therefore trimmable).
+  if (splitTime - segment.startTime < MIN_SEGMENT_DURATION) return null
+  if (segment.endTime - splitTime < MIN_SEGMENT_DURATION) return null
 
   const first = { ...segment, endTime: splitTime }
   const second = { ...segment, id: crypto.randomUUID(), startTime: splitTime }
@@ -201,10 +205,12 @@ export function createTrackSeekHandler(options: {
         throttler.cancel()
         trackElement.removeEventListener('pointermove', onMove)
         trackElement.removeEventListener('pointerup', onUp)
+        trackElement.removeEventListener('pointercancel', onUp)
       }
 
       trackElement.addEventListener('pointermove', onMove)
       trackElement.addEventListener('pointerup', onUp)
+      trackElement.addEventListener('pointercancel', onUp)
     },
 
     cleanup() {
@@ -245,10 +251,12 @@ export function createPlayheadDragHandler(options: {
         throttler.cancel()
         element.removeEventListener('pointermove', onMove)
         element.removeEventListener('pointerup', onUp)
+        element.removeEventListener('pointercancel', onUp)
       }
 
       element.addEventListener('pointermove', onMove)
       element.addEventListener('pointerup', onUp)
+      element.addEventListener('pointercancel', onUp)
     },
 
     cleanup() {

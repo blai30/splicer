@@ -1,4 +1,7 @@
-import { clips, getClipById, playheadTime, selectedSegmentId, timeline } from '@/lib/store'
+import { batch, signal } from '@preact/signals'
+
+import { addClipToPool, collectUnusedClips, registerClipReferences } from '@/lib/clipPool'
+import { getClipById, playheadTime, selectedSegmentId, timeline } from '@/lib/store'
 import {
   splitSegmentAtPlayhead,
   updateSegmentEndTime,
@@ -6,26 +9,38 @@ import {
 } from '@/lib/timelineDomain'
 import type { Clip, Segment } from '@/lib/types'
 
-// Every timeline mutation goes through this module so the undo history sees
-// all edits: imports, trims, reorders, cuts, mutes, in/out points, deletes.
+// Every Basic timeline mutation goes through this module so the undo history
+// sees all edits: imports, trims, reorders, cuts, mutes, in/out points, deletes.
 
-const HISTORY_LIMIT = 20
+const HISTORY_LIMIT = 50
 
 type HistoryEntry = {
   timeline: Segment[]
-  clips: Clip[]
   selectedSegmentId: string | null
 }
 
 const history: HistoryEntry[] = []
 const redoHistory: HistoryEntry[] = []
 
+// Reactive flags for undo/redo buttons.
+export const canUndo = signal(false)
+export const canRedo = signal(false)
+
+function syncHistoryFlags() {
+  canUndo.value = history.length > 0
+  canRedo.value = redoHistory.length > 0
+}
+
+// The Basic editor can reach every clip in its live timeline and in any
+// snapshot on its undo/redo stacks.
+registerClipReferences(function* () {
+  for (const segment of timeline.value) yield segment.clipId
+  for (const entry of history) for (const segment of entry.timeline) yield segment.clipId
+  for (const entry of redoHistory) for (const segment of entry.timeline) yield segment.clipId
+})
+
 function captureEntry(): HistoryEntry {
-  return {
-    timeline: timeline.value,
-    clips: clips.value,
-    selectedSegmentId: selectedSegmentId.value,
-  }
+  return { timeline: timeline.value, selectedSegmentId: selectedSegmentId.value }
 }
 
 function recordHistory() {
@@ -33,14 +48,73 @@ function recordHistory() {
   if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT
   // A new edit invalidates the redo branch.
   redoHistory.length = 0
+  syncHistoryFlags()
+}
+
+// Apply a timeline change as one undoable step. No-op changes (same array
+// contents) do not pollute the history.
+function commit(next: Segment[], nextSelected: string | null = selectedSegmentId.value) {
+  if (sameSegments(next, timeline.value) && nextSelected === selectedSegmentId.value) return
+  recordHistory()
+  batch(() => {
+    timeline.value = next
+    selectedSegmentId.value = nextSelected
+  })
+  collectUnusedClips()
+}
+
+function sameSegments(first: Segment[], second: Segment[]): boolean {
+  if (first.length !== second.length) return false
+  for (let i = 0; i < first.length; i++) {
+    const a = first[i]
+    const b = second[i]
+    if (
+      a.id !== b.id ||
+      a.startTime !== b.startTime ||
+      a.endTime !== b.endTime ||
+      a.muted !== b.muted ||
+      a.clipId !== b.clipId
+    ) {
+      return false
+    }
+  }
+  return true
 }
 
 // Continuous gestures (trim drags) record one history entry for the whole
 // gesture: beginGesture() arms the flag and the first mutation consumes it.
 let gesturePending = false
+// True from beginGesture() until endGesture(). Undo/redo wait for the drag to
+// finish: undoing mid-drag would leave the rest of it unrecorded and a stale
+// mid-drag snapshot on the redo stack.
+let gestureActive = false
+
+// End the gesture when the pointer is released anywhere. The dragged element's
+// own pointerup handler runs first (this listens in the bubble phase on
+// window), and this also covers an element removed mid-drag (e.g. Delete
+// pressed while trimming), whose own listeners never fire. Without it the
+// gesture would stay active and block undo for the rest of the session.
+function onGlobalPointerEnd() {
+  endGesture()
+}
 
 export function beginGesture() {
   gesturePending = true
+  gestureActive = true
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointerup', onGlobalPointerEnd)
+    window.addEventListener('pointercancel', onGlobalPointerEnd)
+  }
+}
+
+// Disarm a gesture that ended without mutating anything.
+export function endGesture() {
+  gesturePending = false
+  gestureActive = false
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pointerup', onGlobalPointerEnd)
+    window.removeEventListener('pointercancel', onGlobalPointerEnd)
+  }
 }
 
 function consumeGesturePending() {
@@ -54,55 +128,34 @@ function getSelectedSegment() {
   return timeline.value.find((segment) => segment.id === selectedSegmentId.value)
 }
 
-function removeOrphanedClips() {
-  // Remove clips no longer referenced by any segment and revoke their object
-  // URLs. Undo recreates the URL from the original File reference.
-  const referenced = new Set<string>(timeline.value.map((segment) => segment.clipId))
-  const removedClips = clips.value.filter((clip) => !referenced.has(clip.id))
-  if (removedClips.length === 0) return
-  for (const clip of removedClips) {
-    try {
-      URL.revokeObjectURL(clip.objectUrl)
-    } catch {
-      // Best-effort
-    }
-  }
-  clips.value = clips.value.filter((clip) => referenced.has(clip.id))
-}
-
 export function appendClipToTimeline(clip: Clip) {
-  recordHistory()
-  clips.value = [...clips.value, clip]
-  const wasEmpty = timeline.value.length === 0
+  addClipToPool(clip)
   const segment: Segment = {
     id: crypto.randomUUID(),
     clipId: clip.id,
     startTime: 0,
     endTime: clip.duration,
   }
-  timeline.value = [...timeline.value, segment]
-  if (wasEmpty) selectedSegmentId.value = segment.id
+  const wasEmpty = timeline.value.length === 0
+  commit([...timeline.value, segment], wasEmpty ? segment.id : selectedSegmentId.value)
 }
 
 export function setInPoint() {
   const segment = getSelectedSegment()
   if (!segment) return
-  recordHistory()
-  timeline.value = updateSegmentStartTime(timeline.value, segment.id, playheadTime.value)
+  const playhead = playheadTime.value
+  // A playhead outside the segment would clamp to an edge: do nothing instead.
+  if (playhead <= segment.startTime || playhead >= segment.endTime) return
+  commit(updateSegmentStartTime(timeline.value, segment.id, playhead))
 }
 
 export function setOutPoint() {
   const segment = getSelectedSegment()
   if (!segment) return
-  const clipDuration =
-    clips.value.find((clip) => clip.id === segment.clipId)?.duration ?? playheadTime.value
-  recordHistory()
-  timeline.value = updateSegmentEndTime(
-    timeline.value,
-    segment.id,
-    playheadTime.value,
-    clipDuration
-  )
+  const playhead = playheadTime.value
+  if (playhead <= segment.startTime || playhead >= segment.endTime) return
+  const clipDuration = getClipById(segment.clipId)?.duration ?? segment.endTime
+  commit(updateSegmentEndTime(timeline.value, segment.id, playhead, clipDuration))
 }
 
 export function cutAtPlayhead() {
@@ -110,43 +163,45 @@ export function cutAtPlayhead() {
   if (!segment) return
   const split = splitSegmentAtPlayhead(timeline.value, segment.id, playheadTime.value)
   if (!split) return
-  recordHistory()
-  timeline.value = split.nextSegments
-  selectedSegmentId.value = split.newSegmentId
+  commit(split.nextSegments, split.newSegmentId)
 }
 
 export function toggleMute() {
   const segmentId = selectedSegmentId.value
-  if (!segmentId) return
-  recordHistory()
-  timeline.value = timeline.value.map((segment) =>
-    segment.id === segmentId ? { ...segment, muted: !segment.muted } : segment
+  if (!segmentId || !getSelectedSegment()) return
+  commit(
+    timeline.value.map((segment) =>
+      segment.id === segmentId ? { ...segment, muted: !segment.muted } : segment
+    )
   )
 }
 
 export function trimSegmentStart(segmentId: string, nextStart: number) {
+  const next = updateSegmentStartTime(timeline.value, segmentId, nextStart)
+  if (sameSegments(next, timeline.value)) return
   consumeGesturePending()
-  timeline.value = updateSegmentStartTime(timeline.value, segmentId, nextStart)
+  timeline.value = next
 }
 
 export function trimSegmentEnd(segmentId: string, nextEnd: number) {
-  const segment = timeline.value.find((segment) => segment.id === segmentId)
+  const segment = timeline.value.find((entry) => entry.id === segmentId)
   if (!segment) return
   const clipDuration = getClipById(segment.clipId)?.duration ?? segment.endTime
+  const next = updateSegmentEndTime(timeline.value, segmentId, nextEnd, clipDuration)
+  if (sameSegments(next, timeline.value)) return
   consumeGesturePending()
-  timeline.value = updateSegmentEndTime(timeline.value, segmentId, nextEnd, clipDuration)
+  timeline.value = next
 }
 
 export function reorderSegment(segmentId: string, dropIndex: number) {
   const fromIndex = timeline.value.findIndex((segment) => segment.id === segmentId)
   if (fromIndex === -1) return
   if (fromIndex === dropIndex || fromIndex + 1 === dropIndex) return
-  recordHistory()
   const segments = [...timeline.value]
   const [removed] = segments.splice(fromIndex, 1)
   const adjusted = dropIndex > fromIndex ? dropIndex - 1 : dropIndex
   segments.splice(adjusted, 0, removed)
-  timeline.value = segments
+  commit(segments)
 }
 
 export function deleteSegment() {
@@ -154,57 +209,53 @@ export function deleteSegment() {
   if (!segmentId) return
   const currentIndex = timeline.value.findIndex((segment) => segment.id === segmentId)
   if (currentIndex === -1) return
-  recordHistory()
   const next = timeline.value.filter((segment) => segment.id !== segmentId)
-  timeline.value = next
-  selectedSegmentId.value = next[currentIndex]?.id ?? next[currentIndex - 1]?.id ?? null
-  removeOrphanedClips()
+  commit(next, next[currentIndex]?.id ?? next[currentIndex - 1]?.id ?? null)
+}
+
+export function clearTimeline() {
+  if (timeline.value.length === 0) return
+  commit([], null)
 }
 
 function restoreEntry(entry: HistoryEntry) {
-  // Clips that exist now but not in the restored state (e.g. undoing an
-  // import) lose their object URLs.
-  for (const clip of clips.value) {
-    if (!entry.clips.some((entryClip) => entryClip.id === clip.id)) {
-      try {
-        URL.revokeObjectURL(clip.objectUrl)
-      } catch {
-        // Best-effort
-      }
-    }
-  }
-
-  const restoredClips = entry.clips.map((entryClip) => {
-    // Prefer the live clip when it survived: its object URL is still valid
-    // and it may have gained waveform peaks since the snapshot.
-    const liveClip = clips.value.find((clip) => clip.id === entryClip.id)
-    if (liveClip) return liveClip
-    // The clip was removed and its object URL revoked; recreate it from the
-    // original File reference so the video plays again.
-    return { ...entryClip, objectUrl: URL.createObjectURL(entryClip.file) }
+  batch(() => {
+    timeline.value = entry.timeline
+    selectedSegmentId.value =
+      entry.selectedSegmentId &&
+      entry.timeline.some((segment) => segment.id === entry.selectedSegmentId)
+        ? entry.selectedSegmentId
+        : (entry.timeline[0]?.id ?? null)
   })
-
-  timeline.value = entry.timeline
-  clips.value = restoredClips
-  selectedSegmentId.value =
-    entry.selectedSegmentId &&
-    entry.timeline.some((segment) => segment.id === entry.selectedSegmentId)
-      ? entry.selectedSegmentId
-      : (entry.timeline[0]?.id ?? null)
 }
 
 export function undo() {
+  if (gestureActive) return
   const entry = history.shift()
   if (!entry) return
   redoHistory.unshift(captureEntry())
   if (redoHistory.length > HISTORY_LIMIT) redoHistory.length = HISTORY_LIMIT
   restoreEntry(entry)
+  syncHistoryFlags()
+  collectUnusedClips()
 }
 
 export function redo() {
+  if (gestureActive) return
   const entry = redoHistory.shift()
   if (!entry) return
   history.unshift(captureEntry())
   if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT
   restoreEntry(entry)
+  syncHistoryFlags()
+  collectUnusedClips()
+}
+
+// Clears both stacks and any armed gesture. Used by tests for isolation.
+export function resetHistory() {
+  history.length = 0
+  redoHistory.length = 0
+  gesturePending = false
+  gestureActive = false
+  syncHistoryFlags()
 }

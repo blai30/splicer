@@ -1,6 +1,7 @@
 import { batch, useSignal } from '@preact/signals'
 
-import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
+import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
+import { displayTime } from '@/lib/advanced/advancedPlayback'
 import {
   selectAdvancedSegment,
   setSegmentCrop,
@@ -37,6 +38,10 @@ const HANDLE_CURSOR: Record<ResizeHandle, string> = {
   w: 'ew-resize',
 }
 
+function hiddenTrackIds(): Set<string> {
+  return new Set(advancedTracks.value.filter((track) => track.hidden).map((track) => track.id))
+}
+
 function handlePercent(handle: ResizeHandle): { left: string; top: string } {
   const left = handle.includes('w') ? '0%' : handle.includes('e') ? '100%' : '50%'
   const top = handle.includes('n') ? '0%' : handle.includes('s') ? '100%' : '50%'
@@ -50,7 +55,12 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
   const viewport = advancedViewport.value
   const selectedId = advancedSelectedId.value
   const selected = advancedSegments.value.find((segment) => segment.id === selectedId) ?? null
-  const frame = computeFrameRect(advancedSegments.value, advancedOutputLock.value)
+  // Frame what export renders: hidden tracks are left out of the output.
+  const hidden = hiddenTrackIds()
+  const frame = computeFrameRect(
+    advancedSegments.value.filter((segment) => !hidden.has(segment.trackId)),
+    advancedOutputLock.value
+  )
 
   // Begin moving a segment with the pointer captured on `captureElement`. Used by
   // both the selection box (press the already-selected clip) and a press on an
@@ -64,7 +74,7 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
     const startTransform = segment.transform
     const zoom = advancedViewport.value.zoom
     const others = advancedSegments.value
-      .filter((other) => other.id !== segment.id)
+      .filter((other) => other.id !== segment.id && !hiddenTrackIds().has(other.trackId))
       .map((other) => other.transform)
     const candidates = snapCandidates(others)
 
@@ -85,32 +95,44 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
     function onUp() {
       guideX.value = null
       guideY.value = null
+      endAdvancedGesture()
       captureElement.removeEventListener('pointermove', onMove)
       captureElement.removeEventListener('pointerup', onUp)
+      captureElement.removeEventListener('pointercancel', onUp)
     }
     captureElement.addEventListener('pointermove', onMove)
     captureElement.addEventListener('pointerup', onUp)
+    captureElement.addEventListener('pointercancel', onUp)
   }
 
   // Pressing the canvas: a press on a clip selects it and starts moving it in the
   // same gesture; a press on empty space deselects and pans the viewport.
   function onBackgroundPointerDown(event: PointerEvent) {
+    if (event.button !== 0 && event.button !== 1) return
     const wrapper = event.currentTarget as HTMLElement
     const rect = wrapper.getBoundingClientRect()
     const world = screenToWorld(
       { x: event.clientX - rect.left, y: event.clientY - rect.top },
       advancedViewport.value
     )
-    const active = segmentsActiveAt(advancedSegments.value, advancedPlayhead.value)
+    // Only visible clips can be hit: hidden tracks are not drawn.
+    const active = segmentsActiveAt(
+      advancedSegments.value,
+      displayTime(advancedPlayhead.value)
+    ).filter((segment) => !hiddenTrackIds().has(segment.trackId))
     const topFirst = orderedForRender(active, advancedTracks.value).reverse()
-    const hit = topFirst.find((segment) => pointInTransform(world.x, world.y, segment.transform))
+    // The middle button always pans, even over a clip.
+    const hit =
+      event.button === 0
+        ? topFirst.find((segment) => pointInTransform(world.x, world.y, segment.transform))
+        : undefined
     if (hit) {
       selectAdvancedSegment(hit.id)
       // In crop mode the body is not draggable; just select so the crop handles show.
       if (!cropMode) beginMove(hit, wrapper, event)
       return
     }
-    selectAdvancedSegment('')
+    selectAdvancedSegment(null)
     // Pan the viewport.
     wrapper.setPointerCapture(event.pointerId)
     const startX = event.clientX
@@ -126,20 +148,22 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
     function onUp() {
       wrapper.removeEventListener('pointermove', onMove)
       wrapper.removeEventListener('pointerup', onUp)
+      wrapper.removeEventListener('pointercancel', onUp)
     }
     wrapper.addEventListener('pointermove', onMove)
     wrapper.addEventListener('pointerup', onUp)
+    wrapper.addEventListener('pointercancel', onUp)
   }
 
   function startMove(event: PointerEvent) {
-    if (!selected || cropMode) return
+    if (event.button !== 0 || !selected || cropMode) return
     event.stopPropagation()
     beginMove(selected, event.currentTarget as HTMLElement, event)
   }
 
   function startResize(handle: ResizeHandle) {
     return (event: PointerEvent) => {
-      if (!selected) return
+      if (event.button !== 0 || !selected) return
       const active = selected
       event.stopPropagation()
       const element = event.currentTarget as HTMLElement
@@ -181,11 +205,14 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
         }
       }
       function onUp() {
+        endAdvancedGesture()
         element.removeEventListener('pointermove', onMove)
         element.removeEventListener('pointerup', onUp)
+        element.removeEventListener('pointercancel', onUp)
       }
       element.addEventListener('pointermove', onMove)
       element.addEventListener('pointerup', onUp)
+      element.addEventListener('pointercancel', onUp)
     }
   }
 
@@ -196,7 +223,7 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
 
   return (
     <div
-      class="absolute inset-0 z-10"
+      class="absolute inset-0 z-10 touch-none"
       style={{ cursor: cropMode ? 'crosshair' : 'default' }}
       onPointerDown={onBackgroundPointerDown}
     >

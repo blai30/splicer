@@ -1,7 +1,7 @@
 import { selectCodecs } from '@/lib/exportCodecs'
-import { EtaTracker } from '@/lib/exportEta'
+import { runExportWorker, type ExportOutput } from '@/lib/exportRunner'
 import { info } from '@/lib/logger'
-import { exportEtaSeconds, exportProgress, getClipById, mkvCodec, webmCodec } from '@/lib/store'
+import { getClipById, mkvCodec, webmCodec } from '@/lib/store'
 import {
   MIME_TYPES,
   type ExportFormat,
@@ -9,9 +9,8 @@ import {
   type Quality,
   type Segment,
 } from '@/lib/types'
-import type { ExportJob, JobSource, WorkerResponse } from '@/lib/webcodecs/protocol'
-
-let activeWorker: Worker | null = null
+import { outputDimensions } from '@/lib/webcodecs/editPlan'
+import type { ExportJob, JobSource } from '@/lib/webcodecs/protocol'
 
 // Resolve the timeline into a serializable job: one source per distinct clip,
 // each segment mapped to a slice referencing its source. Returns null when any
@@ -37,6 +36,7 @@ export function buildJob(
         width: clip.width,
         height: clip.height,
         hasAudio: clip.hasAudio !== false,
+        frameRate: clip.frameRate,
       })
     }
     return {
@@ -62,75 +62,24 @@ export function buildJob(
   }
 }
 
-function runInWorker(job: ExportJob): Promise<{ url: string; size: number }> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./webcodecs/worker.ts', import.meta.url), {
-      type: 'module',
-    })
-    activeWorker = worker
-
-    const eta = new EtaTracker()
-    exportProgress.value = 0
-    exportEtaSeconds.value = null
-
-    const cleanup = () => {
-      exportEtaSeconds.value = null
-      worker.terminate()
-      if (activeWorker === worker) activeWorker = null
-    }
-
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-      const message = event.data
-      if (message.type === 'progress') {
-        exportProgress.value = message.progress
-        eta.sample(message.progress, performance.now())
-        exportEtaSeconds.value = eta.etaSeconds(message.progress, performance.now())
-      } else if (message.type === 'done') {
-        cleanup()
-        const blob = new Blob([message.buffer], { type: MIME_TYPES[job.format] })
-        exportProgress.value = 1
-        resolve({ url: URL.createObjectURL(blob), size: blob.size })
-      } else if (message.type === 'canceled') {
-        cleanup()
-        reject(new Error('canceled'))
-      } else if (message.type === 'error') {
-        cleanup()
-        const err = new Error(message.message) as Error & { unsupported?: boolean }
-        err.unsupported = message.unsupported
-        reject(err)
-      }
-    }
-
-    worker.onerror = (event) => {
-      cleanup()
-      reject(new Error(event.message || 'WebCodecs worker error'))
-    }
-
-    worker.postMessage({ type: 'export', job })
-  })
-}
-
 export async function runExportEngine(
   segments: Segment[],
   format: ExportFormat,
   quality: Quality,
   fps: Framerate
-): Promise<{ url: string; size: number }> {
-  if (segments.length === 0) throw new Error('No segments')
+): Promise<ExportOutput & { width: number; height: number }> {
+  if (segments.length === 0) throw new Error('Nothing to export: the timeline is empty')
 
   const job = buildJob(segments, format, quality, fps)
-  if (!job) throw new Error('Missing clip data for export')
+  if (!job)
+    throw new Error('A clip on the timeline is no longer available. Re-import it and try again.')
 
   info('Exporting via WebCodecs engine')
-  return runInWorker(job)
-}
-
-export function cancelActiveExport(): void {
-  if (activeWorker) {
-    activeWorker.postMessage({ type: 'cancel' })
-    activeWorker.terminate()
-    activeWorker = null
-  }
-  exportProgress.value = 0
-  exportEtaSeconds.value = null
+  const { width, height } = outputDimensions(job)
+  const output = await runExportWorker(
+    () => new Worker(new URL('./webcodecs/worker.ts', import.meta.url), { type: 'module' }),
+    job,
+    MIME_TYPES[job.format]
+  )
+  return { ...output, width, height }
 }

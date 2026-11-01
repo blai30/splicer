@@ -102,9 +102,11 @@ export function AdvancedPreview() {
     function onUp() {
       handle.removeEventListener('pointermove', onMove)
       handle.removeEventListener('pointerup', onUp)
+      handle.removeEventListener('pointercancel', onUp)
     }
     handle.addEventListener('pointermove', onMove)
     handle.addEventListener('pointerup', onUp)
+    handle.addEventListener('pointercancel', onUp)
   }
 
   function onWheel(event: WheelEvent) {
@@ -173,7 +175,7 @@ export function AdvancedPreview() {
         </div>
         {/* Drag the bottom edge to resize the work area vertically. */}
         <div
-          class="absolute right-0 bottom-0 left-0 z-30 flex h-2.5 cursor-ns-resize items-center justify-center opacity-0 transition-opacity group-hover/preview:opacity-100"
+          class="absolute right-0 bottom-0 left-0 z-30 flex h-2.5 cursor-ns-resize touch-none items-center justify-center opacity-0 transition-opacity group-hover/preview:opacity-100"
           onPointerDown={onResizeHandlePointerDown}
           title="Drag to resize the work area"
         >

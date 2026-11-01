@@ -16,12 +16,24 @@ export type CompositorLayer = {
   opacity: number
 }
 
+export type CompositorAudioLayer = {
+  sourceIndex: number
+  sourceStart: number
+  sourceEnd: number
+  timelineStart: number
+  volume: number
+}
+
 export type CompositorJob = {
   canvas: { width: number; height: number }
   sources: JobSource[]
   layers: CompositorLayer[]
   tracksOrder: string[]
-  mixedAudio?: { sampleRate: number; channelData: Float32Array[] }
+  // Every audible placement, including ones on hidden (video-off) tracks.
+  audioLayers: CompositorAudioLayer[]
+  // Output length in seconds. Covers all placements, so audio on a hidden
+  // track that outlasts the visible clips keeps the video running (black).
+  durationSec: number
   quality: Quality
   fps: Framerate
   format: ExportFormat

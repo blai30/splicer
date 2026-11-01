@@ -12,9 +12,7 @@ const {
 
 const siteName = 'Splicer'
 const pageUrl = canonical ?? Astro.url.href
-const ogImageUrl = ogImage
-  ? new URL(ogImage, Astro.url).toString()
-  : new URL('/splash/hero-social.png', Astro.url).toString()
+const ogImageUrl = new URL(ogImage ?? assetPath('splash/hero-social.png'), Astro.url).toString()
 const socialImageAlt =
   'Splicer app preview showing timeline-based browser video trimming'
 const robots = noindex ? 'noindex, nofollow' : 'index, follow'
@@ -34,30 +32,42 @@ const webAppJsonLd = {
 <html lang="en">
   <head>
     <script is:inline>
-      const stored = localStorage.getItem('theme')
-      const prefersDark = window.matchMedia(
-        '(prefers-color-scheme: dark)'
-      ).matches
-      const isDark = stored === 'dark' || (!stored && prefersDark)
-      if (isDark) {
-        document.documentElement.classList.add('dark')
-        document.documentElement.style.backgroundColor = 'black'
-      }
+      ;(() => {
+        let stored = null
+        try {
+          stored = localStorage.getItem('theme')
+        } catch {
+          // Storage can be blocked (privacy mode); fall back to the OS setting.
+        }
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        const isDark = stored === 'dark' || (!stored && prefersDark)
+        document.documentElement.classList.toggle('dark', isDark)
+        document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
+      })()
     </script>
     <script is:inline src={assetPath('coi-serviceworker.min.js')}></script>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link
       rel="icon"
       type="image/svg+xml"
       href={assetPath('brand/logo-mark.svg')}
     />
-    <link rel="icon" href={assetPath('brand/logo-mark.svg')} />
+    <link rel="icon" href={assetPath('favicon.ico')} sizes="32x32" />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
     <meta name="description" content={description} />
     <meta name="robots" content={robots} />
-    <meta name="theme-color" content="#0f172a" />
+    <meta
+      name="theme-color"
+      content="#cbd5e1"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#020617"
+      media="(prefers-color-scheme: dark)"
+    />
     <link rel="canonical" href={pageUrl} />
 
     <meta property="og:type" content="website" />
@@ -85,6 +95,11 @@ const webAppJsonLd = {
   <body
     class="min-h-screen bg-slate-300 text-slate-900 dark:bg-slate-950 dark:text-slate-50"
   >
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-violet-600 focus:px-3 focus:py-2 focus:text-white"
+      >Skip to content</a
+    >
     <div class="px-3 pt-3 md:px-4 md:pt-4">
       <SiteHeader />
     </div>
