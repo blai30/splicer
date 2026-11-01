@@ -15,6 +15,11 @@ import {
   trimSegmentEnd,
   trimSegmentStart,
 } from '@/lib/timelineEditing'
+import {
+  BLOCK_DURATION_MIN_WIDTH_PX,
+  BLOCK_NAME_MIN_WIDTH_PX,
+  MIN_BLOCK_WIDTH_PX,
+} from '@/lib/timelineNavigation'
 import type { Segment } from '@/lib/types'
 import { ensureClipWaveform } from '@/lib/videoImport'
 
@@ -97,7 +102,13 @@ export function SegmentBlock({
       if (moved && trackElement) {
         const rect = trackElement.getBoundingClientRect()
         const x = moveEvent.clientX - rect.left + trackElement.scrollLeft - PADDING_PX
-        const dropIndex = findDropIndexAtTrackX(timeline.value, x, pxPerSec.value, GAP_PX)
+        const dropIndex = findDropIndexAtTrackX(
+          timeline.value,
+          x,
+          pxPerSec.value,
+          GAP_PX,
+          MIN_BLOCK_WIDTH_PX
+        )
         dragState.value = { segmentId: segment.id, dropIndex }
       }
     }
@@ -121,8 +132,9 @@ export function SegmentBlock({
         if (trackElement) {
           const rect = trackElement.getBoundingClientRect()
           const x = event.clientX - rect.left + trackElement.scrollLeft
-          const segmentStartX = startX
-          const time = segment.startTime + Math.max(0, x - segmentStartX) / pxPerSec.value
+          // Proportional, since a short block can be drawn wider than its duration.
+          const offset = width > 0 ? Math.max(0, x - startX) / width : 0
+          const time = segment.startTime + offset * segmentDuration
           const clamped = clampPlayheadForSegment(segment, time)
           seek(clamped)
         }
@@ -157,13 +169,18 @@ export function SegmentBlock({
           class="absolute inset-0 h-full w-full opacity-80"
         />
       )}
-      <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
-        {clip?.name ?? 'Clip'}
-        {segment.muted && <span class="ml-1">🔇</span>}
-      </span>
-      <span class="relative z-10 ml-auto shrink-0 self-end pr-2 text-sm text-white/70">
-        {formatTime(segmentDuration)}
-      </span>
+      {/* Labels would only be clipped noise on a block this narrow. */}
+      {width >= BLOCK_NAME_MIN_WIDTH_PX && (
+        <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
+          {clip?.name ?? 'Clip'}
+          {segment.muted && <span class="ml-1">🔇</span>}
+        </span>
+      )}
+      {width >= BLOCK_DURATION_MIN_WIDTH_PX && (
+        <span class="relative z-10 ml-auto shrink-0 self-end pr-2 text-sm text-white/70">
+          {formatTime(segmentDuration)}
+        </span>
+      )}
       <div
         ref={leftRef}
         class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"

@@ -1,12 +1,12 @@
 import type { ReadonlySignal } from '@preact/signals'
 import clsx from 'clsx/lite'
-import type { JSX } from 'preact'
+import type { HTMLAttributes } from 'preact'
 
 type TimelinePlayheadProps = {
   // Track x of the playhead in content px.
   x: ReadonlySignal<number>
   class?: string
-} & Omit<JSX.HTMLAttributes<HTMLDivElement>, 'class' | 'style'>
+} & Omit<HTMLAttributes<HTMLDivElement>, 'class' | 'style'>
 
 // The playhead reads its own position signal, so playback re-renders this one
 // line each frame instead of the whole timeline around it.

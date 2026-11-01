@@ -88,3 +88,22 @@ export function placeReadout(
   const edge = clamp(clipLeft)
   return { edge, alignEnd, maxWidth: Math.max(0, viewEnd - edge) }
 }
+
+export type WheelAction = 'zoom' | 'horizontal' | 'native'
+
+// What a wheel over the lanes does. Ctrl zooms. Shift scrolls through time.
+// A plain vertical wheel scrolls the page (native) while the lanes do not fit
+// in the window, so every track stays reachable; once they all fit it scrolls
+// through time like Basic. Horizontal trackpad swipes stay native.
+export function advancedWheelAction(input: {
+  ctrlKey: boolean
+  shiftKey: boolean
+  deltaX: number
+  deltaY: number
+  lanesOverflowView: boolean
+}): WheelAction {
+  if (input.ctrlKey) return 'zoom'
+  if (input.shiftKey) return 'horizontal'
+  if (Math.abs(input.deltaX) >= Math.abs(input.deltaY)) return 'native'
+  return input.lanesOverflowView ? 'native' : 'horizontal'
+}

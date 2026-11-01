@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  advancedWheelAction,
   laneDropTarget,
   orderedForRender,
   placeReadout,
@@ -81,5 +82,39 @@ describe('placeReadout', () => {
 
   it('stays at the clip start without a scroller', () => {
     expect(placeReadout(120, 40, null)).toEqual({ edge: 120, alignEnd: false, maxWidth: null })
+  })
+})
+
+describe('advancedWheelAction', () => {
+  const wheel = (overrides: Partial<Parameters<typeof advancedWheelAction>[0]> = {}) =>
+    advancedWheelAction({
+      ctrlKey: false,
+      shiftKey: false,
+      deltaX: 0,
+      deltaY: 100,
+      lanesOverflowView: false,
+      ...overrides,
+    })
+
+  it('zooms with Ctrl, whatever else is held', () => {
+    expect(wheel({ ctrlKey: true })).toBe('zoom')
+    expect(wheel({ ctrlKey: true, shiftKey: true, lanesOverflowView: true })).toBe('zoom')
+  })
+
+  it('scrolls through time with Shift, even when the lanes overflow', () => {
+    expect(wheel({ shiftKey: true, lanesOverflowView: true })).toBe('horizontal')
+    expect(wheel({ shiftKey: true, deltaX: 100, deltaY: 0 })).toBe('horizontal')
+  })
+
+  it('scrolls vertically (natively) while the lanes overflow the window', () => {
+    expect(wheel({ lanesOverflowView: true })).toBe('native')
+  })
+
+  it('scrolls through time when every lane is in view', () => {
+    expect(wheel()).toBe('horizontal')
+  })
+
+  it('leaves horizontal trackpad swipes to the browser', () => {
+    expect(wheel({ deltaX: 60, deltaY: 10 })).toBe('native')
   })
 })

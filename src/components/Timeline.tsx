@@ -3,6 +3,7 @@ import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
+  Maximize2,
   Scissors,
   Plus,
   Redo2,
@@ -17,6 +18,8 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { SegmentBlock } from '@/components/SegmentBlock'
 import { TimelinePlayhead } from '@/components/TimelinePlayhead'
+import { TimeRuler } from '@/components/TimeRuler'
+import { useScrollWindow, useTimelineNavigation } from '@/components/useTimelineNavigation'
 import { ZoomSlider } from '@/components/ZoomSlider'
 import { seek } from '@/lib/playback'
 import {
@@ -26,15 +29,24 @@ import {
   ZOOM_MIN,
   dragState,
   playheadTime,
+  playing,
   pxPerSec,
   selectedSegmentId,
   timeline,
 } from '@/lib/store'
 import {
-  computeZoomScroll,
-  createPlayheadDragHandler,
   buildSegmentLayout,
+  createEdgeAutoScroller,
+  createPlayheadDragHandler,
+  createRafThrottler,
   createTrackSeekHandler,
+  cutMarkerXs,
+  globalTimeToSegment,
+  globalTimeToX,
+  layoutDuration,
+  playheadXInLayout,
+  viewportToTrackX,
+  xToGlobalTime,
 } from '@/lib/timelineDomain'
 import {
   canRedo,
@@ -47,48 +59,122 @@ import {
   toggleMute,
   undo,
 } from '@/lib/timelineEditing'
+import { fitZoom, MIN_BLOCK_WIDTH_PX, ZOOM_STEP_FACTOR } from '@/lib/timelineNavigation'
+import type { Segment } from '@/lib/types'
 import { FILE_INPUT_ACCEPT, importFiles } from '@/lib/videoImport'
 
-const ZOOM_SCALE_FACTOR = 1.25
+function layoutAt(segments: Segment[], zoom: number) {
+  return buildSegmentLayout(segments, zoom, GAP_PX, PADDING_PX, MIN_BLOCK_WIDTH_PX)
+}
+
+// The zoom box shows a decimal only where it matters (below 10 px/s).
+function formatZoom(zoom: number): string {
+  return zoom < 10 ? String(Math.round(zoom * 10) / 10) : String(Math.round(zoom))
+}
 
 export function Timeline() {
   const trackRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const trackSeekHandlerRef = useRef<ReturnType<typeof createTrackSeekHandler> | null>(null)
   const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
+  const stopRulerScrubRef = useRef<(() => void) | null>(null)
 
-  const layoutSignal = useComputed(() =>
-    buildSegmentLayout(timeline.value, pxPerSec.value, GAP_PX, PADDING_PX)
+  const layoutSignal = useComputed(() => layoutAt(timeline.value, pxPerSec.value))
+  // Read only by the playhead leaf and the follow effect: the timeline itself
+  // must not subscribe to the per-frame playhead time.
+  const playheadX = useComputed(() =>
+    playheadXInLayout(
+      layoutSignal.value,
+      selectedSegmentId.value ?? timeline.value[0]?.id,
+      playheadTime.value,
+      PADDING_PX
+    )
   )
-  // Read only by the playhead leaf: the timeline itself must not subscribe to
-  // the per-frame playhead time.
-  const playheadX = useComputed(() => {
-    const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
-    const item = layoutSignal.value.find((entry) => entry.segment.id === activeId)
-    return item
-      ? item.startX + (playheadTime.value - item.segment.startTime) * pxPerSec.value
-      : PADDING_PX
-  })
+  const isEmpty = useComputed(() => timeline.value.length === 0)
   const layout = layoutSignal.value
+  const segments = timeline.value
+  const totalDuration = layoutDuration(layout)
+  const scrollWindow = useScrollWindow(trackRef)
+  const { zoomTo, zoomStep, fit } = useTimelineNavigation({
+    scrollRef: trackRef,
+    geometry: {
+      timeToX: (time, zoom) => globalTimeToX(layoutAt(segments, zoom), time),
+      xToTime: (x, zoom) => xToGlobalTime(layoutAt(segments, zoom), x),
+      fitZoom: (viewWidth) =>
+        fitZoom(
+          viewWidth - 2 * PADDING_PX - GAP_PX * Math.max(0, segments.length - 1),
+          totalDuration
+        ),
+    },
+    playheadX,
+    playing,
+    isEmpty,
+  })
 
   function activeLayoutItem() {
     const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
     return layoutSignal.value.find((entry) => entry.segment.id === activeId)
   }
 
+  // Seek on the concatenated timeline: the ruler spans every segment, so a
+  // scrub can cross cuts, selecting whichever segment is under the pointer.
+  function seekAtClientX(track: HTMLElement, clientX: number) {
+    const current = layoutSignal.value
+    const x = viewportToTrackX(clientX, track.getBoundingClientRect(), track.scrollLeft)
+    const hit = globalTimeToSegment(current, xToGlobalTime(current, x))
+    if (!hit) return
+    selectedSegmentId.value = hit.segment.id
+    seek(hit.time)
+  }
+
+  function startRulerScrub(event: PointerEvent, track: HTMLElement) {
+    seekAtClientX(track, event.clientX)
+    track.setPointerCapture(event.pointerId)
+    const throttler = createRafThrottler()
+    let lastClientX = event.clientX
+    // Scrubbing past an edge keeps scrolling and seeking at the held position.
+    const autoScroll = createEdgeAutoScroller(track, () =>
+      throttler.queue(() => seekAtClientX(track, lastClientX))
+    )
+    function stop() {
+      throttler.cancel()
+      autoScroll.stop()
+      stopRulerScrubRef.current = null
+      track.removeEventListener('pointermove', onMove)
+      track.removeEventListener('pointerup', onUp)
+      track.removeEventListener('pointercancel', stop)
+    }
+    function onMove(moveEvent: PointerEvent) {
+      lastClientX = moveEvent.clientX
+      throttler.queue(() => seekAtClientX(track, moveEvent.clientX))
+      autoScroll.update(moveEvent.clientX)
+    }
+    function onUp(upEvent: PointerEvent) {
+      stop()
+      seekAtClientX(track, upEvent.clientX)
+    }
+    stopRulerScrubRef.current = stop
+    track.addEventListener('pointermove', onMove)
+    track.addEventListener('pointerup', onUp)
+    track.addEventListener('pointercancel', stop)
+  }
+
   function onTrackPointerDown(event: PointerEvent) {
     if (!trackRef.current) return
     if (timeline.value.length === 0) return
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
     // Ignore clicks on playhead and segment containers
-    if ((event.target as HTMLElement).closest('[data-playhead]')) return
-    if ((event.target as HTMLElement).closest('[data-segment]')) return
+    if (target.closest('[data-playhead]')) return
+    if (target.closest('[data-segment]')) return
+    if (target.closest('[data-time-ruler]')) {
+      startRulerScrub(event, trackRef.current)
+      return
+    }
 
     // Create and cache handler for this drag session
     trackSeekHandlerRef.current = createTrackSeekHandler({
-      timeline: timeline.value,
-      pxPerSec: pxPerSec.value,
-      padding: PADDING_PX,
-      gap: GAP_PX,
+      layout: layoutSignal.value,
       trackElement: trackRef.current,
       onSeek(segmentId, time) {
         selectedSegmentId.value = segmentId
@@ -105,9 +191,7 @@ export function Timeline() {
 
     // Create and cache handler for this drag session using precomputed layout
     playheadDragHandlerRef.current = createPlayheadDragHandler({
-      segment: activeLayout.segment,
-      segmentStartX: activeLayout.startX,
-      pxPerSec: pxPerSec.value,
+      item: activeLayout,
       trackElement: trackRef.current,
       onUpdate(time) {
         seek(time)
@@ -117,30 +201,12 @@ export function Timeline() {
     playheadDragHandlerRef.current.onPointerDown(event)
   }
 
-  function zoomTo(newPx: number, anchorX?: number) {
-    const track = trackRef.current
-    if (!track) return
-    const oldPx = pxPerSec.value
-    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
-
-    if (clamped === oldPx) return
-    // Keep the time under the cursor fixed. The target scroll is applied after
-    // the re-render widens the content; set now, the browser would clamp it to
-    // the old, narrower scroll range.
-    const target =
-      anchorX === undefined
-        ? null
-        : computeZoomScroll(oldPx, clamped, anchorX, track.scrollLeft, PADDING_PX)
-    pxPerSec.value = clamped
-    if (target !== null) requestAnimationFrame(() => (track.scrollLeft = Math.max(0, target)))
-  }
-
   function applyZoomInput(input: HTMLInputElement) {
     const raw = input.value.trim()
     const value = Number(raw)
     if (raw !== '' && Number.isFinite(value)) zoomTo(value)
     // Always show the zoom actually in effect (clamped, or unchanged on bad input).
-    input.value = String(Math.round(pxPerSec.value))
+    input.value = formatZoom(pxPerSec.value)
   }
 
   // Cleanup any pending drag handlers on unmount
@@ -148,6 +214,7 @@ export function Timeline() {
     () => () => {
       trackSeekHandlerRef.current?.cleanup()
       playheadDragHandlerRef.current?.cleanup()
+      stopRulerScrubRef.current?.()
     },
     []
   )
@@ -158,7 +225,7 @@ export function Timeline() {
       event.preventDefault()
       const rect = trackRef.current.getBoundingClientRect()
       const anchorX = event.clientX - rect.left
-      const factor = event.deltaY > 0 ? 1 / ZOOM_SCALE_FACTOR : ZOOM_SCALE_FACTOR
+      const factor = event.deltaY > 0 ? 1 / ZOOM_STEP_FACTOR : ZOOM_STEP_FACTOR
       zoomTo(pxPerSec.value * factor, anchorX)
     } else if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
       event.preventDefault()
@@ -173,7 +240,6 @@ export function Timeline() {
     await importFiles(files)
   }
 
-  const isEmpty = timeline.value.length === 0
   const selectedSegment = timeline.value.find((segment) => segment.id === selectedSegmentId.value)
   const disabled = !selectedSegment
 
@@ -278,23 +344,32 @@ export function Timeline() {
           </div>
           <div class="flex shrink-0 items-center gap-2 md:gap-3">
             <button
-              onClick={() => zoomTo(pxPerSec.value - 10)}
+              onClick={() => fit()}
+              disabled={isEmpty.value}
+              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-500 dark:hover:text-slate-300"
+              title="Fit timeline to view (Shift+Z)"
+              aria-label="Fit timeline to view"
+            >
+              <Maximize2 class="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => zoomStep(-1)}
               class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom out"
+              aria-label="Zoom out"
             >
               <ZoomOut class="h-3.5 w-3.5" />
             </button>
             <ZoomSlider
               class="w-16 md:w-28"
               value={pxPerSec.value}
-              min={ZOOM_MIN}
-              max={ZOOM_MAX}
-              onChange={zoomTo}
+              onChange={(zoom) => zoomTo(zoom)}
             />
             <button
-              onClick={() => zoomTo(pxPerSec.value + 10)}
+              onClick={() => zoomStep(1)}
               class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom in"
+              aria-label="Zoom in"
             >
               <ZoomIn class="h-3.5 w-3.5" />
             </button>
@@ -303,7 +378,8 @@ export function Timeline() {
                 type="number"
                 min={ZOOM_MIN}
                 max={ZOOM_MAX}
-                value={Math.round(pxPerSec.value)}
+                step="any"
+                value={formatZoom(pxPerSec.value)}
                 onBlur={(event) => applyZoomInput(event.currentTarget as HTMLInputElement)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') applyZoomInput(event.currentTarget as HTMLInputElement)
@@ -329,7 +405,7 @@ export function Timeline() {
         class="relative min-h-0 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto overflow-y-hidden dark:scrollbar-thumb-slate-700"
         onPointerDown={onTrackPointerDown}
       >
-        {isEmpty ? (
+        {isEmpty.value ? (
           <div class="flex h-full items-center justify-center px-4 md:pb-5">
             <button
               type="button"
@@ -342,9 +418,18 @@ export function Timeline() {
           </div>
         ) : (
           <div class="relative flex h-full items-start gap-1 px-4 pt-12">
+            <TimeRuler
+              class="absolute top-0 left-0 h-7"
+              width={(layout.at(-1)?.endX ?? 0) + PADDING_PX}
+              pxPerSec={pxPerSec.value}
+              endTime={totalDuration}
+              timeToX={(time) => globalTimeToX(layout, time)}
+              xToTime={(x) => xToGlobalTime(layout, x)}
+              scrollWindow={scrollWindow}
+              markerXs={cutMarkerXs(layout, GAP_PX)}
+            />
             {(() => {
               const dragStateValue = dragState.value
-              const segments = timeline.value
               const fromIndex = dragStateValue
                 ? segments.findIndex((segment) => segment.id === dragStateValue.segmentId)
                 : -1

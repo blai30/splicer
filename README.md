@@ -34,7 +34,9 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
   - cut at playhead
   - delete
 - Drag segment trim handles for interactive left/right trimming.
-- Seek by clicking/dragging in the timeline.
+- Seek by clicking/dragging in the timeline or on its time ruler (the ruler scrubs across cuts, which it marks).
+- The view follows the playhead during playback and after keyboard seeks, pausing briefly after you scroll by hand.
+- Fit the whole timeline in view with one click; the first import zooms out to fit a long timeline.
 
 ### Playback
 
@@ -66,10 +68,12 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 - `Space`: Play/Pause
 - `ArrowLeft` or `,`: Step back one frame
 - `ArrowRight` or `.`: Step forward one frame
-- `-`: Zoom timeline out
-- `=`: Zoom timeline in
+- `-`: Zoom timeline out (anchored on the playhead)
+- `=`: Zoom timeline in (anchored on the playhead)
+- `Shift` + `Z`: Fit the whole timeline in view
 - `Ctrl` + mouse wheel up/down: Zoom timeline in/out at cursor
-- `Enter` (while focused in zoom % field): Apply typed zoom level
+- `Shift` + mouse wheel: Scroll the Advanced timeline through time
+- `Enter` (while focused in the px/s zoom field): Apply typed zoom level
 - `I`: Set in-point
 - `O`: Set out-point
 - `C`: Cut at playhead

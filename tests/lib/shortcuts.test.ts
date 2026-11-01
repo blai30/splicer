@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { handleShortcut, matchesShortcut, shortcutsForMode, type Shortcut } from '@/lib/shortcuts'
 import { advancedSnapEnabled, appMode, pxPerSec } from '@/lib/store'
+import { registerTimelineNavigator } from '@/lib/timelineNavigator'
 
 function keyEvent(key: string, init: KeyboardEventInit = {}) {
   return new KeyboardEvent('keydown', { key, ...init })
@@ -23,11 +24,34 @@ describe('keyboard shortcuts', () => {
     document.body.innerHTML = ''
   })
 
-  it('zooms with = and -', () => {
+  it('zooms by a constant ratio with = and -', () => {
     press('=')
-    expect(pxPerSec.value).toBe(90)
+    expect(pxPerSec.value).toBe(100)
     press('-')
     expect(pxPerSec.value).toBe(80)
+    press('-')
+    expect(pxPerSec.value).toBe(64)
+  })
+
+  it('routes zoom, fit, and keyboard seeks to the mounted timeline', () => {
+    const calls: string[] = []
+    const unregister = registerTimelineNavigator({
+      zoomStep: (direction) => calls.push(`zoom ${direction}`),
+      fit: () => calls.push('fit'),
+      revealPlayhead: () => calls.push('reveal'),
+    })
+    press('=')
+    press('-')
+    press('Z', { shiftKey: true })
+    press('ArrowRight')
+    press('Home')
+    unregister()
+    press('Z', { shiftKey: true })
+    expect(calls).toEqual(['zoom 1', 'zoom -1', 'fit', 'reveal', 'reveal'])
+    // Zoom still works with no timeline mounted.
+    expect(pxPerSec.value).toBe(80)
+    press('=')
+    expect(pxPerSec.value).toBe(100)
   })
 
   it('ignores keys typed into text fields', () => {
@@ -56,7 +80,7 @@ describe('keyboard shortcuts', () => {
 
   it('ignores Shift on symbol keys whose character already encodes it', () => {
     press('+', { shiftKey: true })
-    expect(pxPerSec.value).toBe(90)
+    expect(pxPerSec.value).toBe(100)
   })
 
   it('runs Advanced-only shortcuts only in Advanced mode', () => {

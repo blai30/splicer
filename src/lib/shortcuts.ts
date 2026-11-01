@@ -16,7 +16,7 @@ import {
   stepFrame as basicStepFrame,
   togglePlay as basicTogglePlay,
 } from '@/lib/playback'
-import { advancedSnapEnabled, appMode, ZOOM_MAX, ZOOM_MIN, pxPerSec } from '@/lib/store'
+import { advancedSnapEnabled, appMode } from '@/lib/store'
 import {
   cutAtPlayhead,
   deleteSegment,
@@ -26,15 +26,10 @@ import {
   toggleMute,
   undo,
 } from '@/lib/timelineEditing'
-
-const ZOOM_KEYBOARD_STEP = 10
+import { fitTimeline, revealTimelinePlayhead, zoomTimelineStep } from '@/lib/timelineNavigator'
 
 function isAdvanced(): boolean {
   return appMode.value === 'advanced'
-}
-
-function zoomBy(delta: number) {
-  pxPerSec.value = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pxPerSec.value + delta))
 }
 
 // Mode-aware action dispatch: each action goes to the active editor. Zoom is
@@ -43,13 +38,16 @@ function togglePlay() {
   if (isAdvanced()) advancedTogglePlay()
   else basicTogglePlay()
 }
+// Keyboard seeks scroll a playhead that left the view back into it.
 function stepFrame(direction: 1 | -1) {
   if (isAdvanced()) advancedStepFrame(direction)
   else basicStepFrame(direction)
+  revealTimelinePlayhead()
 }
 function goToStart() {
   if (isAdvanced()) advancedSeek(0)
   else basicGoToStart()
+  revealTimelinePlayhead()
 }
 function setIn() {
   if (isAdvanced()) setAdvancedInPoint()
@@ -146,13 +144,20 @@ export const SHORTCUTS: Shortcut[] = [
     keys: ['=', '+'],
     display: '+',
     description: 'Zoom In',
-    run: () => zoomBy(ZOOM_KEYBOARD_STEP),
+    run: () => zoomTimelineStep(1),
   },
   {
     keys: ['-', '_'],
     display: '-',
     description: 'Zoom Out',
-    run: () => zoomBy(-ZOOM_KEYBOARD_STEP),
+    run: () => zoomTimelineStep(-1),
+  },
+  {
+    keys: ['z'],
+    shift: true,
+    display: 'Shift Z',
+    description: 'Fit Timeline to View',
+    run: fitTimeline,
   },
 ]
 

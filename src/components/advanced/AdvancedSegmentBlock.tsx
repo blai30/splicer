@@ -38,6 +38,11 @@ import {
 } from '@/lib/store'
 import { createEdgeAutoScroller, createRafThrottler } from '@/lib/timelineDomain'
 import {
+  BLOCK_DURATION_MIN_WIDTH_PX,
+  BLOCK_NAME_MIN_WIDTH_PX,
+  MIN_BLOCK_WIDTH_PX,
+} from '@/lib/timelineNavigation'
+import {
   resolveEdgeTime,
   resolveMoveStart,
   snapThresholdSeconds,
@@ -113,7 +118,7 @@ export function AdvancedSegmentBlock({
   const duration = segmentDuration(segment)
   const isSelected = advancedSelectedId.value === segment.id
   const left = TIMELINE_PAD_LEFT + segment.timelineStart * pxPerSec.value
-  const width = Math.max(2, duration * pxPerSec.value)
+  const width = Math.max(MIN_BLOCK_WIDTH_PX, duration * pxPerSec.value)
   const tracks = advancedTracks.value
   const laneIndex = tracks.findIndex((track) => track.id === segment.trackId)
 
@@ -377,13 +382,18 @@ export function AdvancedSegmentBlock({
             class="absolute inset-0 h-full w-full opacity-80"
           />
         )}
-        <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
-          {clip?.name ?? 'Clip'}
-          {segment.muted && <span class="ml-1">{'\u{1F507}'}</span>}
-        </span>
-        <span class="relative z-10 ml-auto shrink-0 self-end pr-2 text-sm text-white/70">
-          {formatTime(duration)}
-        </span>
+        {/* Labels would only be clipped noise on a block this narrow. */}
+        {width >= BLOCK_NAME_MIN_WIDTH_PX && (
+          <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
+            {clip?.name ?? 'Clip'}
+            {segment.muted && <span class="ml-1">{'\u{1F507}'}</span>}
+          </span>
+        )}
+        {width >= BLOCK_DURATION_MIN_WIDTH_PX && (
+          <span class="relative z-10 ml-auto shrink-0 self-end pr-2 text-sm text-white/70">
+            {formatTime(duration)}
+          </span>
+        )}
         <div
           ref={leftRef}
           class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 hover:bg-white/70 hover:duration-0"

@@ -212,8 +212,7 @@ persistSignal('advancedOutputLock', advancedOutputLock)
 persistSignal('advancedStageHeight', advancedStageHeight)
 persistSignal('advancedSnapEnabled', advancedSnapEnabled)
 
-export const ZOOM_MIN = 5
-export const ZOOM_MAX = 200
+export { ZOOM_MAX, ZOOM_MIN } from '@/lib/timelineNavigation'
 // Must match the timeline track's DOM: gap-1 between blocks, px-4 padding.
 export const GAP_PX = 4
 export const PADDING_PX = 16

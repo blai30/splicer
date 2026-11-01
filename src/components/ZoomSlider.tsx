@@ -1,29 +1,32 @@
 import clsx from 'clsx/lite'
 
+import {
+  sliderFractionToZoom,
+  stepZoom,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  zoomToSliderFraction,
+} from '@/lib/timelineNavigation'
+
 const TICKS = [0, 0.25, 0.5, 0.75, 1]
 
+// Timeline zoom slider on a log scale, so every part of the track changes the
+// zoom by the same ratio.
 export function ZoomSlider({
   value,
-  min,
-  max,
   onChange,
   class: className,
 }: {
   value: number
-  min: number
-  max: number
   onChange: (value: number) => void
   class?: string
 }) {
-  const fraction = (value - min) / (max - min)
+  const fraction = zoomToSliderFraction(value)
 
   function seekFromPointer(pointerEvent: PointerEvent, element: HTMLElement) {
     const rect = element.getBoundingClientRect()
-    const pointerFraction = Math.max(
-      0,
-      Math.min(1, (pointerEvent.clientX - rect.left) / rect.width)
-    )
-    onChange(min + pointerFraction * (max - min))
+    if (rect.width <= 0) return
+    onChange(sliderFractionToZoom((pointerEvent.clientX - rect.left) / rect.width))
   }
 
   function onPointerDown(event: PointerEvent) {
@@ -44,10 +47,37 @@ export function ZoomSlider({
     element.addEventListener('pointercancel', onUp)
   }
 
+  function onKeyDown(event: KeyboardEvent) {
+    const next =
+      event.key === 'ArrowRight' || event.key === 'ArrowUp'
+        ? stepZoom(value, 1)
+        : event.key === 'ArrowLeft' || event.key === 'ArrowDown'
+          ? stepZoom(value, -1)
+          : event.key === 'Home'
+            ? ZOOM_MIN
+            : event.key === 'End'
+              ? ZOOM_MAX
+              : null
+    if (next === null) return
+    event.preventDefault()
+    onChange(next)
+  }
+
   return (
     <div
-      class={clsx('relative h-5 touch-none select-none', className ?? 'w-28')}
+      role="slider"
+      tabIndex={0}
+      aria-label="Timeline zoom"
+      aria-valuemin={ZOOM_MIN}
+      aria-valuemax={ZOOM_MAX}
+      aria-valuenow={Math.round(value * 10) / 10}
+      aria-valuetext={`${Math.round(value * 10) / 10} pixels per second`}
+      class={clsx(
+        'relative h-5 touch-none rounded-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-violet-400',
+        className ?? 'w-28'
+      )}
       onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
     >
       <div class="absolute top-1/2 right-0 left-0 h-px -translate-y-1/2 bg-slate-200 dark:bg-slate-700" />
       <div
@@ -57,11 +87,11 @@ export function ZoomSlider({
       {TICKS.map((tick) => (
         <div
           key={tick}
-          class="absolute top-1/2 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-300 dark:bg-slate-600"
-          style={{
-            left: `${tick * 100}%`,
-            height: tick === 0 || tick === 1 ? '8px' : '5px',
-          }}
+          class={clsx(
+            'absolute top-1/2 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-300 dark:bg-slate-600',
+            tick === 0 || tick === 1 ? 'h-2' : 'h-1.5'
+          )}
+          style={{ left: `${tick * 100}%` }}
         />
       ))}
       <div

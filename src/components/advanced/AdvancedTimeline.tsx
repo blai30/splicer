@@ -4,6 +4,7 @@ import {
   ArrowLeftToLine,
   ArrowRightToLine,
   Magnet,
+  Maximize2,
   Plus,
   Redo2,
   Scissors,
@@ -18,6 +19,8 @@ import { useEffect, useRef } from 'preact/hooks'
 import { AdvancedSegmentBlock } from '@/components/advanced/AdvancedSegmentBlock'
 import { AdvancedTrackHeaders } from '@/components/advanced/AdvancedTrackHeaders'
 import { TimelinePlayhead } from '@/components/TimelinePlayhead'
+import { TimeRuler } from '@/components/TimeRuler'
+import { useScrollWindow, useTimelineNavigation } from '@/components/useTimelineNavigation'
 import { ZoomSlider } from '@/components/ZoomSlider'
 import {
   canRedoAdvanced,
@@ -26,7 +29,11 @@ import {
   undoAdvanced,
 } from '@/lib/advanced/advancedHistory'
 import { seek } from '@/lib/advanced/advancedPlayback'
-import { projectDuration, TIMELINE_PAD_LEFT } from '@/lib/advanced/advancedTimelineDomain'
+import {
+  advancedWheelAction,
+  projectDuration,
+  TIMELINE_PAD_LEFT,
+} from '@/lib/advanced/advancedTimelineDomain'
 import {
   cutAdvancedAtPlayhead,
   deleteAdvancedSelected,
@@ -39,20 +46,22 @@ import {
   advancedDragPreviewEnd,
   advancedNewTrackTarget,
   advancedPlayhead,
+  advancedPlaying,
   advancedSegments,
   advancedSelectedId,
   advancedSnapEnabled,
   advancedSnapLine,
   advancedTracks,
   pxPerSec,
-  ZOOM_MAX,
-  ZOOM_MIN,
 } from '@/lib/store'
-import { computeZoomScroll, createEdgeAutoScroller, createRafThrottler } from '@/lib/timelineDomain'
+import { createEdgeAutoScroller, createRafThrottler } from '@/lib/timelineDomain'
+import { fitZoom, ZOOM_STEP_FACTOR } from '@/lib/timelineNavigation'
 
 const LANE_HEIGHT = 56
 const PAD_LEFT = TIMELINE_PAD_LEFT
-const ZOOM_SCALE_FACTOR = 1.25
+// Room kept after the project end when fitting, so the last clip's edge is
+// clear of the scroller edge.
+const FIT_TRAILING_PX = 24
 
 export function AdvancedTimeline() {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -64,8 +73,23 @@ export function AdvancedTimeline() {
   // carry it past the committed end with the lanes and drop zones beneath it.
   const duration = Math.max(projectDuration(segments), advancedDragPreviewEnd.value ?? 0)
   const contentWidth = Math.max(600, duration * pxPerSec.value + 200)
-  // Read only by the playhead leaf, so playback does not re-render the lanes.
+  // Read only by the playhead leaf and the follow effect, so playback does not
+  // re-render the lanes.
   const playheadX = useComputed(() => PAD_LEFT + advancedPlayhead.value * pxPerSec.value)
+  const isEmpty = useComputed(() => advancedSegments.value.length === 0)
+  const scrollWindow = useScrollWindow(scrollRef)
+  const { zoomTo, zoomStep, fit } = useTimelineNavigation({
+    scrollRef,
+    geometry: {
+      timeToX: (time, zoom) => PAD_LEFT + time * zoom,
+      xToTime: (x, zoom) => Math.max(0, (x - PAD_LEFT) / zoom),
+      fitZoom: (viewWidth) =>
+        fitZoom(viewWidth - PAD_LEFT - FIT_TRAILING_PX, projectDuration(segments)),
+    },
+    playheadX,
+    playing: advancedPlaying,
+    isEmpty,
+  })
 
   // Map a viewport X to a timeline time, accounting for horizontal scroll.
   function timeFromClientX(clientX: number): number {
@@ -80,7 +104,7 @@ export function AdvancedTimeline() {
   // re-renders each seek triggers), so every move/up routes here instead of
   // leaking to the clip blocks underneath (which would otherwise start dragging
   // the clip and strand the capture, making the playhead stick to the cursor).
-  function startScrub(event: PointerEvent, container: HTMLElement) {
+  function startScrub(event: PointerEvent, container: HTMLElement, keepSelection: boolean) {
     seek(timeFromClientX(event.clientX))
     container.setPointerCapture(event.pointerId)
     const throttler = createRafThrottler()
@@ -110,8 +134,8 @@ export function AdvancedTimeline() {
       container.removeEventListener('pointerup', onUp)
       container.removeEventListener('pointercancel', onUp)
     }
-    // Clicking empty lane space also clears the clip selection.
-    advancedSelectedId.value = null
+    // Clicking empty lane space also clears the clip selection; the ruler only seeks.
+    if (!keepSelection) advancedSelectedId.value = null
     container.addEventListener('pointermove', onMove)
     container.addEventListener('pointerup', onUp)
     container.addEventListener('pointercancel', onUp)
@@ -123,41 +147,37 @@ export function AdvancedTimeline() {
     // Clip blocks handle their own drag/trim/selection; a press anywhere else
     // (blank lane or the playhead) scrubs the playhead from that point.
     if (target.closest('[data-advanced-segment]')) return
-    startScrub(event, event.currentTarget as HTMLElement)
+    startScrub(
+      event,
+      event.currentTarget as HTMLElement,
+      target.closest('[data-time-ruler]') !== null
+    )
   }
 
   // Cancel any pending throttled seek or auto-scroll if we unmount mid-drag.
   useEffect(() => () => stopScrubRef.current?.(), [])
 
-  function zoomTo(newPx: number, anchorX?: number) {
-    const scroller = scrollRef.current
-    if (!scroller) return
-    const oldPx = pxPerSec.value
-    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
-    if (clamped === oldPx) return
-    // Apply the anchored scroll after the re-render widens the lanes; set now,
-    // the browser would clamp it to the old scroll range.
-    const target =
-      anchorX === undefined
-        ? null
-        : computeZoomScroll(oldPx, clamped, anchorX, scroller.scrollLeft, PAD_LEFT)
-    pxPerSec.value = clamped
-    if (target !== null) requestAnimationFrame(() => (scroller.scrollLeft = Math.max(0, target)))
-  }
-
   function onWheel(event: WheelEvent) {
     const scroller = scrollRef.current
     if (!scroller) return
-    if (event.ctrlKey) {
-      event.preventDefault()
-      const rect = scroller.getBoundingClientRect()
-      const anchorX = event.clientX - rect.left
-      const factor = event.deltaY > 0 ? 1 / ZOOM_SCALE_FACTOR : ZOOM_SCALE_FACTOR
-      zoomTo(pxPerSec.value * factor, anchorX)
-    } else if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-      event.preventDefault()
-      scroller.scrollLeft += event.deltaY
+    const rect = scroller.getBoundingClientRect()
+    const action = advancedWheelAction({
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      lanesOverflowView: rect.top < 0 || rect.bottom > window.innerHeight,
+    })
+    if (action === 'native') return
+    event.preventDefault()
+    if (action === 'zoom') {
+      const factor = event.deltaY > 0 ? 1 / ZOOM_STEP_FACTOR : ZOOM_STEP_FACTOR
+      zoomTo(pxPerSec.value * factor, event.clientX - rect.left)
+      return
     }
+    // Shift+wheel arrives as deltaY or, on some platforms, already as deltaX.
+    scroller.scrollLeft +=
+      Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX
   }
 
   const selectedSegment = segments.find((segment) => segment.id === advancedSelectedId.value)
@@ -263,23 +283,32 @@ export function AdvancedTimeline() {
           </div>
           <div class="flex shrink-0 items-center gap-2 md:gap-3">
             <button
-              onClick={() => zoomTo(pxPerSec.value - 10)}
+              onClick={() => fit()}
+              disabled={isEmpty.value}
+              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-500 dark:hover:text-slate-300"
+              title="Fit timeline to view (Shift+Z)"
+              aria-label="Fit timeline to view"
+            >
+              <Maximize2 class="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => zoomStep(-1)}
               class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom out"
+              aria-label="Zoom out"
             >
               <ZoomOut class="h-3.5 w-3.5" />
             </button>
             <ZoomSlider
               class="w-16 md:w-28"
               value={pxPerSec.value}
-              min={ZOOM_MIN}
-              max={ZOOM_MAX}
-              onChange={zoomTo}
+              onChange={(zoom) => zoomTo(zoom)}
             />
             <button
-              onClick={() => zoomTo(pxPerSec.value + 10)}
+              onClick={() => zoomStep(1)}
               class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom in"
+              aria-label="Zoom in"
             >
               <ZoomIn class="h-3.5 w-3.5" />
             </button>
@@ -297,11 +326,23 @@ export function AdvancedTimeline() {
           class="relative min-h-0 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto dark:scrollbar-thumb-slate-700"
           onPointerDown={onTrackPointerDown}
         >
-          {/* spacer matching the headers' Add-track button row */}
           <div style={{ width: `${contentWidth}px` }}>
-            <div class="flex h-7 items-stretch py-0.5">
+            {/* Ruler row, as tall as the headers' Add-track button row. While a
+                clip is dragged, the new-track drop zone covers it. */}
+            <div class="relative h-7">
+              <TimeRuler
+                class="absolute inset-y-0 left-0"
+                width={contentWidth}
+                pxPerSec={pxPerSec.value}
+                endTime={(contentWidth - PAD_LEFT) / pxPerSec.value}
+                timeToX={(time) => PAD_LEFT + time * pxPerSec.value}
+                xToTime={(x) => (x - PAD_LEFT) / pxPerSec.value}
+                scrollWindow={scrollWindow}
+              />
               {advancedClipDragActive.value && (
-                <NewTrackDropZone active={advancedNewTrackTarget.value === 'top'} />
+                <div class="absolute inset-0 flex items-stretch bg-slate-50 py-0.5 dark:bg-slate-900">
+                  <NewTrackDropZone active={advancedNewTrackTarget.value === 'top'} />
+                </div>
               )}
             </div>
             <div data-advanced-lanes>

@@ -13,6 +13,19 @@ export function formatTimecode(seconds: number): string {
   return `${minutes}:${sec.toString().padStart(2, '0')}.${ms}`
 }
 
+// Time ruler labels: "1:05", "1:05.5" with tenths, "1:00:00" past an hour.
+// Rounded to the shown precision first, so 0.3 s never reads as "0:00.2".
+export function formatRulerLabel(seconds: number, showTenths: boolean): string {
+  const tenths = Math.round(Math.max(0, seconds) * 10)
+  const wholeSeconds = Math.floor(tenths / 10)
+  const hours = Math.floor(wholeSeconds / 3600)
+  const minutes = Math.floor((wholeSeconds % 3600) / 60)
+  const sec = (wholeSeconds % 60).toString().padStart(2, '0')
+  const clock =
+    hours > 0 ? `${hours}:${minutes.toString().padStart(2, '0')}:${sec}` : `${minutes}:${sec}`
+  return showTenths ? `${clock}.${tenths % 10}` : clock
+}
+
 // "0:12.40": hundredths, for gesture readouts that need to show frame-level moves.
 export function formatPreciseTime(seconds: number): string {
   const hundredths = Math.round(Math.max(0, seconds) * 100)

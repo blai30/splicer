@@ -74,17 +74,21 @@ export function splitSegmentAtPlayhead(
   }
 }
 
+// Block positions on the Basic track. Each block spans its duration at the
+// current zoom, but never less than `minWidthPx`, so positions inside a block
+// map to time proportionally (see segmentTimeToX) rather than by pxPerSec.
 export function buildSegmentLayout(
   segments: Segment[],
   pxPerSec: number,
   gapPx: number,
-  paddingPx: number
+  paddingPx: number,
+  minWidthPx = 0
 ): SegmentLayoutItem[] {
   let cursorX = paddingPx
   const layout: SegmentLayoutItem[] = []
 
   for (const segment of segments) {
-    const width = (segment.endTime - segment.startTime) * pxPerSec
+    const width = Math.max(minWidthPx, (segment.endTime - segment.startTime) * pxPerSec)
     const startX = cursorX
     const endX = startX + width
     layout.push({ segment, startX, endX })
@@ -94,35 +98,125 @@ export function buildSegmentLayout(
   return layout
 }
 
+function itemDuration(item: SegmentLayoutItem): number {
+  return item.segment.endTime - item.segment.startTime
+}
+
+// Track x of a source time inside one block.
+export function segmentTimeToX(item: SegmentLayoutItem, sourceTime: number): number {
+  const duration = itemDuration(item)
+  if (duration <= 0) return item.startX
+  return (
+    item.startX + ((sourceTime - item.segment.startTime) / duration) * (item.endX - item.startX)
+  )
+}
+
+// Source time under a track x inside one block (unclamped).
+export function segmentXToTime(item: SegmentLayoutItem, x: number): number {
+  const width = item.endX - item.startX
+  if (width <= 0) return item.segment.startTime
+  return item.segment.startTime + ((x - item.startX) / width) * itemDuration(item)
+}
+
 export function findSegmentAtTrackX(
   layout: SegmentLayoutItem[],
-  x: number,
-  pxPerSec: number
+  x: number
 ): { segment: Segment; time: number } | null {
   for (const item of layout) {
     if (x >= item.startX && x <= item.endX) {
-      return {
-        segment: item.segment,
-        time: item.segment.startTime + (x - item.startX) / pxPerSec,
-      }
+      return { segment: item.segment, time: segmentXToTime(item, x) }
     }
   }
 
   return null
 }
 
+// Total length of the edited (concatenated) timeline.
+export function layoutDuration(layout: SegmentLayoutItem[]): number {
+  let total = 0
+  for (const item of layout) total += itemDuration(item)
+  return total
+}
+
+// Track x of a time on the concatenated timeline. A time on a cut maps to the
+// start of the later block, past the gap.
+export function globalTimeToX(layout: SegmentLayoutItem[], globalTime: number): number {
+  let elapsed = 0
+  for (const item of layout) {
+    const duration = itemDuration(item)
+    if (globalTime < elapsed + duration) {
+      return segmentTimeToX(item, item.segment.startTime + Math.max(0, globalTime - elapsed))
+    }
+    elapsed += duration
+  }
+  return layout.at(-1)?.endX ?? 0
+}
+
+// Concatenated-timeline time under a track x. The padding before the first
+// block reads as 0, a gap as the start of the block after it, and anything
+// past the last block as the end.
+export function xToGlobalTime(layout: SegmentLayoutItem[], x: number): number {
+  let elapsed = 0
+  for (const item of layout) {
+    const duration = itemDuration(item)
+    if (x < item.startX) return elapsed
+    if (x <= item.endX) return elapsed + (segmentXToTime(item, x) - item.segment.startTime)
+    elapsed += duration
+  }
+  return elapsed
+}
+
+// The segment and source time playing at a concatenated-timeline time. The
+// very end resolves to the last segment's out-point.
+export function globalTimeToSegment(
+  layout: SegmentLayoutItem[],
+  globalTime: number
+): { segment: Segment; time: number } | null {
+  let elapsed = 0
+  for (const item of layout) {
+    const duration = itemDuration(item)
+    if (globalTime < elapsed + duration) {
+      return {
+        segment: item.segment,
+        time: item.segment.startTime + Math.max(0, globalTime - elapsed),
+      }
+    }
+    elapsed += duration
+  }
+  const last = layout.at(-1)
+  return last ? { segment: last.segment, time: last.segment.endTime } : null
+}
+
+// Centers of the gaps between blocks: where the cuts sit on the ruler.
+export function cutMarkerXs(layout: SegmentLayoutItem[], gapPx: number): number[] {
+  return layout.slice(1).map((item) => item.startX - gapPx / 2)
+}
+
+// Track x of the Basic playhead: the playhead time inside the active block,
+// or `fallbackX` when no block is active.
+export function playheadXInLayout(
+  layout: SegmentLayoutItem[],
+  activeSegmentId: string | undefined,
+  playheadTime: number,
+  fallbackX: number
+): number {
+  const item = layout.find((entry) => entry.segment.id === activeSegmentId)
+  return item ? segmentTimeToX(item, playheadTime) : fallbackX
+}
+
 export function findDropIndexAtTrackX(
   segments: Segment[],
   x: number,
   pxPerSec: number,
-  gapPx: number
+  gapPx: number,
+  minWidthPx = 0
 ): number {
   let accX = 0
   let dropIndex = 0
 
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i]
-    const width = (segment.endTime - segment.startTime) * pxPerSec
+    const width = Math.max(minWidthPx, (segment.endTime - segment.startTime) * pxPerSec)
     if (x < accX + width / 2) {
       dropIndex = i
       break
@@ -162,34 +256,22 @@ export function viewportToTrackX(
   return clientX - trackRect.left + trackScrollLeft
 }
 
-export function trackXToSegmentTime(
-  trackX: number,
-  segmentStartX: number,
-  pxPerSec: number
-): number {
-  return (trackX - segmentStartX) / pxPerSec
-}
-
 export function createTrackSeekHandler(options: {
-  timeline: Segment[]
-  pxPerSec: number
-  padding: number
-  gap: number
+  layout: SegmentLayoutItem[]
   trackElement: HTMLElement
   onSeek: (segmentId: string, time: number) => void
 }) {
-  const { timeline, pxPerSec, padding, gap, trackElement, onSeek } = options
+  const { layout, trackElement, onSeek } = options
   const throttler = createRafThrottler()
-  const layout = buildSegmentLayout(timeline, pxPerSec, gap, padding)
 
   return {
     onPointerDown(event: PointerEvent) {
-      if (timeline.length === 0) return
+      if (layout.length === 0) return
 
       function seekFromPointer(pointerEvent: PointerEvent) {
         const rect = trackElement.getBoundingClientRect()
         const trackX = viewportToTrackX(pointerEvent.clientX, rect, trackElement.scrollLeft)
-        const hit = findSegmentAtTrackX(layout, trackX, pxPerSec)
+        const hit = findSegmentAtTrackX(layout, trackX)
         if (!hit) return
         onSeek(hit.segment.id, hit.time)
       }
@@ -220,13 +302,12 @@ export function createTrackSeekHandler(options: {
 }
 
 export function createPlayheadDragHandler(options: {
-  segment: Segment
-  segmentStartX: number
-  pxPerSec: number
+  item: SegmentLayoutItem
   trackElement: HTMLElement
   onUpdate: (time: number) => void
 }) {
-  const { segment, segmentStartX, pxPerSec, trackElement, onUpdate } = options
+  const { item, trackElement, onUpdate } = options
+  const { segment } = item
   const throttler = createRafThrottler()
 
   return {
@@ -238,8 +319,7 @@ export function createPlayheadDragHandler(options: {
       function syncPlayheadFromPointer(moveEvent: PointerEvent) {
         const rect = trackElement.getBoundingClientRect()
         const trackX = viewportToTrackX(moveEvent.clientX, rect, trackElement.scrollLeft)
-        const segmentTime = trackXToSegmentTime(trackX, segmentStartX, pxPerSec)
-        const clampedTime = clampPlayheadForSegment(segment, segment.startTime + segmentTime)
+        const clampedTime = clampPlayheadForSegment(segment, segmentXToTime(item, trackX))
         onUpdate(clampedTime)
       }
 
@@ -263,17 +343,6 @@ export function createPlayheadDragHandler(options: {
       throttler.cancel()
     },
   }
-}
-
-export function computeZoomScroll(
-  oldPx: number,
-  newPx: number,
-  anchorX: number,
-  currentScroll: number,
-  padding: number
-): number {
-  const timeAtCursor = (anchorX + currentScroll - padding) / oldPx
-  return timeAtCursor * newPx + padding - anchorX
 }
 
 export const EDGE_SCROLL_ZONE_PX = 40
