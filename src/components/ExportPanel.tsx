@@ -83,15 +83,39 @@ function OptionButtonGroup<T extends string>({
   disabled?: boolean
   onSelect: (value: T) => void
 }) {
+  // Radio-group keyboard pattern: arrows move and select, one tab stop.
+  function onKeyDown(event: KeyboardEvent) {
+    const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown'
+    const backward = event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+    if (!forward && !backward) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (disabled) return
+    const index = options.findIndex((option) => option.value === selected)
+    const next = options[(index + (forward ? 1 : -1) + options.length) % options.length]
+    onSelect(next.value)
+    const group = event.currentTarget as HTMLElement
+    requestAnimationFrame(() =>
+      group.querySelector<HTMLButtonElement>(`[data-value="${next.value}"]`)?.focus()
+    )
+  }
+
   return (
-    <div role="radiogroup" aria-label={label} class="flex flex-wrap items-center gap-2">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      onKeyDown={onKeyDown}
+      class="flex flex-wrap items-center gap-2"
+    >
       <span class="w-14 text-sm text-slate-500 dark:text-slate-400">{label}</span>
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
           role="radio"
+          data-value={option.value}
           aria-checked={selected === option.value}
+          tabIndex={selected === option.value ? 0 : -1}
           disabled={disabled}
           class={clsx(
             selected === option.value
@@ -165,7 +189,8 @@ export function ExportPanel() {
   const summary = hasContent ? summarize(isAdvanced) : null
 
   async function handleExport() {
-    if (busy || !summary) return
+    // Read the live flag: a fast double-click lands before the re-render.
+    if (exporting.value || !summary) return
     // Capture settings now: the user may change them while the export runs.
     const format = exportFormat.value
     const chosenQuality = quality.value

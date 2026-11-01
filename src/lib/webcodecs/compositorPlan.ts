@@ -11,6 +11,7 @@ export type CompositorPlan = {
   outputWidth: number
   outputHeight: number
   frameDurationUs: number | null
+  frameRate: number | null
   videoBitrate: number
   audioBitrate: number
   keyFrameIntervalUs: number
@@ -52,12 +53,16 @@ export function buildCompositorPlan(job: CompositorJob): CompositorPlan {
   }))
 
   const fpsGrid = job.fps === 'original' ? originalFrameRate(job) : Number(job.fps)
-  const hasMixedAudio = job.mixedAudio != null && job.mixedAudio.channelData.length > 0
+  const hasMixedAudio = job.audioLayers.some(
+    (layer) => job.sources[layer.sourceIndex]?.hasAudio === true
+  )
 
   return {
     outputWidth,
     outputHeight,
     frameDurationUs: params.frameDurationUs,
+    // The compositor already emits frames on its own exact fps grid.
+    frameRate: null,
     videoBitrate: params.videoBitrate,
     audioBitrate: params.audioBitrate,
     keyFrameIntervalUs: params.keyFrameIntervalUs,
