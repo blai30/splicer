@@ -1,6 +1,7 @@
 import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { Link2, Unlink2 } from 'lucide-preact'
+import { useLayoutEffect, useRef } from 'preact/hooks'
 
 import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import { placeSegment, setSegmentProps } from '@/lib/advanced/advancedSegmentEditing'
@@ -10,6 +11,11 @@ import { advancedSegments, advancedSelectedId, advancedSelectedIds } from '@/lib
 import type { Transform } from '@/lib/types'
 
 type BoxField = 'x' | 'y' | 'width' | 'height'
+type FadeField = 'fadeIn' | 'fadeOut'
+type TypedField = BoxField | FadeField
+
+// Text typed into fields of one clip and not yet committed.
+type PendingEntries = { id: string | null; values: Partial<Record<TypedField, string>> }
 
 const BOX_FIELDS: { field: BoxField; label: string; name: string }[] = [
   { field: 'x', label: 'X', name: 'X position' },
@@ -35,6 +41,19 @@ export function editedTransform(
   return { ...transform, height: size, width: linked ? size * aspect : transform.width }
 }
 
+// Store `text` typed into `field` of clip `id`; an entry that is not a number
+// changes nothing.
+function commitTypedValue(id: string, field: TypedField, text: string, linked: boolean) {
+  const current = advancedSegments.value.find((entry) => entry.id === id)
+  const value = Number(text)
+  if (!current || text.trim() === '' || !Number.isFinite(value)) return
+  if (field === 'fadeIn' || field === 'fadeOut') {
+    setSegmentProps(id, { [field]: value })
+  } else {
+    placeSegment(id, editedTransform(current.transform, field, value, linked))
+  }
+}
+
 // Typed values commit on Enter or when the field loses focus; an entry that
 // is not a number puts the current value back.
 function onEnter(commit: (input: HTMLInputElement) => void) {
@@ -48,7 +67,24 @@ function onEnter(commit: (input: HTMLInputElement) => void) {
 // Exact placement and mix settings for the primary selected clip.
 export function AdvancedInspector() {
   const aspectLinked = useSignal(true)
+  const pending = useRef<PendingEntries>({ id: null, values: {} })
   const selectedId = advancedSelectedId.value
+
+  // Clicking another clip re-renders these inputs for it before the focused one
+  // blurs, so commit what was typed for the previous clip when the selection
+  // changes rather than relying on that blur.
+  useLayoutEffect(
+    () => () => {
+      const { id, values } = pending.current
+      pending.current = { id: null, values: {} }
+      if (!id) return
+      for (const [field, text] of Object.entries(values) as [TypedField, string][]) {
+        commitTypedValue(id, field, text, aspectLinked.peek())
+      }
+    },
+    [selectedId]
+  )
+
   const segment = advancedSegments.value.find((entry) => entry.id === selectedId)
   if (!segment) return null
   const count = advancedSelectedIds.value.length
@@ -56,21 +92,26 @@ export function AdvancedInspector() {
   const id = segment.id
   const live = () => advancedSegments.value.find((entry) => entry.id === id)
 
-  function commitBox(field: BoxField, input: HTMLInputElement) {
-    const current = live()
-    if (!current) return
-    const value = Number(input.value)
-    if (input.value.trim() !== '' && Number.isFinite(value)) {
-      placeSegment(id, editedTransform(current.transform, field, value, aspectLinked.value))
-    }
-    // Show what was stored (sizes have a minimum), or the old value for a bad entry.
-    input.value = String(Math.round(live()?.transform[field] ?? value))
+  function noteTyped(field: TypedField, input: HTMLInputElement) {
+    if (pending.current.id !== id) pending.current = { id, values: {} }
+    pending.current.values[field] = input.value
   }
 
-  function commitFade(field: 'fadeIn' | 'fadeOut', input: HTMLInputElement) {
-    const value = Number(input.value)
-    if (input.value.trim() !== '' && Number.isFinite(value)) setSegmentProps(id, { [field]: value })
-    input.value = formatSeconds(live()?.[field] ?? 0)
+  function commitField(field: TypedField, input: HTMLInputElement) {
+    // Only typed text commits: a focus pass would otherwise store the rounded
+    // display value, or another clip's value after the selection changed.
+    const typed = pending.current.id === id && field in pending.current.values
+    if (typed) {
+      delete pending.current.values[field]
+      commitTypedValue(id, field, input.value, aspectLinked.value)
+    }
+    // Show what was stored (sizes have a minimum), or the old value for a bad entry.
+    const stored = live()
+    if (!stored) return
+    input.value =
+      field === 'fadeIn' || field === 'fadeOut'
+        ? formatSeconds(stored[field] ?? 0)
+        : String(Math.round(stored.transform[field]))
   }
 
   const opacityPercent = Math.round((segment.opacity ?? 1) * 100)
@@ -101,8 +142,9 @@ export function AdvancedInspector() {
               value={String(Math.round(segment.transform[field]))}
               aria-label={name}
               class="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-sm text-slate-800 tabular-nums outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              onBlur={(event) => commitBox(field, event.currentTarget as HTMLInputElement)}
-              onKeyDown={onEnter((input) => commitBox(field, input))}
+              onInput={(event) => noteTyped(field, event.currentTarget as HTMLInputElement)}
+              onBlur={(event) => commitField(field, event.currentTarget as HTMLInputElement)}
+              onKeyDown={onEnter((input) => commitField(field, input))}
             />
             {field === 'width' && (
               <button
@@ -159,8 +201,9 @@ export function AdvancedInspector() {
               value={formatSeconds(segment[field] ?? 0)}
               aria-label={`${label} duration in seconds`}
               class="w-16 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-sm text-slate-800 tabular-nums outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              onBlur={(event) => commitFade(field, event.currentTarget as HTMLInputElement)}
-              onKeyDown={onEnter((input) => commitFade(field, input))}
+              onInput={(event) => noteTyped(field, event.currentTarget as HTMLInputElement)}
+              onBlur={(event) => commitField(field, event.currentTarget as HTMLInputElement)}
+              onKeyDown={onEnter((input) => commitField(field, input))}
             />
             <span class="text-xs text-slate-500 dark:text-slate-400">s</span>
           </label>
