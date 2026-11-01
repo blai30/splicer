@@ -95,9 +95,32 @@ describe('copyBlockers', () => {
     ).toEqual([])
   })
 
+  it('ignores a resolution cap that leaves every clip at its size', () => {
+    // 1280x720: a 720p or 1080p cap never upscales, so the copy is the same.
+    expect(copyBlockers(input({ resolution: '720' }))).toEqual([])
+    expect(copyBlockers(input({ resolution: '1080' }))).toEqual([])
+    expect(
+      copyBlockers(input({ resolution: '720', sources: [source({ width: 720, height: 1280 })] }))
+    ).toEqual([])
+  })
+
+  it('blocks a resolution cap that shrinks any clip on the timeline', () => {
+    expect(
+      copyBlockers(
+        input({
+          resolution: '720',
+          slices: [{ sourceIndex: 0 }, { sourceIndex: 1 }],
+          sources: [source(), source({ name: 'big', width: 1920, height: 1080 })],
+        })
+      )
+    ).toContain('Resolution must be Original; 720p shrinks the video.')
+  })
+
   it('names each setting that needs a re-encode', () => {
     expect(copyBlockers(input({ fps: '30' }))).toEqual(['FPS must be Original.'])
-    expect(copyBlockers(input({ resolution: '720' }))).toEqual(['Resolution must be Original.'])
+    expect(copyBlockers(input({ resolution: '480' }))).toEqual([
+      'Resolution must be Original; 480p shrinks the video.',
+    ])
     expect(
       copyBlockers(
         input({ slices: [{ sourceIndex: 0, crop: { x: 0, y: 0, width: 640, height: 720 } }] })

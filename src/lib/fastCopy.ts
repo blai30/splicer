@@ -1,5 +1,6 @@
 import type { MbContainer } from '@/lib/exportCodecs'
 import type { Clip, CropParams, Framerate, Resolution } from '@/lib/types'
+import { resolutionShortSide } from '@/lib/webcodecs/outputSize'
 
 // Stream copy ("Original (no re-encode)"): the source's video packets are
 // written to the output as they are, so quality and size match the source.
@@ -133,7 +134,15 @@ export function copyBlockers(input: CopyEligibilityInput): string[] {
   if (used.length === 0) return ['Add a clip to the timeline first.']
 
   if (input.fps !== 'original') blockers.push('FPS must be Original.')
-  if (input.resolution !== 'original') blockers.push('Resolution must be Original.')
+  // A cap at or above the source's short side changes nothing (capShortSide
+  // never upscales), so only a cap that shrinks some clip blocks the copy.
+  const maxShortSide = resolutionShortSide(input.resolution)
+  if (
+    maxShortSide !== null &&
+    used.some((source) => Math.min(source.width, source.height) > maxShortSide)
+  ) {
+    blockers.push(`Resolution must be Original; ${maxShortSide}p shrinks the video.`)
+  }
   if (
     input.slices.some((slice) => {
       const source = input.sources[slice.sourceIndex]
