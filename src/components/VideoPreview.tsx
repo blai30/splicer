@@ -7,11 +7,17 @@ import { useEffect, useRef } from 'preact/hooks'
 import { VolumeControl } from '@/components/VolumeControl'
 import { formatTimecode } from '@/lib/format'
 import { attachVideo, detachVideo, setPlaybackRate, stepFrame, togglePlay } from '@/lib/playback'
-import { clips, currentPlaybackTime, playing, timeline } from '@/lib/store'
+import {
+  clips,
+  currentPlaybackTime,
+  getClipById,
+  playing,
+  selectedSegmentId,
+  timeline,
+} from '@/lib/store'
 
 const DEFAULT_PREVIEW_HEIGHT = 600
 const DEFAULT_PREVIEW_MAX_WIDTH = 1600
-const ASPECT_RATIO_VARIANCE_THRESHOLD = 0.01
 const PLAYBACK_SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
 export function VideoPreview() {
@@ -23,34 +29,17 @@ export function VideoPreview() {
   const playbackSpeed = useSignal(1)
   const hasManualResize = useRef(false)
 
+  // Match the export frame: the first segment sets the aspect ratio, and every
+  // other segment is letterboxed into it (object-contain on the video).
   function getTimelineAspectRatio(): number {
-    const ratios = timeline.value
-      .map((segment) => {
-        if (segment.crop && segment.crop.width > 0 && segment.crop.height > 0) {
-          return segment.crop.width / segment.crop.height
-        }
-
-        const clip = clips.value.find((clip) => clip.id === segment.clipId)
-        if (clip && clip.width > 0 && clip.height > 0) {
-          return clip.width / clip.height
-        }
-
-        return null
-      })
-      .filter((ratio): ratio is number => ratio !== null)
-
-    if (ratios.length === 0) return 16 / 9
-
-    const min = Math.min(...ratios)
-    const max = Math.max(...ratios)
-    const isMixed = max - min > ASPECT_RATIO_VARIANCE_THRESHOLD
-
-    if (isMixed) {
-      // Mixed aspect clips: use the smallest ratio as the common preview canvas.
-      return min
+    const first = timeline.value[0]
+    if (!first) return 16 / 9
+    if (first.crop && first.crop.width > 0 && first.crop.height > 0) {
+      return first.crop.width / first.crop.height
     }
-
-    return ratios[0]
+    const clip = getClipById(first.clipId)
+    if (clip && clip.width > 0 && clip.height > 0) return clip.width / clip.height
+    return 16 / 9
   }
 
   useEffect(() => {
@@ -105,6 +94,21 @@ export function VideoPreview() {
   }
 
   const hasContent = timeline.value.length > 0
+  // Position on the whole edited timeline: every segment before the active
+  // one, plus the offset inside it.
+  void clips.value
+  const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
+  let elapsedBefore = 0
+  let totalDuration = 0
+  let passedActive = false
+  for (const segment of timeline.value) {
+    const length = segment.endTime - segment.startTime
+    if (segment.id === activeId) passedActive = true
+    else if (!passedActive) elapsedBefore += length
+    totalDuration += length
+  }
+  const position = Math.min(totalDuration, elapsedBefore + currentPlaybackTime.value)
+  const timecode = `${formatTimecode(position)} / ${formatTimecode(totalDuration)}`
 
   return (
     <div
@@ -200,21 +204,12 @@ export function VideoPreview() {
               ))}
             </select>
             <span class="hidden text-sm text-slate-500 tabular-nums sm:inline dark:text-slate-400">
-              {formatTimecode(currentPlaybackTime.value)} /{' '}
-              {formatTimecode(
-                timeline.value.reduce(
-                  (acc, segment) => acc + (segment.endTime - segment.startTime),
-                  0
-                )
-              )}
+              {timecode}
             </span>
           </div>
         </div>
         <div class="pb-2 text-center text-sm text-slate-500 tabular-nums sm:hidden dark:text-slate-400">
-          {formatTimecode(currentPlaybackTime.value)} /{' '}
-          {formatTimecode(
-            timeline.value.reduce((acc, segment) => acc + (segment.endTime - segment.startTime), 0)
-          )}
+          {timecode}
         </div>
       </div>
     </div>

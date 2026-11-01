@@ -13,7 +13,7 @@ import {
 } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
 
-const FRAME_STEP = 1 / 30
+const DEFAULT_FRAME_RATE = 30
 
 type ActiveSegmentInfo = {
   url: string
@@ -180,6 +180,8 @@ export function detachVideo() {
   }
   cancelAnimationFrame(rafId)
   pendingSeekTime = null
+  resumeAfterSwitch = false
+  playing.value = false
   disposeEffects?.()
   disposeEffects = null
   video = null
@@ -192,7 +194,7 @@ export function togglePlay() {
   // without a source leaves a dangling rejected promise.
   if (!info) return
   if (video.paused) {
-    if (video.currentTime >= info.end) video.currentTime = info.start
+    if (video.currentTime >= info.end - 1e-3) video.currentTime = info.start
     playSafely(video)
   } else {
     video.pause()
@@ -203,12 +205,14 @@ export function stepFrame(direction: 1 | -1) {
   if (!video) return
   const info = getActiveSegmentInfo()
   if (!info) return
+  if (!video.paused) video.pause()
   const segmentStart = info.start
   const segmentEnd = info.end
+  const frameStep = 1 / (info.clip.frameRate || DEFAULT_FRAME_RATE)
   const nextTime =
     direction === 1
-      ? Math.min(segmentEnd, video.currentTime + FRAME_STEP)
-      : Math.max(segmentStart, video.currentTime - FRAME_STEP)
+      ? Math.min(segmentEnd, video.currentTime + frameStep)
+      : Math.max(segmentStart, video.currentTime - frameStep)
   video.currentTime = nextTime
   playheadTime.value = nextTime
   currentPlaybackTime.value = Math.max(0, nextTime - segmentStart)
@@ -216,6 +220,8 @@ export function stepFrame(direction: 1 | -1) {
 
 export function seek(time: number) {
   playheadTime.value = time
+  const info = getActiveSegmentInfo()
+  if (info) currentPlaybackTime.value = Math.max(0, Math.min(info.end, time) - info.start)
   if (!video) return
   if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
     // Metadata for a source switch is still loading; defer the seek so the
@@ -231,4 +237,13 @@ export function setPlaybackRate(rate: number) {
   // defaultPlaybackRate keeps the rate across src switches between segments.
   video.defaultPlaybackRate = rate
   video.playbackRate = rate
+}
+
+// Jump to the start of the first segment.
+export function goToStart() {
+  const first = timeline.value[0]
+  if (!first) return
+  if (video && !video.paused) video.pause()
+  selectedSegmentId.value = first.id
+  seek(first.startTime)
 }
