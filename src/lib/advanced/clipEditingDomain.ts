@@ -82,8 +82,10 @@ export function duplicateSegments(
 }
 
 // Place copied clips with the earliest at `atTime` and the topmost on lane
-// `targetLane`; the rest keep their time and lane offsets from those two,
-// clamped to the last lane.
+// `targetLane`; the rest keep their time and lane offsets from those two.
+// Like a group move, the whole group shifts up when it would run past the last
+// lane; only a copy taller than the track list (tracks removed since) folds
+// its lowest clips onto the last lane.
 export function pasteSegments(
   copied: { segment: AdvancedSegment; laneOffset: number }[],
   tracks: Track[],
@@ -94,8 +96,10 @@ export function pasteSegments(
   if (copied.length === 0 || tracks.length === 0) return []
   const earliest = Math.min(...copied.map(({ segment }) => segment.timelineStart))
   const start = Math.max(0, atTime)
+  const deepestOffset = Math.max(...copied.map(({ laneOffset }) => laneOffset))
+  const topLane = Math.max(0, Math.min(targetLane, tracks.length - 1 - deepestOffset))
   return copied.map(({ segment, laneOffset }) => {
-    const lane = Math.min(tracks.length - 1, Math.max(0, targetLane + laneOffset))
+    const lane = Math.min(tracks.length - 1, Math.max(0, topLane + laneOffset))
     return {
       ...segment,
       id: makeId(),

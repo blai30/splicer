@@ -98,13 +98,31 @@ describe('pasteSegments', () => {
     expect(pasted.every((entry) => entry.id.startsWith('new-'))).toBe(true)
   })
 
-  it('clamps lanes past the bottom track', () => {
+  it('shifts the whole group up instead of piling clips onto the bottom track', () => {
     const copied = [
       { segment: segment('a', 't1', 0), laneOffset: 0 },
-      { segment: segment('b', 't2', 0), laneOffset: 2 },
+      { segment: segment('b', 't2', 0), laneOffset: 1 },
     ]
     const pasted = pasteSegments(copied, TRACKS, 0, 2, makeId)
-    expect(pasted.map((entry) => entry.trackId)).toEqual(['t3', 't3'])
+    expect(pasted.map((entry) => entry.trackId)).toEqual(['t2', 't3'])
+    const spanning = [
+      { segment: segment('a', 't1', 0), laneOffset: 0 },
+      { segment: segment('b', 't3', 0), laneOffset: 2 },
+    ]
+    expect(pasteSegments(spanning, TRACKS, 0, 1, makeId).map((entry) => entry.trackId)).toEqual([
+      't1',
+      't3',
+    ])
+  })
+
+  it('folds only the overflow onto the last lane when the copy is taller than the tracks', () => {
+    const copied = [
+      { segment: segment('a', 't1', 0), laneOffset: 0 },
+      { segment: segment('b', 't2', 0), laneOffset: 1 },
+      { segment: segment('c', 't3', 0), laneOffset: 2 },
+    ]
+    const pasted = pasteSegments(copied, TRACKS.slice(0, 2), 0, 1, makeId)
+    expect(pasted.map((entry) => entry.trackId)).toEqual(['t1', 't2', 't2'])
   })
 })
 
