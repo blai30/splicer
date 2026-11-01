@@ -56,13 +56,33 @@ const pendingSeek = new Map<string, number>()
 // than skip the layer and flash the checkerboard, we draw its last good frame.
 // Preview-only smoothing; the export composites exact frames at grid times.
 const lastFrame = new Map<string, HTMLCanvasElement>()
+// The video time each cached frame was copied at.
+const lastFrameTime = new Map<string, number>()
+
+// Whether a layer's cached frame is stale: the video shows a different time,
+// or its size changed. Redraws for edits (a transform drag fires one per
+// pointermove) leave the video where it was, so they skip the full-size copy.
+export function frameCacheStale(
+  cachedTime: number | undefined,
+  cache: { width: number; height: number } | undefined,
+  video: { currentTime: number; videoWidth: number; videoHeight: number }
+): boolean {
+  return (
+    cachedTime !== video.currentTime ||
+    cache?.width !== video.videoWidth ||
+    cache?.height !== video.videoHeight
+  )
+}
 
 // Pick what to draw for a layer: the live video when it has a current frame
 // (also refreshing the cache while paused), otherwise the cached last frame.
 function frameSource(key: string, video: HTMLVideoElement): CanvasImageSource | null {
   if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
-    if (!advancedPlaying.value) {
-      let cache = lastFrame.get(key)
+    let cache = lastFrame.get(key)
+    // Mid-seek, currentTime already reads the target while the old frame
+    // still shows; copying then would file the old picture under the new time.
+    const settled = !advancedPlaying.value && !video.seeking
+    if (settled && frameCacheStale(lastFrameTime.get(key), cache, video)) {
       if (!cache) {
         cache = document.createElement('canvas')
         lastFrame.set(key, cache)
@@ -70,10 +90,40 @@ function frameSource(key: string, video: HTMLVideoElement): CanvasImageSource | 
       if (cache.width !== video.videoWidth) cache.width = video.videoWidth
       if (cache.height !== video.videoHeight) cache.height = video.videoHeight
       cache.getContext('2d')?.drawImage(video, 0, 0)
+      lastFrameTime.set(key, video.currentTime)
     }
     return video
   }
   return lastFrame.get(key) ?? null
+}
+
+// Runs `draw` at most once per animation frame however often it is asked for.
+export function createFrameCoalescer(
+  draw: () => void,
+  requestFrame: (callback: () => void) => number = requestAnimationFrame,
+  cancelFrame: (id: number) => void = cancelAnimationFrame
+) {
+  let frameId = 0
+  return {
+    schedule() {
+      if (frameId) return
+      frameId = requestFrame(() => {
+        frameId = 0
+        draw()
+      })
+    },
+    cancel() {
+      if (frameId) cancelFrame(frameId)
+      frameId = 0
+    },
+  }
+}
+
+// Paused redraws (seeks landing, edits, scrubs) share one draw per frame.
+let pausedDraw: ReturnType<typeof createFrameCoalescer> | null = null
+
+function schedulePausedDraw() {
+  pausedDraw?.schedule()
 }
 
 // Decide whether to issue a seek. While playing, correct only real drift. While
@@ -125,7 +175,7 @@ function getVideo(segment: AdvancedSegment): HTMLVideoElement | null {
     // completes while paused, redraw so the canvas shows the current frame
     // instead of staying black. The rAF loop covers redraws during playback.
     const redrawIfPaused = () => {
-      if (!advancedPlaying.value) drawComposite(advancedPlayhead.value)
+      if (!advancedPlaying.value) schedulePausedDraw()
     }
     // When a seek finishes, show the freshly decoded frame, then chase the most
     // recent target queued while it was running (smooth playhead scrubbing).
@@ -157,6 +207,7 @@ function releaseVideo(segmentId: string) {
   lastSeekTarget.delete(segmentId)
   pendingSeek.delete(segmentId)
   lastFrame.delete(segmentId)
+  lastFrameTime.delete(segmentId)
 }
 
 // Release elements for segments that no longer exist (deleted, split, undone).
@@ -309,11 +360,11 @@ function startPlayback() {
   rafId = requestAnimationFrame(tick)
 }
 
+// The paused effect re-syncs the videos when advancedPlaying flips.
 function stopPlayback() {
-  advancedPlaying.value = false
   cancelAnimationFrame(rafId)
   lastTickMs = null
-  syncVideos(advancedPlayhead.value, false)
+  if (advancedPlaying.value) advancedPlaying.value = false
 }
 
 export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
@@ -323,7 +374,12 @@ export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
   videoHost.style.display = 'none'
   document.body.appendChild(videoHost)
 
-  // Redraw and re-sync whenever the project or playhead changes while paused.
+  pausedDraw = createFrameCoalescer(() => {
+    if (!advancedPlaying.value) drawComposite(advancedPlayhead.peek())
+  })
+
+  // Re-sync whenever the project or playhead changes while paused, so seeks
+  // start right away, and redraw once on the next frame.
   disposeDraw = effect(() => {
     // touch dependencies
     void advancedSegments.value
@@ -331,7 +387,7 @@ export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
     const playhead = advancedPlayhead.value
     if (!advancedPlaying.value) {
       syncVideos(playhead, false)
-      drawComposite(playhead)
+      schedulePausedDraw()
     }
   })
 
@@ -341,6 +397,8 @@ export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
     lastTickMs = null
     disposeDraw?.()
     disposeDraw = null
+    pausedDraw?.cancel()
+    pausedDraw = null
     for (const video of videoPool.values()) {
       video.pause()
       video.removeAttribute('src')
@@ -350,6 +408,7 @@ export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
     lastSeekTarget.clear()
     pendingSeek.clear()
     lastFrame.clear()
+    lastFrameTime.clear()
     videoHost?.remove()
     videoHost = null
     canvasEl = null
@@ -380,17 +439,20 @@ export function stepFrame(direction: 1 | -1) {
     0,
     Math.min(duration, advancedPlayhead.value + direction * frameStepSeconds())
   )
+  // Paused, so the effect syncs and redraws.
   advancedPlayhead.value = next
-  syncVideos(next, false)
-  drawComposite(next)
 }
 
 export function seek(time: number) {
   const duration = projectDuration(advancedSegments.value)
   const next = Math.max(0, Math.min(duration, time))
   advancedPlayhead.value = next
-  syncVideos(next, advancedPlaying.value)
-  drawComposite(next)
+  // While paused the effect syncs and redraws; the playback loop only
+  // corrects drift, so a jump during playback re-syncs here.
+  if (advancedPlaying.value) {
+    syncVideos(next, true)
+    drawComposite(next)
+  }
 }
 
 // Re-export for the timeline math used by the preview component.
