@@ -1,6 +1,9 @@
 import type { AdvancedSegment, Track } from '@/lib/types'
 
 export const ADV_MIN_SEGMENT_DURATION = 0.1
+// Left padding of the lanes, in px: time 0 sits this far from the lane edge.
+// Clip blocks, the playhead, and pointer-to-time math all use it.
+export const TIMELINE_PAD_LEFT = 8
 
 export function segmentDuration(segment: AdvancedSegment): number {
   return segment.sourceEnd - segment.sourceStart

@@ -77,9 +77,14 @@ function queueCollect() {
 // the whole gesture: beginAdvancedGesture() arms the flag and the first mutation
 // consumes it. In/Out actions reuse this path with a single armed mutation.
 let gesturePending = false
+// True from beginAdvancedGesture() until endAdvancedGesture(). Undo/redo wait
+// for the gesture to finish: undoing mid-drag would leave the rest of the drag
+// unrecorded and a stale mid-drag snapshot on the redo stack.
+let gestureActive = false
 
 export function beginAdvancedGesture() {
   gesturePending = true
+  gestureActive = true
 }
 
 export function consumeAdvancedGesture() {
@@ -93,6 +98,7 @@ export function consumeAdvancedGesture() {
 // resize handle), so the next unrelated edit is not folded into it.
 export function endAdvancedGesture() {
   gesturePending = false
+  gestureActive = false
 }
 
 function restoreEntry(entry: AdvancedHistoryEntry) {
@@ -108,9 +114,9 @@ function restoreEntry(entry: AdvancedHistoryEntry) {
 }
 
 export function undoAdvanced() {
+  if (gestureActive) return
   const entry = history.shift()
   if (!entry) return
-  gesturePending = false
   redoHistory.unshift(captureEntry())
   if (redoHistory.length > HISTORY_LIMIT) redoHistory.length = HISTORY_LIMIT
   restoreEntry(entry)
@@ -119,9 +125,9 @@ export function undoAdvanced() {
 }
 
 export function redoAdvanced() {
+  if (gestureActive) return
   const entry = redoHistory.shift()
   if (!entry) return
-  gesturePending = false
   history.unshift(captureEntry())
   if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT
   restoreEntry(entry)
@@ -134,5 +140,6 @@ export function resetAdvancedHistory() {
   history.length = 0
   redoHistory.length = 0
   gesturePending = false
+  gestureActive = false
   syncHistoryFlags()
 }

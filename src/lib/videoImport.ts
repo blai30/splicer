@@ -212,7 +212,9 @@ export async function ensureClipWaveform(clipId: string): Promise<void> {
 // success the caller owns the object URL via the returned clip.
 export async function createClip(file: File): Promise<Clip | null> {
   if (!isVideoFile(file)) {
-    warn(`Skipped "${file.name}": not a supported video file (MP4, MOV, MKV, WebM).`)
+    const message = `Skipped "${file.name}": not a supported video file (MP4, MOV, MKV, WebM).`
+    warn(message)
+    importErrors.value = [...importErrors.value, message]
     return null
   }
 
@@ -255,21 +257,31 @@ export async function createClip(file: File): Promise<Clip | null> {
   }
 }
 
-// Import several files in order. The `importing` flag stays raised for the
-// whole batch rather than flickering per file.
-async function importBatch(files: File[], place: (clip: Clip) => void): Promise<void> {
-  if (files.length === 0) return
+// Batches run one after another, so files land in the order they were picked
+// or dropped even when a later, smaller file would probe faster. `importing`
+// stays raised until every queued batch is done.
+let importQueue: Promise<void> = Promise.resolve()
+let pendingBatches = 0
+
+function importBatch(files: File[], place: (clip: Clip) => void): Promise<void> {
+  if (files.length === 0) return Promise.resolve()
+  pendingBatches += 1
   importing.value = true
-  try {
+  const run = async () => {
     for (const file of files) {
       const clip = await createClip(file)
       if (!clip) continue
       place(clip)
       info('Import succeeded', { name: file.name, duration: clip.duration })
     }
-  } finally {
-    importing.value = false
   }
+  const batch = importQueue.then(run).finally(() => {
+    pendingBatches -= 1
+    if (pendingBatches === 0) importing.value = false
+  })
+  // Keep the queue alive after a failed batch.
+  importQueue = batch.catch(() => {})
+  return batch
 }
 
 export function importFiles(files: File[]): Promise<void> {

@@ -84,14 +84,20 @@ function sameSegments(first: Segment[], second: Segment[]): boolean {
 // Continuous gestures (trim drags) record one history entry for the whole
 // gesture: beginGesture() arms the flag and the first mutation consumes it.
 let gesturePending = false
+// True from beginGesture() until endGesture(). Undo/redo wait for the drag to
+// finish: undoing mid-drag would leave the rest of it unrecorded and a stale
+// mid-drag snapshot on the redo stack.
+let gestureActive = false
 
 export function beginGesture() {
   gesturePending = true
+  gestureActive = true
 }
 
 // Disarm a gesture that ended without mutating anything.
 export function endGesture() {
   gesturePending = false
+  gestureActive = false
 }
 
 function consumeGesturePending() {
@@ -207,9 +213,9 @@ function restoreEntry(entry: HistoryEntry) {
 }
 
 export function undo() {
+  if (gestureActive) return
   const entry = history.shift()
   if (!entry) return
-  gesturePending = false
   redoHistory.unshift(captureEntry())
   if (redoHistory.length > HISTORY_LIMIT) redoHistory.length = HISTORY_LIMIT
   restoreEntry(entry)
@@ -218,9 +224,9 @@ export function undo() {
 }
 
 export function redo() {
+  if (gestureActive) return
   const entry = redoHistory.shift()
   if (!entry) return
-  gesturePending = false
   history.unshift(captureEntry())
   if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT
   restoreEntry(entry)
@@ -233,5 +239,6 @@ export function resetHistory() {
   history.length = 0
   redoHistory.length = 0
   gesturePending = false
+  gestureActive = false
   syncHistoryFlags()
 }

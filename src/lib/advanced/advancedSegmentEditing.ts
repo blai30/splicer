@@ -53,9 +53,9 @@ export function trimSegmentStart(id: string, nextSourceStart: number): void {
   const segment = advancedSegments.value.find((entry) => entry.id === id)
   if (!segment) return
   const minSourceStart = Math.max(0, segment.sourceStart - segment.timelineStart)
-  const clamped = Math.min(
-    segment.sourceEnd - ADV_MIN_SEGMENT_DURATION,
-    Math.max(minSourceStart, nextSourceStart)
+  const clamped = Math.max(
+    minSourceStart,
+    Math.min(segment.sourceEnd - ADV_MIN_SEGMENT_DURATION, nextSourceStart)
   )
   if (clamped === segment.sourceStart) return
   const delta = clamped - segment.sourceStart
@@ -93,7 +93,9 @@ export function splitAdvancedSegment(id: string, atGlobalTime: number): string |
   if (!segment) return null
   const localTime = atGlobalTime - segment.timelineStart
   const sourceSplit = segment.sourceStart + localTime
-  if (sourceSplit <= segment.sourceStart || sourceSplit >= segment.sourceEnd) return null
+  // Both pieces must be at least the minimum length (and therefore trimmable).
+  if (sourceSplit - segment.sourceStart < ADV_MIN_SEGMENT_DURATION) return null
+  if (segment.sourceEnd - sourceSplit < ADV_MIN_SEGMENT_DURATION) return null
 
   recordAdvancedHistory()
   const newId = crypto.randomUUID()

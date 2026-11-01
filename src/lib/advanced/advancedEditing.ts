@@ -1,3 +1,4 @@
+import { recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
 import {
   advancedOutputLock,
   advancedPlayhead,
@@ -16,11 +17,17 @@ function clampDimension(value: number): number {
 
 // Lock the export output to a fixed size (Auto off). Clamped to even integers.
 export function setOutputLock(width: number, height: number): void {
-  advancedOutputLock.value = { width: clampDimension(width), height: clampDimension(height) }
+  const next = { width: clampDimension(width), height: clampDimension(height) }
+  const current = advancedOutputLock.value
+  if (current && current.width === next.width && current.height === next.height) return
+  recordAdvancedHistory()
+  advancedOutputLock.value = next
 }
 
 // Return to Auto (output = bounding box of placed clips).
 export function clearOutputLock(): void {
+  if (advancedOutputLock.value === null) return
+  recordAdvancedHistory()
   advancedOutputLock.value = null
 }
 

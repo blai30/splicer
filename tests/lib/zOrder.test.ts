@@ -49,3 +49,29 @@ describe('zOrder', () => {
     expect(advancedSegments.value[0].trackId).toBe('bot')
   })
 })
+
+describe('zOrder within one track', () => {
+  beforeEach(() => {
+    advancedTracks.value = [{ id: 'only', name: 'Only' }]
+    advancedSegments.value = [seg('a', 'only'), seg('b', 'only'), seg('c', 'only')]
+  })
+
+  const order = () => advancedSegments.value.map((segment) => segment.id).join('')
+
+  it('brings a covered clip to the front of its track', () => {
+    bringToFront('a')
+    expect(order()).toBe('bca')
+  })
+
+  it('sends a clip to the back of its track', () => {
+    sendToBack('c')
+    expect(order()).toBe('cab')
+  })
+
+  it('steps forward and backward one clip at a time', () => {
+    bringForward('a')
+    expect(order()).toBe('bac')
+    sendBackward('c')
+    expect(order()).toBe('bca')
+  })
+})

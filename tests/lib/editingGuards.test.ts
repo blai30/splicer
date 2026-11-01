@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   beginAdvancedGesture,
+  endAdvancedGesture,
   resetAdvancedHistory,
   undoAdvanced,
 } from '@/lib/advanced/advancedHistory'
@@ -98,6 +99,11 @@ describe('editing guards', () => {
     resetAdvancedHistory()
     beginAdvancedGesture()
     trimSegmentStart(id, 2)
+    // Undo waits while the drag is still in progress.
+    undoAdvanced()
+    expect(advancedSegments.value[0].sourceStart).toBe(2)
+    trimSegmentStart(id, 3)
+    endAdvancedGesture()
     undoAdvanced()
     expect(advancedSegments.value[0].sourceStart).toBe(0)
   })

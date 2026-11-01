@@ -1,4 +1,4 @@
-import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
+import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
   removeAdvancedSegment,
   selectAdvancedSegment,
@@ -42,6 +42,7 @@ export function setAdvancedInPoint(): void {
   // edge lands exactly on the playhead.
   beginAdvancedGesture()
   trimSegmentStart(segment.id, segment.sourceStart + offset)
+  endAdvancedGesture()
 }
 
 export function setAdvancedOutPoint(): void {
@@ -51,6 +52,7 @@ export function setAdvancedOutPoint(): void {
   if (offset === null) return
   beginAdvancedGesture()
   trimSegmentEnd(segment.id, segment.sourceStart + offset)
+  endAdvancedGesture()
 }
 
 export function toggleAdvancedMute(): void {

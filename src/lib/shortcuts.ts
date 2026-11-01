@@ -156,6 +156,11 @@ function isActivatable(target: EventTarget | null): boolean {
   return target.closest('button, a[href], summary, [role="button"], [role="tab"]') !== null
 }
 
+function isInsideComposite(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.closest('[role="radiogroup"], [role="tablist"], [role="slider"]') !== null
+}
+
 // Normalize a key for matching: single letters ignore case (Caps Lock, Shift).
 function normalizeKey(key: string): string {
   return key.length === 1 ? key.toLowerCase() : key
@@ -168,6 +173,8 @@ export function handleShortcut(event: KeyboardEvent): boolean {
   if (document.querySelector('dialog[open]')) return false
   // Space/Enter on a focused button activates that button, not the editor.
   if (CONTROL_KEYS.has(event.key) && isActivatable(event.target)) return false
+  // Arrow keys inside a radio group or tab list move between its options.
+  if (event.key.startsWith('Arrow') && isInsideComposite(event.target)) return false
 
   const hasCtrl = event.ctrlKey || event.metaKey
   const key = normalizeKey(event.key)
