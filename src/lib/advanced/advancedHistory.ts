@@ -1,12 +1,14 @@
 import { batch, signal } from '@preact/signals'
 
+import { liveSelection } from '@/lib/advanced/advancedSelection'
 import { collectUnusedClips, registerClipReferences } from '@/lib/clipPool'
 import { createCoalescingHistory } from '@/lib/coalescingHistory'
 import {
   advancedOutputLock,
   advancedSegments,
-  advancedSelectedId,
+  advancedSelection,
   advancedTracks,
+  type AdvancedSelection,
 } from '@/lib/store'
 import type { AdvancedSegment, CanvasSize, Track } from '@/lib/types'
 
@@ -20,7 +22,7 @@ const HISTORY_LIMIT = 50
 type AdvancedHistoryEntry = {
   segments: AdvancedSegment[]
   tracks: Track[]
-  selectedId: string | null
+  selection: AdvancedSelection
   outputLock: CanvasSize | null
 }
 
@@ -52,7 +54,7 @@ function captureEntry(): AdvancedHistoryEntry {
   return {
     segments: advancedSegments.value,
     tracks: advancedTracks.value,
-    selectedId: advancedSelectedId.value,
+    selection: advancedSelection.value,
     outputLock: advancedOutputLock.value,
   }
 }
@@ -112,6 +114,14 @@ export function beginAdvancedGesture() {
   }
 }
 
+// One undo entry for a property edit: the whole drag while a pointer gesture
+// is armed (a slider drag), otherwise one per burst of repeats sharing `key`
+// (arrow keys on a slider, nudges).
+export function recordAdvancedEdit(key: string) {
+  if (gestureActive) consumeAdvancedGesture()
+  else recordAdvancedHistoryCoalesced(key)
+}
+
 export function consumeAdvancedGesture() {
   if (gesturePending) {
     gesturePending = false
@@ -135,10 +145,7 @@ function restoreEntry(entry: AdvancedHistoryEntry) {
     advancedSegments.value = entry.segments
     advancedTracks.value = entry.tracks
     advancedOutputLock.value = entry.outputLock
-    advancedSelectedId.value =
-      entry.selectedId && entry.segments.some((segment) => segment.id === entry.selectedId)
-        ? entry.selectedId
-        : null
+    advancedSelection.value = liveSelection(entry.selection, entry.segments)
   })
 }
 

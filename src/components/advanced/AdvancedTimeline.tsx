@@ -1,4 +1,4 @@
-import { useComputed } from '@preact/signals'
+import { useComputed, useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { AdvancedClipMenu } from '@/components/advanced/AdvancedClipMenu'
 import { AdvancedSegmentBlock } from '@/components/advanced/AdvancedSegmentBlock'
 import { AdvancedTrackHeaders } from '@/components/advanced/AdvancedTrackHeaders'
 import { TimelinePlayhead } from '@/components/TimelinePlayhead'
@@ -30,6 +31,11 @@ import {
 } from '@/lib/advanced/advancedHistory'
 import { seek } from '@/lib/advanced/advancedPlayback'
 import {
+  clearAdvancedSelection,
+  segmentsInRegion,
+  setAdvancedSelection,
+} from '@/lib/advanced/advancedSelection'
+import {
   advancedBlockSpans,
   advancedWheelAction,
   projectDuration,
@@ -42,14 +48,17 @@ import {
   setAdvancedOutPoint,
   toggleAdvancedMute,
 } from '@/lib/advanced/advancedTimelineEditing'
+import { laneOverlaps } from '@/lib/advanced/clipEditingDomain'
 import {
+  advancedActiveTrackId,
   advancedClipDragActive,
   advancedDragPreviewEnd,
   advancedNewTrackTarget,
   advancedPlayhead,
   advancedPlaying,
   advancedSegments,
-  advancedSelectedId,
+  advancedSelectedIds,
+  advancedSelection,
   advancedSnapEnabled,
   advancedSnapLine,
   advancedTracks,
@@ -63,10 +72,17 @@ const PAD_LEFT = TIMELINE_PAD_LEFT
 // Room kept after the project end when fitting, so the last clip's edge is
 // clear of the scroller edge.
 const FIT_TRAILING_PX = 24
+// A modifier press that moves less than this is a click, not a marquee.
+const MARQUEE_MIN_PX = 4
+
+// The marquee rectangle in lane-content pixels (left/top of the lanes box).
+type Marquee = { left: number; top: number; width: number; height: number }
 
 export function AdvancedTimeline() {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const lanesRef = useRef<HTMLDivElement>(null)
   const stopScrubRef = useRef<(() => void) | null>(null)
+  const marquee = useSignal<Marquee | null>(null)
 
   const tracks = advancedTracks.value
   const segments = advancedSegments.value
@@ -137,7 +153,55 @@ export function AdvancedTimeline() {
       container.removeEventListener('pointercancel', onUp)
     }
     // Clicking empty lane space also clears the clip selection; the ruler only seeks.
-    if (!keepSelection) advancedSelectedId.value = null
+    if (!keepSelection) clearAdvancedSelection()
+    container.addEventListener('pointermove', onMove)
+    container.addEventListener('pointerup', onUp)
+    container.addEventListener('pointercancel', onUp)
+  }
+
+  // Shift- or Ctrl-drag over empty lanes draws a marquee that adds every clip
+  // it touches to the selection (live, as it grows).
+  function startMarquee(event: PointerEvent, container: HTMLElement, lanes: HTMLElement) {
+    container.setPointerCapture(event.pointerId)
+    const base = advancedSelection.value
+    const origin = { x: event.clientX, y: event.clientY }
+    let drawn = false
+
+    function update(clientX: number, clientY: number) {
+      const rect = lanes.getBoundingClientRect()
+      const left = Math.min(origin.x, clientX) - rect.left
+      const right = Math.max(origin.x, clientX) - rect.left
+      const top = Math.max(0, Math.min(origin.y, clientY) - rect.top)
+      const bottom = Math.min(rect.height, Math.max(origin.y, clientY) - rect.top)
+      marquee.value = { left, top, width: right - left, height: Math.max(0, bottom - top) }
+      const laneCount = advancedTracks.value.length
+      const laneAt = (y: number) =>
+        Math.min(laneCount - 1, Math.max(0, Math.floor(y / LANE_HEIGHT)))
+      const hits = segmentsInRegion(advancedSegments.value, advancedTracks.value, {
+        startTime: (left - PAD_LEFT) / pxPerSec.value,
+        endTime: (right - PAD_LEFT) / pxPerSec.value,
+        firstLane: laneAt(top),
+        lastLane: laneAt(Math.max(top, bottom - 1)),
+      })
+      const added = hits.filter((id) => !base.ids.includes(id))
+      setAdvancedSelection([...base.ids, ...added], added.at(-1) ?? base.primary)
+    }
+    function onMove(moveEvent: PointerEvent) {
+      if (
+        !drawn &&
+        Math.hypot(moveEvent.clientX - origin.x, moveEvent.clientY - origin.y) < MARQUEE_MIN_PX
+      ) {
+        return
+      }
+      drawn = true
+      update(moveEvent.clientX, moveEvent.clientY)
+    }
+    function onUp() {
+      marquee.value = null
+      container.removeEventListener('pointermove', onMove)
+      container.removeEventListener('pointerup', onUp)
+      container.removeEventListener('pointercancel', onUp)
+    }
     container.addEventListener('pointermove', onMove)
     container.addEventListener('pointerup', onUp)
     container.addEventListener('pointercancel', onUp)
@@ -149,6 +213,12 @@ export function AdvancedTimeline() {
     // Clip blocks handle their own drag/trim/selection; a press anywhere else
     // (blank lane or the playhead) scrubs the playhead from that point.
     if (target.closest('[data-advanced-segment]')) return
+    const lanes = lanesRef.current
+    const onLanes = lanes !== null && lanes.contains(target)
+    if (onLanes && (event.shiftKey || event.ctrlKey || event.metaKey)) {
+      startMarquee(event, event.currentTarget as HTMLElement, lanes)
+      return
+    }
     startScrub(
       event,
       event.currentTarget as HTMLElement,
@@ -182,8 +252,14 @@ export function AdvancedTimeline() {
       Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX
   }
 
-  const selectedSegment = segments.find((segment) => segment.id === advancedSelectedId.value)
-  const toolbarDisabled = !selectedSegment
+  const selectedIds = new Set(advancedSelectedIds.value)
+  const selectedSegments = segments.filter((segment) => selectedIds.has(segment.id))
+  const selectedCount = selectedSegments.length
+  const toolbarDisabled = selectedCount === 0
+  const allMuted = selectedCount > 0 && selectedSegments.every((segment) => segment.muted)
+  const activeTrackId = tracks.some((track) => track.id === advancedActiveTrackId.value)
+    ? advancedActiveTrackId.value
+    : (tracks[0]?.id ?? null)
 
   return (
     <div class="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
@@ -260,28 +336,36 @@ export function AdvancedTimeline() {
             <button
               class={clsx(
                 'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold transition-colors hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40',
-                selectedSegment?.muted
+                allMuted
                   ? 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-900/30'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
               )}
               disabled={toolbarDisabled}
               onClick={toggleAdvancedMute}
-              title="Toggle mute on selected clip (M)"
-              aria-label="Toggle mute on selected clip"
+              title="Toggle mute on the selected clips (M)"
+              aria-label="Toggle mute on the selected clips"
             >
               <VolumeX class="h-3.5 w-3.5" />
-              {selectedSegment?.muted ? 'Unmute' : 'Mute'}
+              {allMuted ? 'Unmute' : 'Mute'}
             </button>
             <button
               class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
               disabled={toolbarDisabled}
               onClick={deleteAdvancedSelected}
-              title="Delete clip (Delete)"
-              aria-label="Delete selected clip"
+              title="Delete the selected clips (Delete, Shift+Delete to close the gap)"
+              aria-label="Delete the selected clips"
             >
               <Trash2 class="h-3.5 w-3.5" />
               Delete
             </button>
+            {selectedCount > 1 && (
+              <span
+                data-advanced-selection-count
+                class="rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-semibold text-violet-700 dark:text-violet-300"
+              >
+                {selectedCount} selected
+              </span>
+            )}
           </div>
           <div class="flex shrink-0 items-center gap-2 md:gap-3">
             <button
@@ -347,13 +431,30 @@ export function AdvancedTimeline() {
                 </div>
               )}
             </div>
-            <div data-advanced-lanes>
+            <div ref={lanesRef} data-advanced-lanes class="relative">
               {tracks.map((track) => (
                 <div
                   key={track.id}
-                  class="relative border-b border-slate-200/40 dark:border-slate-700/40"
+                  class={clsx(
+                    'relative border-b border-slate-200/40 dark:border-slate-700/40',
+                    track.id === activeTrackId && 'bg-violet-500/5'
+                  )}
                   style={{ height: `${LANE_HEIGHT}px` }}
                 >
+                  {/* Hatched where clips on this track play over each other; the
+                      later clip draws on top. */}
+                  {laneOverlaps(segments, track.id).map((overlap) => (
+                    <div
+                      key={overlap.start}
+                      data-advanced-overlap
+                      title="Clips overlap here; the later one in the track draws on top"
+                      class="pointer-events-none absolute top-1 bottom-1 z-26 rounded-sm bg-[repeating-linear-gradient(135deg,rgb(0_0_0/0.35)_0_0.25rem,transparent_0.25rem_0.5rem)] ring-1 ring-amber-300/70"
+                      style={{
+                        left: `${PAD_LEFT + overlap.start * pxPerSec.value}px`,
+                        width: `${(overlap.end - overlap.start) * pxPerSec.value}px`,
+                      }}
+                    />
+                  ))}
                   {segments
                     .filter((segment) => segment.trackId === track.id)
                     .map((segment) => {
@@ -371,6 +472,18 @@ export function AdvancedTimeline() {
                     })}
                 </div>
               ))}
+              {marquee.value && (
+                <div
+                  data-advanced-marquee
+                  class="pointer-events-none absolute z-45 rounded-sm border border-violet-400 bg-violet-400/10"
+                  style={{
+                    left: `${marquee.value.left}px`,
+                    top: `${marquee.value.top}px`,
+                    width: `${marquee.value.width}px`,
+                    height: `${marquee.value.height}px`,
+                  }}
+                />
+              )}
             </div>
             {advancedClipDragActive.value && (
               <div class="flex h-7 items-stretch py-0.5">
@@ -393,6 +506,7 @@ export function AdvancedTimeline() {
           </div>
         </div>
       </div>
+      <AdvancedClipMenu />
     </div>
   )
 }

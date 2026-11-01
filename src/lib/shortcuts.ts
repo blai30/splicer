@@ -4,9 +4,18 @@ import {
   stepFrame as advancedStepFrame,
   togglePlay as advancedTogglePlay,
 } from '@/lib/advanced/advancedPlayback'
+import { nudgeSegmentTransforms } from '@/lib/advanced/advancedSegmentEditing'
+import { clearAdvancedSelection, selectAllAdvanced } from '@/lib/advanced/advancedSelection'
 import {
+  advancedClipboardSize,
+  copyAdvancedSelected,
   cutAdvancedAtPlayhead,
+  cutAdvancedSelected,
   deleteAdvancedSelected,
+  duplicateAdvancedSelected,
+  nudgeAdvancedSelected,
+  pasteAdvanced,
+  rippleDeleteAdvancedSelected,
   setAdvancedInPoint,
   setAdvancedOutPoint,
   toggleAdvancedMute,
@@ -21,6 +30,11 @@ import {
   togglePlay as basicTogglePlay,
 } from '@/lib/playback'
 import {
+  advancedCanvasFocused,
+  advancedClipMenu,
+  advancedSegments,
+  advancedSelectedId,
+  advancedSelectedIds,
   advancedSnapEnabled,
   appMode,
   playheadTime,
@@ -80,10 +94,19 @@ function openSegmentMenu() {
   const block = document.querySelector(`[data-segment-id="${segmentId}"]`)
   if (!block) return
   const rect = block.getBoundingClientRect()
-  // The browser follows these keys with its own contextmenu event, aimed at
-  // the focused element; that one must neither open the native menu nor
-  // re-target this one. A real right-click starts with a pointerdown, so one
-  // that comes next is left alone.
+  suppressFollowingContextMenu()
+  segmentMenu.value = {
+    segmentId,
+    time: playheadTime.peek(),
+    x: rect.left + Math.min(rect.width / 2, 24),
+    y: rect.bottom,
+  }
+}
+// The browser follows the menu keys with its own contextmenu event, aimed at
+// the focused element; that one must neither open the native menu nor
+// re-target ours. A real right-click starts with a pointerdown, so one that
+// comes next is left alone.
+function suppressFollowingContextMenu() {
   const suppress = (event: Event) => {
     event.preventDefault()
     event.stopPropagation()
@@ -96,13 +119,39 @@ function openSegmentMenu() {
   window.addEventListener('contextmenu', suppress, { capture: true })
   window.addEventListener('pointerdown', stopSuppressing, { capture: true })
   setTimeout(stopSuppressing, 500)
-  segmentMenu.value = {
+}
+// Keyboard access to the Advanced clip menu, opened under the primary clip.
+function openAdvancedClipMenu() {
+  const segmentId = advancedSelectedId.value
+  if (!segmentId) return
+  const block = document.querySelector(`[data-advanced-segment-id="${segmentId}"]`)
+  if (!block) return
+  const rect = block.getBoundingClientRect()
+  suppressFollowingContextMenu()
+  advancedClipMenu.value = {
     segmentId,
-    time: playheadTime.peek(),
     x: rect.left + Math.min(rect.width / 2, 24),
     y: rect.bottom,
   }
 }
+function hasAdvancedSelection(): boolean {
+  return advancedSelectedIds.value.length > 0
+}
+// Ctrl+C, Ctrl+X, and Ctrl+A keep their usual page meaning while text is
+// selected on the page.
+function noTextSelected(): boolean {
+  const selection = typeof window === 'undefined' ? null : window.getSelection()
+  return !selection || selection.isCollapsed
+}
+// Arrow keys move the selected clips on the canvas while it has focus.
+function canvasNudgeActive(): boolean {
+  return advancedCanvasFocused.value && hasAdvancedSelection()
+}
+function nudgeCanvas(dx: number, dy: number) {
+  return () => nudgeSegmentTransforms(advancedSelectedIds.value, dx, dy)
+}
+const CANVAS_NUDGE_STEP_PX = 10
+
 function setIn() {
   if (isAdvanced()) setAdvancedInPoint()
   else setInPoint()
@@ -152,7 +201,35 @@ export type Shortcut = {
   run: () => void
 }
 
+// Order matters where two entries share a key: the first whose `when` passes
+// wins, so the focused-canvas nudges come before the frame steps.
 export const SHORTCUTS: Shortcut[] = [
+  ...(
+    [
+      ['ArrowLeft', '←', 'Left', -1, 0],
+      ['ArrowRight', '→', 'Right', 1, 0],
+      ['ArrowUp', '↑', 'Up', 0, -1],
+      ['ArrowDown', '↓', 'Down', 0, 1],
+    ] as const
+  ).flatMap(([key, arrow, direction, dx, dy]): Shortcut[] => [
+    {
+      keys: [key],
+      mode: 'advanced',
+      when: canvasNudgeActive,
+      display: arrow,
+      description: `Nudge Clips ${direction} on the Canvas (canvas focused)`,
+      run: nudgeCanvas(dx, dy),
+    },
+    {
+      keys: [key],
+      shift: true,
+      mode: 'advanced',
+      when: canvasNudgeActive,
+      display: `Shift ${arrow}`,
+      description: `Nudge Clips ${direction} 10 px on the Canvas (canvas focused)`,
+      run: nudgeCanvas(dx * CANVAS_NUDGE_STEP_PX, dy * CANVAS_NUDGE_STEP_PX),
+    },
+  ]),
   { keys: [' '], display: 'Space', description: 'Play / Pause', run: togglePlay },
   {
     keys: ['ArrowLeft', ','],
@@ -233,6 +310,120 @@ export const SHORTCUTS: Shortcut[] = [
     run: () => duplicateSegment(),
   },
   {
+    keys: ['d'],
+    ctrl: true,
+    mode: 'advanced',
+    when: hasAdvancedSelection,
+    display: 'Ctrl D',
+    description: 'Duplicate Selected Clips',
+    run: duplicateAdvancedSelected,
+  },
+  {
+    keys: ['c'],
+    ctrl: true,
+    mode: 'advanced',
+    when: () => hasAdvancedSelection() && noTextSelected(),
+    display: 'Ctrl C',
+    description: 'Copy Selected Clips',
+    run: () => void copyAdvancedSelected(),
+  },
+  {
+    keys: ['x'],
+    ctrl: true,
+    mode: 'advanced',
+    when: () => hasAdvancedSelection() && noTextSelected(),
+    display: 'Ctrl X',
+    description: 'Cut Selected Clips to the Clipboard',
+    run: cutAdvancedSelected,
+  },
+  {
+    keys: ['v'],
+    ctrl: true,
+    mode: 'advanced',
+    when: () => advancedClipboardSize.value > 0,
+    display: 'Ctrl V',
+    description: 'Paste at the Playhead on the Active Track',
+    run: pasteAdvanced,
+  },
+  {
+    keys: ['a'],
+    ctrl: true,
+    mode: 'advanced',
+    when: () => advancedSegments.value.length > 0 && noTextSelected(),
+    display: 'Ctrl A',
+    description: 'Select All Clips',
+    run: selectAllAdvanced,
+  },
+  {
+    keys: ['Escape'],
+    mode: 'advanced',
+    when: hasAdvancedSelection,
+    display: 'Esc',
+    description: 'Clear Selection',
+    run: clearAdvancedSelection,
+  },
+  {
+    keys: ['ArrowLeft'],
+    alt: true,
+    mode: 'advanced',
+    when: hasAdvancedSelection,
+    display: 'Alt ←',
+    description: 'Nudge Clips One Frame Earlier',
+    run: () => nudgeAdvancedSelected(-1),
+  },
+  {
+    keys: ['ArrowRight'],
+    alt: true,
+    mode: 'advanced',
+    when: hasAdvancedSelection,
+    display: 'Alt →',
+    description: 'Nudge Clips One Frame Later',
+    run: () => nudgeAdvancedSelected(1),
+  },
+  {
+    keys: ['ArrowLeft'],
+    alt: true,
+    shift: true,
+    mode: 'advanced',
+    when: hasAdvancedSelection,
+    display: 'Alt Shift ←',
+    description: 'Nudge Clips Ten Frames Earlier',
+    run: () => nudgeAdvancedSelected(-10),
+  },
+  {
+    keys: ['ArrowRight'],
+    alt: true,
+    shift: true,
+    mode: 'advanced',
+    when: hasAdvancedSelection,
+    display: 'Alt Shift →',
+    description: 'Nudge Clips Ten Frames Later',
+    run: () => nudgeAdvancedSelected(10),
+  },
+  {
+    keys: ['Delete', 'Backspace'],
+    shift: true,
+    mode: 'advanced',
+    display: 'Shift Delete',
+    description: 'Ripple Delete (close the gap)',
+    run: rippleDeleteAdvancedSelected,
+  },
+  {
+    keys: ['ContextMenu'],
+    mode: 'advanced',
+    display: 'Menu',
+    description: 'Clip Actions Menu',
+    run: openAdvancedClipMenu,
+  },
+  {
+    keys: ['F10'],
+    shift: true,
+    mode: 'advanced',
+    display: 'Shift F10',
+    description: 'Clip Actions Menu',
+    run: openAdvancedClipMenu,
+  },
+  {
     keys: ['ContextMenu'],
     mode: 'basic',
     display: 'Menu',
@@ -250,7 +441,7 @@ export const SHORTCUTS: Shortcut[] = [
   {
     keys: ['Delete', 'Backspace'],
     display: 'Delete',
-    description: 'Delete Segment',
+    description: 'Delete Selection',
     run: removeSelected,
   },
   { keys: ['z'], ctrl: true, display: 'Ctrl Z', description: 'Undo', run: undoEdit },

@@ -9,6 +9,7 @@ import {
   undoAdvanced,
 } from '@/lib/advanced/advancedHistory'
 import { addClipToTrack, toggleSegmentMute } from '@/lib/advanced/advancedSegmentEditing'
+import { clearAdvancedSelection } from '@/lib/advanced/advancedSelection'
 import { deleteAdvancedSelected, setAdvancedInPoint } from '@/lib/advanced/advancedTimelineEditing'
 import { addTrack } from '@/lib/advanced/advancedTrackEditing'
 import {
@@ -39,7 +40,7 @@ describe('advancedHistory', () => {
     clips.value = []
     advancedSegments.value = []
     advancedTracks.value = []
-    advancedSelectedId.value = null
+    clearAdvancedSelection()
     advancedPlayhead.value = 0
     advancedOutputLock.value = null
     resetAdvancedHistory()

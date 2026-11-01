@@ -1,10 +1,6 @@
 import { recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
-import {
-  advancedOutputLock,
-  advancedPlayhead,
-  advancedSegments,
-  advancedSelectedId,
-} from '@/lib/store'
+import { clearAdvancedSelection } from '@/lib/advanced/advancedSelection'
+import { advancedOutputLock, advancedPlayhead, advancedSegments } from '@/lib/store'
 
 export const CANVAS_MIN = 16
 export const CANVAS_MAX = 7680
@@ -33,6 +29,6 @@ export function clearOutputLock(): void {
 
 export function clearAdvancedClip(): void {
   advancedSegments.value = []
-  advancedSelectedId.value = null
+  clearAdvancedSelection()
   advancedPlayhead.value = 0
 }

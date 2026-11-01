@@ -258,7 +258,30 @@ export const advancedDragPreviewEnd = signal<number | null>(null)
 export const advancedNewTrackTarget = signal<'top' | 'bottom' | null>(null)
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])
-export const advancedSelectedId = signal<string | null>(null)
+// The Advanced clip selection. `primary` is the clip the last click picked: the
+// inspector, crop, cut, in/out, and z-order act on it alone, while move,
+// delete, mute, duplicate, and copy act on every id. Always written whole, so
+// the two never disagree.
+export type AdvancedSelection = { ids: string[]; primary: string | null }
+export const advancedSelection = signal<AdvancedSelection>({ ids: [], primary: null })
+export const advancedSelectedId = computed(() => advancedSelection.value.primary)
+export const advancedSelectedIds = computed(() => advancedSelection.value.ids)
+export const advancedSelectedSet = computed(() => new Set(advancedSelection.value.ids))
+// The track paste, imports, and file drops land on (view state, not undone).
+// null, or a removed track, means the top track.
+export const advancedActiveTrackId = signal<string | null>(null)
+// Every selected clip but the one being dragged follows it by this much while
+// a group move is previewed on the timeline.
+export const advancedGroupMovePreview = signal<{
+  ids: ReadonlySet<string>
+  deltaTime: number
+  laneDelta: number
+} | null>(null)
+// The Advanced clip whose context menu is open, and where (viewport px).
+export const advancedClipMenu = signal<{ segmentId: string; x: number; y: number } | null>(null)
+// True while the preview canvas has keyboard focus, so arrow keys nudge the
+// selection there instead of stepping frames.
+export const advancedCanvasFocused = signal(false)
 export const advancedPlayhead = signal<number>(0)
 export const advancedPlaying = signal<boolean>(false)
 

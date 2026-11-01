@@ -13,6 +13,7 @@ import {
   trimSegmentEnd,
   trimSegmentStart,
 } from '@/lib/advanced/advancedSegmentEditing'
+import { clearAdvancedSelection } from '@/lib/advanced/advancedSelection'
 import { advancedSegments, advancedSelectedId, advancedTracks, clips } from '@/lib/store'
 import type { Clip } from '@/lib/types'
 
@@ -33,7 +34,7 @@ describe('advancedSegmentEditing', () => {
   beforeEach(() => {
     clips.value = []
     advancedSegments.value = []
-    advancedSelectedId.value = null
+    clearAdvancedSelection()
     advancedTracks.value = [{ id: 'track-1', name: 'Track 1' }]
     resetAdvancedHistory()
   })
@@ -108,7 +109,7 @@ describe('advancedSegmentEditing trim and split', () => {
   beforeEach(() => {
     clips.value = []
     advancedSegments.value = []
-    advancedSelectedId.value = null
+    clearAdvancedSelection()
   })
 
   it('trims the end without moving timelineStart', () => {
@@ -141,7 +142,7 @@ describe('advancedSegmentEditing transform and crop', () => {
   beforeEach(() => {
     clips.value = []
     advancedSegments.value = []
-    advancedSelectedId.value = null
+    clearAdvancedSelection()
   })
 
   it('sets a segment transform', () => {

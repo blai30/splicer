@@ -178,7 +178,7 @@ export function computeExportBounds(
   }
 }
 
-export type FrameRectScene = { start: number; end: number; rect: WorldRect }
+export type FrameRectScene = { start: number; end: number; rect: WorldRect; segmentIds: string[] }
 
 // World-space rects that preview what each scene exports (the dashed
 // indicator): the output frame mapped back around the scene through the same
@@ -193,11 +193,17 @@ export function computeFrameScenes(
   return layout.scenes.map(({ scene, fit }) => {
     // A zero-size scene has no meaningful fit; show its bounds as they are.
     if (!(Number.isFinite(fit.scale) && fit.scale > 0)) {
-      return { start: scene.start, end: scene.end, rect: scene.bounds }
+      return {
+        start: scene.start,
+        end: scene.end,
+        rect: scene.bounds,
+        segmentIds: scene.segmentIds,
+      }
     }
     return {
       start: scene.start,
       end: scene.end,
+      segmentIds: scene.segmentIds,
       rect: {
         minX: scene.bounds.minX - fit.offsetX / fit.scale,
         minY: scene.bounds.minY - fit.offsetY / fit.scale,
@@ -226,6 +232,19 @@ export function computeFrameRect(
   const scenes = computeFrameScenes(segments, lock)
   if (scenes.length === 0) return null
   return scenes[sceneIndexAt(scenes, time)].rect
+}
+
+// The output frame a clip exports in (the dashed frame around its scene), or
+// null when the clip is not part of the output (missing or on a hidden track).
+export function frameRectForSegment(
+  segments: AdvancedSegment[],
+  lock: CanvasSize | null,
+  segmentId: string
+): WorldRect | null {
+  const scene = computeFrameScenes(segments, lock).find((entry) =>
+    entry.segmentIds.includes(segmentId)
+  )
+  return scene?.rect ?? null
 }
 
 export type OversizedCanvas = {

@@ -3,6 +3,7 @@ import clsx from 'clsx/lite'
 import { Maximize, Minus, Pause, Play, Plus, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { AdvancedInspector } from '@/components/advanced/AdvancedInspector'
 import { AdvancedSelectionToolbar } from '@/components/advanced/AdvancedSelectionToolbar'
 import { AdvancedTransformOverlay } from '@/components/advanced/AdvancedTransformOverlay'
 import { VolumeControl } from '@/components/VolumeControl'
@@ -181,6 +182,7 @@ export function AdvancedPreview() {
           cropMode.value = !cropMode.value
         }}
       />
+      <AdvancedInspector />
 
       <SeekBar totalDuration={totalDuration} />
 

@@ -1,8 +1,23 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { resetAdvancedHistory } from '@/lib/advanced/advancedHistory'
+import { addClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
+import { clearAdvancedSelection, setAdvancedSelection } from '@/lib/advanced/advancedSelection'
+import { resetAdvancedClipboard } from '@/lib/advanced/advancedTimelineEditing'
 import { handleShortcut, matchesShortcut, shortcutsForMode, type Shortcut } from '@/lib/shortcuts'
-import { advancedSnapEnabled, appMode, pxPerSec } from '@/lib/store'
+import {
+  advancedCanvasFocused,
+  advancedPlayhead,
+  advancedSegments,
+  advancedSelectedIds,
+  advancedSnapEnabled,
+  advancedTracks,
+  appMode,
+  clips,
+  framerate,
+  pxPerSec,
+} from '@/lib/store'
 import { registerTimelineNavigator } from '@/lib/timelineNavigator'
 
 function keyEvent(key: string, init: KeyboardEventInit = {}) {
@@ -232,5 +247,85 @@ describe('shortcutsForMode', () => {
     expect(advanced).toContain('Play / Pause')
     expect(basic).not.toContain('Toggle Timeline Snapping')
     expect(advanced).toContain('Toggle Timeline Snapping')
+  })
+})
+
+describe('Advanced editing shortcuts', () => {
+  const clip = {
+    id: 'clip-a',
+    file: new File([new Uint8Array([0])], 'a.mp4'),
+    name: 'a',
+    duration: 2,
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    objectUrl: 'blob:a',
+    waveformPeaks: new Float32Array(0),
+  }
+
+  beforeEach(() => {
+    appMode.value = 'advanced'
+    document.body.innerHTML = ''
+    clips.value = []
+    advancedSegments.value = []
+    advancedTracks.value = [{ id: 'track-1', name: 'Track 1' }]
+    advancedPlayhead.value = 0
+    advancedCanvasFocused.value = false
+    framerate.value = 'original'
+    resetAdvancedClipboard()
+    clearAdvancedSelection()
+    resetAdvancedHistory()
+  })
+
+  it('selects all with Ctrl+A and clears with Escape', () => {
+    const first = addClipToTrack(clip, 'track-1', 0)
+    const second = addClipToTrack(clip, 'track-1', 2)
+    expect(press('a', { ctrlKey: true }).handled).toBe(true)
+    expect(advancedSelectedIds.value).toEqual([first, second])
+    expect(press('Escape').handled).toBe(true)
+    expect(advancedSelectedIds.value).toEqual([])
+    // Nothing selected: Escape stays with the page.
+    expect(press('Escape').handled).toBe(false)
+  })
+
+  it('nudges clips by a frame with Alt+Arrow and leaves Alt+Arrow alone with no selection', () => {
+    addClipToTrack(clip, 'track-1', 1)
+    press('ArrowRight', { altKey: true })
+    expect(advancedSegments.value[0].timelineStart).toBeCloseTo(1 + 1 / 30)
+    press('ArrowLeft', { altKey: true, shiftKey: true })
+    expect(advancedSegments.value[0].timelineStart).toBeCloseTo(1 - 9 / 30)
+    clearAdvancedSelection()
+    expect(press('ArrowLeft', { altKey: true }).handled).toBe(false)
+  })
+
+  it('nudges on the canvas only while it has focus, and steps frames otherwise', () => {
+    addClipToTrack(clip, 'track-1', 0)
+    advancedSegments.value = advancedSegments.value.map((entry) => ({ ...entry, sourceEnd: 2 }))
+    press('ArrowRight')
+    expect(advancedSegments.value[0].transform.x).toBe(0)
+    expect(advancedPlayhead.value).toBeCloseTo(1 / 30)
+    advancedCanvasFocused.value = true
+    press('ArrowRight')
+    press('ArrowDown', { shiftKey: true })
+    expect(advancedSegments.value[0].transform).toMatchObject({ x: 1, y: 10 })
+    expect(advancedPlayhead.value).toBeCloseTo(1 / 30)
+  })
+
+  it('duplicates, copies, and pastes the selection', () => {
+    addClipToTrack(clip, 'track-1', 0)
+    press('d', { ctrlKey: true })
+    expect(advancedSegments.value.map((entry) => entry.timelineStart)).toEqual([0, 2])
+    press('c', { ctrlKey: true })
+    advancedPlayhead.value = 3
+    press('v', { ctrlKey: true })
+    expect(advancedSegments.value.map((entry) => entry.timelineStart)).toEqual([0, 2, 3])
+  })
+
+  it('ripple deletes with Shift+Delete', () => {
+    const first = addClipToTrack(clip, 'track-1', 0)
+    addClipToTrack(clip, 'track-1', 2)
+    setAdvancedSelection([first])
+    press('Delete', { shiftKey: true })
+    expect(advancedSegments.value.map((entry) => entry.timelineStart)).toEqual([0])
   })
 })

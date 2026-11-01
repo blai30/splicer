@@ -48,7 +48,7 @@ test('clicking the Advanced ruler seeks and keeps the clip selected', async ({ p
   await openAdvancedWithClips(page, 1)
   const block = page.locator('[data-advanced-segment]')
   await block.click()
-  const deleteButton = page.getByRole('button', { name: 'Delete selected clip' })
+  const deleteButton = page.getByRole('button', { name: 'Delete the selected clips' })
   await expect(deleteButton).toBeEnabled()
 
   const ruler = page.locator('[data-advanced-scroller] [data-time-ruler]')

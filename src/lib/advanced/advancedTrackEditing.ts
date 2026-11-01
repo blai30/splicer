@@ -1,4 +1,5 @@
 import { recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
+import { pruneAdvancedSelection, setActiveAdvancedTrack } from '@/lib/advanced/advancedSelection'
 import { advancedSegments, advancedTracks } from '@/lib/store'
 import type { Track } from '@/lib/types'
 
@@ -21,6 +22,8 @@ export function addTrack(): string {
     { id, name: nextTrackName(advancedTracks.value) },
     ...advancedTracks.value,
   ]
+  // A new track is where the next import or paste is meant to go.
+  setActiveAdvancedTrack(id)
   return id
 }
 
@@ -31,6 +34,7 @@ export function removeTrack(id: string): void {
   recordAdvancedHistory()
   advancedTracks.value = advancedTracks.value.filter((track) => track.id !== id)
   advancedSegments.value = advancedSegments.value.filter((segment) => segment.trackId !== id)
+  pruneAdvancedSelection()
 }
 
 function patchTrack(id: string, patch: Partial<Track>): void {

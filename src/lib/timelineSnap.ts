@@ -139,3 +139,29 @@ export function resolveMoveStart(
   }
   return { start: Math.max(0, quantizeToFrame(clampedStart, options.fps)), target: null }
 }
+
+// The committed time shift for a group of clips dragged together: any member's
+// start or end may snap (the closest wins), otherwise the dragged clip lands
+// on the frame grid. No member goes before the timeline origin.
+export function resolveGroupMoveDelta(
+  rawDelta: number,
+  anchorStart: number,
+  members: { start: number; end: number }[],
+  sortedTargets: number[],
+  options: { thresholdSec: number; snap: boolean; fps?: number }
+): { delta: number; target: number | null } {
+  const earliest = Math.min(anchorStart, ...members.map((member) => member.start))
+  const clampedDelta = Math.max(-earliest, rawDelta)
+  if (options.snap) {
+    const edges = members.flatMap((member) => [
+      member.start + clampedDelta,
+      member.end + clampedDelta,
+    ])
+    const snap = snapEdges(edges, sortedTargets, options.thresholdSec)
+    if (snap.target !== null && earliest + clampedDelta + snap.delta >= 0) {
+      return { delta: clampedDelta + snap.delta, target: snap.target }
+    }
+  }
+  const gridded = quantizeToFrame(anchorStart + clampedDelta, options.fps) - anchorStart
+  return { delta: Math.max(-earliest, gridded), target: null }
+}
