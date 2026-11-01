@@ -22,17 +22,22 @@ export function CanvasSizeControls() {
   const widthValue = lock?.width ?? ''
   const heightValue = lock?.height ?? ''
 
-  function onManual(axis: 'width' | 'height', raw: string) {
-    const value = Number(raw)
-    if (!Number.isFinite(value) || value <= 0) return
+  function onManual(axis: 'width' | 'height', input: HTMLInputElement) {
+    const value = Number(input.value)
     const base = lock ?? { width: 1920, height: 1080 }
-    const next = { ...base, [axis]: value }
-    setOutputLock(next.width, next.height)
+    if (!Number.isFinite(value) || value <= 0) {
+      // Reject the entry and show the current value again.
+      input.value = String(base[axis])
+      return
+    }
+    setOutputLock(axis === 'width' ? value : base.width, axis === 'height' ? value : base.height)
+    // Reflect clamping/even-rounding even when the stored value did not change.
+    const stored = advancedOutputLock.value
+    if (stored) input.value = String(stored[axis])
   }
 
   return (
     <div class="flex flex-wrap items-center gap-2">
-      <span class="w-14 text-sm text-slate-500 dark:text-slate-400">Output</span>
       <button
         onClick={clearOutputLock}
         title="Export the bounding box of placed clips"
@@ -71,10 +76,9 @@ export function CanvasSizeControls() {
           disabled={auto}
           aria-label="Output width"
           placeholder="auto"
-          onBlur={(event) => onManual('width', (event.currentTarget as HTMLInputElement).value)}
+          onBlur={(event) => onManual('width', event.currentTarget as HTMLInputElement)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter')
-              onManual('width', (event.currentTarget as HTMLInputElement).value)
+            if (event.key === 'Enter') onManual('width', event.currentTarget as HTMLInputElement)
           }}
           class={clsx(
             'w-20 rounded border border-slate-300 px-2 py-1 outline-none focus:border-violet-400 dark:border-slate-600',
@@ -83,7 +87,9 @@ export function CanvasSizeControls() {
               : 'bg-white dark:bg-slate-800'
           )}
         />
-        <span class="text-slate-400">x</span>
+        <span class="text-slate-400" aria-hidden="true">
+          ×
+        </span>
         <input
           type="number"
           min={CANVAS_MIN}
@@ -92,10 +98,9 @@ export function CanvasSizeControls() {
           disabled={auto}
           aria-label="Output height"
           placeholder="auto"
-          onBlur={(event) => onManual('height', (event.currentTarget as HTMLInputElement).value)}
+          onBlur={(event) => onManual('height', event.currentTarget as HTMLInputElement)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter')
-              onManual('height', (event.currentTarget as HTMLInputElement).value)
+            if (event.key === 'Enter') onManual('height', event.currentTarget as HTMLInputElement)
           }}
           class={clsx(
             'w-20 rounded border border-slate-300 px-2 py-1 outline-none focus:border-violet-400 dark:border-slate-600',

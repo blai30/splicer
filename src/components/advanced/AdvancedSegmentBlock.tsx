@@ -1,8 +1,9 @@
+import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { WaveformView } from '@/components/WaveformView'
-import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
+import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
   trimSegmentEnd,
   trimSegmentStart,
@@ -24,6 +25,9 @@ export function AdvancedSegmentBlock({
   laneHeight: number
   onRequestMove: (deltaTime: number, deltaLanes: number) => void
 }) {
+  // Live offset while the body is being dragged (time in px, lanes in px), so
+  // the block follows the pointer before the move commits on release.
+  const dragOffset = useSignal<{ x: number; y: number } | null>(null)
   const leftRef = useRef<HTMLDivElement>(null)
   const rightRef = useRef<HTMLDivElement>(null)
   const clip = getClipById(segment.clipId)
@@ -49,51 +53,75 @@ export function AdvancedSegmentBlock({
       beginAdvancedGesture()
       const throttler = createRafThrottler()
 
-      function onMove(moveEvent: PointerEvent) {
-        const deltaTime = (moveEvent.clientX - startClientX) / pxPerSec.value
-        throttler.queue(() => {
-          if (side === 'left') trimSegmentStart(segment.id, startValue + deltaTime)
-          else trimSegmentEnd(segment.id, startValue + deltaTime)
-        })
+      function apply(pointerEvent: PointerEvent) {
+        const deltaTime = (pointerEvent.clientX - startClientX) / pxPerSec.value
+        if (side === 'left') trimSegmentStart(segment.id, startValue + deltaTime)
+        else trimSegmentEnd(segment.id, startValue + deltaTime)
       }
-      function onUp() {
+      function onMove(moveEvent: PointerEvent) {
+        throttler.queue(() => apply(moveEvent))
+      }
+      function onUp(upEvent: PointerEvent) {
         throttler.cancel()
+        // Land exactly where the pointer was released.
+        if (upEvent.type === 'pointerup') apply(upEvent)
+        endAdvancedGesture()
         handle.removeEventListener('pointermove', onMove)
         handle.removeEventListener('pointerup', onUp)
+        handle.removeEventListener('pointercancel', onUp)
       }
       handle.addEventListener('pointermove', onMove)
       handle.addEventListener('pointerup', onUp)
+      handle.addEventListener('pointercancel', onUp)
     }
   }
 
   function onBodyPointerDown(event: PointerEvent) {
+    if (event.button !== 0) return
+    event.stopPropagation()
     const element = event.currentTarget as HTMLElement
     element.setPointerCapture(event.pointerId)
     const startClientX = event.clientX
     const startClientY = event.clientY
     let moved = false
+    selectAdvancedSegment(segment.id)
+
+    // Clamp so the block never previews left of the timeline origin.
+    function offsetFor(moveEvent: PointerEvent) {
+      const minX = -segment.timelineStart * pxPerSec.value
+      return {
+        x: Math.max(minX, moveEvent.clientX - startClientX),
+        y: Math.round((moveEvent.clientY - startClientY) / laneHeight) * laneHeight,
+      }
+    }
 
     function onMove(moveEvent: PointerEvent) {
       if (
         !moved &&
-        Math.hypot(moveEvent.clientX - startClientX, moveEvent.clientY - startClientY) > 6
+        Math.hypot(moveEvent.clientX - startClientX, moveEvent.clientY - startClientY) > 4
       ) {
         moved = true
       }
+      if (moved) dragOffset.value = offsetFor(moveEvent)
     }
-    function onUp(upEvent: PointerEvent) {
+    function finish(upEvent: PointerEvent, commit: boolean) {
       element.removeEventListener('pointermove', onMove)
       element.removeEventListener('pointerup', onUp)
-      if (moved) {
-        const deltaTime = (upEvent.clientX - startClientX) / pxPerSec.value
-        const deltaLanes = Math.round((upEvent.clientY - startClientY) / laneHeight)
-        onRequestMove(deltaTime, deltaLanes)
-      } else {
-        selectAdvancedSegment(segment.id)
-      }
+      element.removeEventListener('pointercancel', onCancel)
+      dragOffset.value = null
+      if (!commit || !moved) return
+      const offset = offsetFor(upEvent)
+      onRequestMove(offset.x / pxPerSec.value, Math.round(offset.y / laneHeight))
+    }
+    function onUp(upEvent: PointerEvent) {
+      finish(upEvent, true)
+    }
+    function onCancel(cancelEvent: PointerEvent) {
+      finish(cancelEvent, false)
     }
     element.addEventListener('pointermove', onMove)
     element.addEventListener('pointerup', onUp)
+    element.addEventListener('pointercancel', onCancel)
   }
 
   return (
@@ -104,9 +132,17 @@ export function AdvancedSegmentBlock({
         isSelected
           ? 'border-violet-400 ring-1 ring-violet-400'
           : 'border-black/10 dark:border-white/10',
-        clipColor(segment.clipId)
+        clipColor(segment.clipId),
+        dragOffset.value && 'z-40 cursor-grabbing opacity-80 shadow-lg'
       )}
-      style={{ left: `${left}px`, width: `${width}px` }}
+      style={{
+        left: `${left}px`,
+        width: `${width}px`,
+        transform: dragOffset.value
+          ? `translate(${dragOffset.value.x}px, ${dragOffset.value.y}px)`
+          : undefined,
+      }}
+      title={clip ? `${clip.name} (drag to move, edges to trim)` : 'Missing clip'}
       onPointerDown={onBodyPointerDown}
     >
       {clip && (

@@ -1,6 +1,6 @@
 import { batch, useSignal } from '@preact/signals'
 
-import { beginAdvancedGesture } from '@/lib/advanced/advancedHistory'
+import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
   selectAdvancedSegment,
   setSegmentCrop,
@@ -85,16 +85,20 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
     function onUp() {
       guideX.value = null
       guideY.value = null
+      endAdvancedGesture()
       captureElement.removeEventListener('pointermove', onMove)
       captureElement.removeEventListener('pointerup', onUp)
+      captureElement.removeEventListener('pointercancel', onUp)
     }
     captureElement.addEventListener('pointermove', onMove)
     captureElement.addEventListener('pointerup', onUp)
+    captureElement.addEventListener('pointercancel', onUp)
   }
 
   // Pressing the canvas: a press on a clip selects it and starts moving it in the
   // same gesture; a press on empty space deselects and pans the viewport.
   function onBackgroundPointerDown(event: PointerEvent) {
+    if (event.button !== 0 && event.button !== 1) return
     const wrapper = event.currentTarget as HTMLElement
     const rect = wrapper.getBoundingClientRect()
     const world = screenToWorld(
@@ -103,14 +107,18 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
     )
     const active = segmentsActiveAt(advancedSegments.value, advancedPlayhead.value)
     const topFirst = orderedForRender(active, advancedTracks.value).reverse()
-    const hit = topFirst.find((segment) => pointInTransform(world.x, world.y, segment.transform))
+    // The middle button always pans, even over a clip.
+    const hit =
+      event.button === 0
+        ? topFirst.find((segment) => pointInTransform(world.x, world.y, segment.transform))
+        : undefined
     if (hit) {
       selectAdvancedSegment(hit.id)
       // In crop mode the body is not draggable; just select so the crop handles show.
       if (!cropMode) beginMove(hit, wrapper, event)
       return
     }
-    selectAdvancedSegment('')
+    selectAdvancedSegment(null)
     // Pan the viewport.
     wrapper.setPointerCapture(event.pointerId)
     const startX = event.clientX
@@ -126,13 +134,15 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
     function onUp() {
       wrapper.removeEventListener('pointermove', onMove)
       wrapper.removeEventListener('pointerup', onUp)
+      wrapper.removeEventListener('pointercancel', onUp)
     }
     wrapper.addEventListener('pointermove', onMove)
     wrapper.addEventListener('pointerup', onUp)
+    wrapper.addEventListener('pointercancel', onUp)
   }
 
   function startMove(event: PointerEvent) {
-    if (!selected || cropMode) return
+    if (event.button !== 0 || !selected || cropMode) return
     event.stopPropagation()
     beginMove(selected, event.currentTarget as HTMLElement, event)
   }
@@ -181,11 +191,14 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
         }
       }
       function onUp() {
+        endAdvancedGesture()
         element.removeEventListener('pointermove', onMove)
         element.removeEventListener('pointerup', onUp)
+        element.removeEventListener('pointercancel', onUp)
       }
       element.addEventListener('pointermove', onMove)
       element.addEventListener('pointerup', onUp)
+      element.addEventListener('pointercancel', onUp)
     }
   }
 

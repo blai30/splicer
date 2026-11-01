@@ -1,10 +1,12 @@
-import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
   Scissors,
+  Plus,
+  Redo2,
   Trash2,
+  Undo2,
   Upload,
   VolumeX,
   ZoomIn,
@@ -33,21 +35,23 @@ import {
   createTrackSeekHandler,
 } from '@/lib/timelineDomain'
 import {
+  canRedo,
+  canUndo,
   cutAtPlayhead,
   deleteSegment,
+  redo,
   setInPoint,
   setOutPoint,
   toggleMute,
+  undo,
 } from '@/lib/timelineEditing'
-import { importAndAppend } from '@/lib/videoImport'
+import { FILE_INPUT_ACCEPT, importFiles } from '@/lib/videoImport'
 
 const ZOOM_SCALE_FACTOR = 1.25
 
 export function Timeline() {
   const trackRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const draggingOver = useSignal(false)
-  const dragDepthRef = useRef(0)
   const trackSeekHandlerRef = useRef<ReturnType<typeof createTrackSeekHandler> | null>(null)
   const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
 
@@ -137,56 +141,11 @@ export function Timeline() {
     }
   }
 
-  // Make the whole window a drop target for video import. A depth counter
-  // tracks nested dragenter/dragleave pairs so the overlay does not flicker
-  // when the cursor moves between child elements.
-  useEffect(() => {
-    function hasFiles(event: DragEvent) {
-      return [...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')
-    }
-
-    function onDragEnter(event: DragEvent) {
-      if (!hasFiles(event)) return
-      dragDepthRef.current += 1
-      draggingOver.value = true
-    }
-
-    function onDragOver(event: DragEvent) {
-      if (!hasFiles(event)) return
-      // Allow drop by cancelling the default handling of the dragover event.
-      event.preventDefault()
-    }
-
-    function onDragLeave() {
-      if (dragDepthRef.current === 0) return
-      dragDepthRef.current -= 1
-      if (dragDepthRef.current === 0) draggingOver.value = false
-    }
-
-    async function onDrop(event: DragEvent) {
-      event.preventDefault()
-      dragDepthRef.current = 0
-      draggingOver.value = false
-      const files = Array.from(event.dataTransfer?.files ?? [])
-      for (const file of files) await importAndAppend(file)
-    }
-
-    window.addEventListener('dragenter', onDragEnter)
-    window.addEventListener('dragover', onDragOver)
-    window.addEventListener('dragleave', onDragLeave)
-    window.addEventListener('drop', onDrop)
-    return () => {
-      window.removeEventListener('dragenter', onDragEnter)
-      window.removeEventListener('dragover', onDragOver)
-      window.removeEventListener('dragleave', onDragLeave)
-      window.removeEventListener('drop', onDrop)
-    }
-  }, [])
-
   async function onFileInputChange(event: Event) {
-    const files = Array.from((event.target as HTMLInputElement).files ?? [])
-    for (const file of files) await importAndAppend(file)
-    if (fileInputRef.current) fileInputRef.current.value = ''
+    const input = event.currentTarget as HTMLInputElement
+    const files = Array.from(input.files ?? [])
+    input.value = ''
+    await importFiles(files)
   }
 
   const isEmpty = timeline.value.length === 0
@@ -205,6 +164,33 @@ export function Timeline() {
         </span>
         <div class="flex items-start gap-2.5 md:flex-1">
           <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <button
+              class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-violet-600 transition-colors hover:bg-violet-100/60 hover:duration-0 dark:text-violet-300 dark:hover:bg-violet-900/30"
+              onClick={() => fileInputRef.current?.click()}
+              title="Add video files to the end of the timeline"
+            >
+              <Plus class="h-3.5 w-3.5" />
+              Add
+            </button>
+            <button
+              class="flex items-center justify-center rounded p-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              disabled={!canUndo.value}
+              onClick={undo}
+              title="Undo (Ctrl+Z)"
+              aria-label="Undo"
+            >
+              <Undo2 class="h-3.5 w-3.5" />
+            </button>
+            <button
+              class="flex items-center justify-center rounded p-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              disabled={!canRedo.value}
+              onClick={redo}
+              title="Redo (Ctrl+Shift+Z)"
+              aria-label="Redo"
+            >
+              <Redo2 class="h-3.5 w-3.5" />
+            </button>
+            <span class="mx-0.5 h-4 w-px bg-slate-300 dark:bg-slate-700" aria-hidden="true" />
             <button
               class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
               disabled={disabled}
@@ -258,7 +244,7 @@ export function Timeline() {
               class="flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100/50 hover:text-red-700 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-900/30 dark:hover:text-red-300"
               disabled={disabled}
               onClick={deleteSegment}
-              title="Delete segment"
+              title="Delete segment (Delete)"
               aria-label="Delete selected segment"
             >
               <Trash2 class="h-3.5 w-3.5" />
@@ -298,11 +284,12 @@ export function Timeline() {
                   if (event.key === 'Enter')
                     zoomTo(Number((event.currentTarget as HTMLInputElement).value))
                 }}
-                class="w-14 rounded border border-slate-300 bg-white px-1.5 py-0.5 pr-5 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                title="Zoom level (px/sec)"
+                class="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 pr-8 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                title="Zoom level (pixels per second)"
+                aria-label="Zoom level in pixels per second"
               />
               <span class="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-500">
-                %
+                px/s
               </span>
             </div>
           </div>
@@ -319,14 +306,15 @@ export function Timeline() {
         onPointerDown={onTrackPointerDown}
       >
         {isEmpty ? (
-          <div
-            class="flex h-full cursor-pointer items-center justify-center gap-2 px-4 md:pb-5"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <div class="flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50/50 px-5 py-4 text-center text-slate-500 transition-colors hover:duration-0 dark:border-slate-600 dark:bg-slate-800/20 dark:text-slate-400">
+          <div class="flex h-full items-center justify-center px-4 md:pb-5">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              class="flex min-h-24 w-full max-w-lg items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50/50 px-5 py-4 text-center text-slate-500 transition-colors hover:border-violet-400 hover:text-violet-600 hover:duration-0 focus-visible:border-violet-400 focus-visible:outline-none dark:border-slate-600 dark:bg-slate-800/20 dark:text-slate-400 dark:hover:text-violet-300"
+            >
               <Upload class="h-4 w-4" />
-              <p class="text-base">Click or drop video files to import</p>
-            </div>
+              <span class="text-base">Click or drop video files to import</span>
+            </button>
           </div>
         ) : (
           <div class="relative flex h-full items-start gap-1 px-4 pt-12">
@@ -391,21 +379,10 @@ export function Timeline() {
         )}
       </div>
 
-      {/* Full-window drop overlay: the entire window is a drop target for import */}
-      {draggingOver.value && (
-        <div class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
-          <div class="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-violet-400 bg-white/80 px-10 py-8 text-center shadow-xl dark:bg-slate-900/80">
-            <Upload class="h-7 w-7 text-violet-500" />
-            <p class="text-lg font-semibold text-violet-600 dark:text-violet-300">
-              Drop video files to import
-            </p>
-          </div>
-        </div>
-      )}
       <input
         ref={fileInputRef}
         type="file"
-        accept="video/*,.mp4,.mkv,.mov,.webm"
+        accept={FILE_INPUT_ACCEPT}
         multiple
         class="hidden"
         onChange={onFileInputChange}

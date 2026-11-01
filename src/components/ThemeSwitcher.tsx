@@ -9,8 +9,13 @@ type ViewTransitionDocument = Document & {
 
 function setTheme(next: 'light' | 'dark') {
   document.documentElement.classList.toggle('dark', next === 'dark')
+  document.documentElement.style.colorScheme = next
   theme.value = next
-  localStorage.setItem('theme', next)
+  try {
+    localStorage.setItem('theme', next)
+  } catch {
+    // Storage blocked: the choice lasts for this page view only.
+  }
 }
 
 export function ThemeSwitcher({ class: className }: { class?: string }) {
@@ -38,10 +43,11 @@ export function ThemeSwitcher({ class: className }: { class?: string }) {
 
   return (
     <button
+      type="button"
       onClick={toggleTheme}
       class={clsx('relative flex items-center justify-center', className ?? '')}
       title="Toggle theme"
-      aria-label="Toggle theme"
+      aria-label={theme.value === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
     >
       <Sun class="h-4 w-4 text-amber-500 transition-all duration-300 ease-out dark:scale-0 dark:rotate-90 dark:opacity-0" />
       <Moon class="absolute h-4 w-4 scale-0 rotate-90 text-indigo-400 opacity-0 transition-all duration-300 ease-out dark:scale-100 dark:rotate-0 dark:opacity-100" />
