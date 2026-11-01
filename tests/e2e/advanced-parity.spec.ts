@@ -1,8 +1,15 @@
 import { fileURLToPath } from 'node:url'
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 const fixture = fileURLToPath(new URL('../fixtures/tiny.mp4', import.meta.url))
+
+// Cuts need at least 0.1s on both sides, so seek well inside the clip.
+async function seekToMiddle(page: Page) {
+  const seekBar = page.getByRole('button', { name: 'Seek' })
+  const box = (await seekBar.boundingBox())!
+  await seekBar.click({ position: { x: box.width / 2, y: 2 } })
+}
 
 test('advanced timeline supports cut and renders waveform segment blocks', async ({ page }) => {
   await page.goto('/splicer/')
@@ -18,7 +25,7 @@ test('advanced timeline supports cut and renders waveform segment blocks', async
   // Select the clip, then move the playhead into it via the seek bar.
   await page.locator('[data-advanced-segment]').click()
   await expect(page.locator('[data-advanced-playhead]')).toBeVisible()
-  await page.getByRole('button', { name: 'Seek' }).click({ position: { x: 50, y: 2 } })
+  await seekToMiddle(page)
 
   // The Cut button's accessible name comes from its aria-label.
   const cutButton = page.getByRole('button', { name: /split clip at current playhead/i })
@@ -37,7 +44,7 @@ test('advanced timeline cut can be undone and redone', async ({ page }) => {
   await expect(page.locator('[data-advanced-segment]')).toHaveCount(1)
 
   await page.locator('[data-advanced-segment]').click()
-  await page.getByRole('button', { name: 'Seek' }).click({ position: { x: 50, y: 2 } })
+  await seekToMiddle(page)
   await page.getByRole('button', { name: /split clip at current playhead/i }).click()
   await expect(page.locator('[data-advanced-segment]')).toHaveCount(2)
 

@@ -87,10 +87,12 @@ export function VideoPreview() {
       }
       element.removeEventListener('pointermove', onMove)
       element.removeEventListener('pointerup', onUp)
+      element.removeEventListener('pointercancel', onUp)
     }
 
     element.addEventListener('pointermove', onMove)
     element.addEventListener('pointerup', onUp)
+    element.addEventListener('pointercancel', onUp)
   }
 
   const hasContent = timeline.value.length > 0
@@ -137,7 +139,7 @@ export function VideoPreview() {
 
           {/* Resize handle */}
           <div
-            class="absolute right-0 bottom-0 z-10 flex h-14 w-14 cursor-nwse-resize items-end justify-end rounded-tl-md bg-linear-to-br from-transparent via-transparent to-black/20 p-2.5 opacity-0 transition-opacity group-hover/preview:opacity-100"
+            class="absolute right-0 bottom-0 z-10 flex h-14 w-14 cursor-nwse-resize touch-none items-end justify-end rounded-tl-md bg-linear-to-br from-transparent via-transparent to-black/20 p-2.5 opacity-0 transition-opacity group-hover/preview:opacity-100"
             onPointerDown={onResizePointerDown}
             title="Drag to resize video player"
           >

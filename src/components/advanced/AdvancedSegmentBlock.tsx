@@ -9,7 +9,7 @@ import {
   trimSegmentStart,
   selectAdvancedSegment,
 } from '@/lib/advanced/advancedSegmentEditing'
-import { segmentDuration } from '@/lib/advanced/advancedTimelineDomain'
+import { segmentDuration, TIMELINE_PAD_LEFT } from '@/lib/advanced/advancedTimelineDomain'
 import { formatTime } from '@/lib/format'
 import { advancedSelectedId, clipColor, getClipById, pxPerSec } from '@/lib/store'
 import { createRafThrottler } from '@/lib/timelineDomain'
@@ -33,7 +33,7 @@ export function AdvancedSegmentBlock({
   const clip = getClipById(segment.clipId)
   const duration = segmentDuration(segment)
   const isSelected = advancedSelectedId.value === segment.id
-  const left = segment.timelineStart * pxPerSec.value
+  const left = TIMELINE_PAD_LEFT + segment.timelineStart * pxPerSec.value
   const width = Math.max(2, duration * pxPerSec.value)
 
   useEffect(() => {
@@ -128,7 +128,7 @@ export function AdvancedSegmentBlock({
     <div
       data-advanced-segment
       class={clsx(
-        'absolute top-1 bottom-1 flex cursor-grab items-center overflow-hidden rounded border select-none',
+        'absolute top-1 bottom-1 flex cursor-grab touch-none items-center overflow-hidden rounded border select-none',
         isSelected
           ? 'border-violet-400 ring-1 ring-violet-400'
           : 'border-black/10 dark:border-white/10',
@@ -163,12 +163,12 @@ export function AdvancedSegmentBlock({
       </span>
       <div
         ref={leftRef}
-        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 hover:bg-white/70 hover:duration-0"
+        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('left')}
       />
       <div
         ref={rightRef}
-        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 hover:bg-white/70 hover:duration-0"
+        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('right')}
       />
     </div>

@@ -37,14 +37,16 @@ export function ZoomSlider({
     function onUp() {
       element.removeEventListener('pointermove', onMove)
       element.removeEventListener('pointerup', onUp)
+      element.removeEventListener('pointercancel', onUp)
     }
     element.addEventListener('pointermove', onMove)
     element.addEventListener('pointerup', onUp)
+    element.addEventListener('pointercancel', onUp)
   }
 
   return (
     <div
-      class={clsx('relative h-5 select-none', className ?? 'w-28')}
+      class={clsx('relative h-5 touch-none select-none', className ?? 'w-28')}
       onPointerDown={onPointerDown}
     >
       <div class="absolute top-1/2 right-0 left-0 h-px -translate-y-1/2 bg-slate-200 dark:bg-slate-700" />

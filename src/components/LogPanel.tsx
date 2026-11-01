@@ -89,6 +89,8 @@ export function LogPanel() {
             {LEVELS.map((level) => (
               <button
                 key={level}
+                type="button"
+                aria-pressed={levelFilters.value[level]}
                 onClick={() => toggleLevel(level)}
                 class={clsx(
                   levelFilters.value[level]

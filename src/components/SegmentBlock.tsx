@@ -137,7 +137,7 @@ export function SegmentBlock({
     <div
       data-segment
       class={clsx(
-        'relative flex h-14 shrink-0 cursor-grab items-center overflow-hidden rounded border select-none',
+        'relative flex h-14 shrink-0 cursor-grab touch-none items-center overflow-hidden rounded border select-none',
         isSelected
           ? 'border-violet-400 ring-1 ring-violet-400'
           : 'border-black/10 dark:border-white/10',
@@ -165,13 +165,13 @@ export function SegmentBlock({
       </span>
       <div
         ref={leftRef}
-        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
+        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('left')}
         onClick={(event) => event.stopPropagation()}
       />
       <div
         ref={rightRef}
-        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
+        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 transition-colors hover:bg-white/70 hover:duration-0"
         onPointerDown={onTrimPointerDown('right')}
         onClick={(event) => event.stopPropagation()}
       />

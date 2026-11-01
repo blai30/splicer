@@ -23,7 +23,7 @@ import {
 } from '@/lib/advanced/advancedHistory'
 import { seek } from '@/lib/advanced/advancedPlayback'
 import { moveSegment } from '@/lib/advanced/advancedSegmentEditing'
-import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
+import { projectDuration, TIMELINE_PAD_LEFT } from '@/lib/advanced/advancedTimelineDomain'
 import {
   cutAdvancedAtPlayhead,
   deleteAdvancedSelected,
@@ -43,7 +43,7 @@ import {
 import { computeZoomScroll, createRafThrottler } from '@/lib/timelineDomain'
 
 const LANE_HEIGHT = 56
-const PAD_LEFT = 8
+const PAD_LEFT = TIMELINE_PAD_LEFT
 const ZOOM_SCALE_FACTOR = 1.25
 
 export function AdvancedTimeline() {
@@ -111,16 +111,15 @@ export function AdvancedTimeline() {
     if (!scroller) return
     const oldPx = pxPerSec.value
     const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
-    if (anchorX !== undefined) {
-      scroller.scrollLeft = computeZoomScroll(
-        oldPx,
-        clamped,
-        anchorX,
-        scroller.scrollLeft,
-        PAD_LEFT
-      )
-    }
+    if (clamped === oldPx) return
+    // Apply the anchored scroll after the re-render widens the lanes; set now,
+    // the browser would clamp it to the old scroll range.
+    const target =
+      anchorX === undefined
+        ? null
+        : computeZoomScroll(oldPx, clamped, anchorX, scroller.scrollLeft, PAD_LEFT)
     pxPerSec.value = clamped
+    if (target !== null) requestAnimationFrame(() => (scroller.scrollLeft = Math.max(0, target)))
   }
 
   function onWheel(event: WheelEvent) {
@@ -299,7 +298,7 @@ export function AdvancedTimeline() {
             )}
             <div
               data-advanced-playhead
-              class="absolute top-2 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize"
+              class="absolute top-2 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize touch-none"
               style={{ left: `${playheadLeft}px` }}
             >
               <div class="pointer-events-none absolute inset-x-0 top-0 bottom-0 flex justify-center">

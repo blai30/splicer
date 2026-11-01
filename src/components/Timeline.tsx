@@ -110,12 +110,24 @@ export function Timeline() {
     const oldPx = pxPerSec.value
     const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newPx))
 
-    if (anchorX !== undefined) {
-      // Keep cursor position fixed while zooming: scroll offset adjusted by scale ratio
-      track.scrollLeft = computeZoomScroll(oldPx, clamped, anchorX, track.scrollLeft, PADDING_PX)
-    }
-
+    if (clamped === oldPx) return
+    // Keep the time under the cursor fixed. The target scroll is applied after
+    // the re-render widens the content; set now, the browser would clamp it to
+    // the old, narrower scroll range.
+    const target =
+      anchorX === undefined
+        ? null
+        : computeZoomScroll(oldPx, clamped, anchorX, track.scrollLeft, PADDING_PX)
     pxPerSec.value = clamped
+    if (target !== null) requestAnimationFrame(() => (track.scrollLeft = Math.max(0, target)))
+  }
+
+  function applyZoomInput(input: HTMLInputElement) {
+    const raw = input.value.trim()
+    const value = Number(raw)
+    if (raw !== '' && Number.isFinite(value)) zoomTo(value)
+    // Always show the zoom actually in effect (clamped, or unchanged on bad input).
+    input.value = String(Math.round(pxPerSec.value))
   }
 
   // Cleanup any pending drag handlers on unmount
@@ -279,10 +291,9 @@ export function Timeline() {
                 min={ZOOM_MIN}
                 max={ZOOM_MAX}
                 value={Math.round(pxPerSec.value)}
-                onBlur={(event) => zoomTo(Number((event.currentTarget as HTMLInputElement).value))}
+                onBlur={(event) => applyZoomInput(event.currentTarget as HTMLInputElement)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter')
-                    zoomTo(Number((event.currentTarget as HTMLInputElement).value))
+                  if (event.key === 'Enter') applyZoomInput(event.currentTarget as HTMLInputElement)
                 }}
                 class="w-20 rounded border border-slate-300 bg-white px-1.5 py-0.5 pr-8 text-sm text-slate-700 outline-none focus:border-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 [&]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 title="Zoom level (pixels per second)"
@@ -366,7 +377,7 @@ export function Timeline() {
             })()}
             <div
               data-playhead
-              class="absolute top-0 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize"
+              class="absolute top-0 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize touch-none"
               style={{ left: `${playheadLeft}px` }}
               onPointerDown={onPlayheadPointerDown}
             >
