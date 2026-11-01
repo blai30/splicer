@@ -232,6 +232,13 @@ function drawComposite(requested: number) {
   ctx.setTransform(1, 0, 0, 1, 0, 0)
 }
 
+// The clip's own volume scales the master preview volume, matching the export
+// mix. Media elements reject values above 1, so louder-than-source clips cap.
+export function segmentPreviewVolume(masterVolume: number, segmentVolume = 1): number {
+  const volume = masterVolume * segmentVolume
+  return Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 0
+}
+
 // Keep each active source's video element synced to the playhead; play/pause and
 // mute follow the global clock and track/clip mute. Idle clips are paused.
 function syncVideos(requested: number, playing: boolean) {
@@ -259,7 +266,7 @@ function syncVideos(requested: number, playing: boolean) {
     }
     if (shouldSeekToFrame(seekArgs)) requestSeek(video, segment.id, expected)
     video.muted = previewMuted.value || segment.muted === true || trackMuted(segment.trackId)
-    video.volume = previewVolume.value
+    video.volume = segmentPreviewVolume(previewVolume.value, segment.volume)
     video.playbackRate = playbackRate
     if (playing && video.paused) void video.play().catch(() => {})
     if (!playing && !video.paused) video.pause()

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { shouldSeekToFrame } from '@/lib/advanced/advancedPlayback'
+import { segmentPreviewVolume, shouldSeekToFrame } from '@/lib/advanced/advancedPlayback'
 
 describe('shouldSeekToFrame', () => {
   it('seeks while playing only when drift exceeds the threshold', () => {
@@ -30,5 +30,22 @@ describe('shouldSeekToFrame', () => {
     expect(
       shouldSeekToFrame({ currentTime: 2.0, expected: 3.5, playing: false, lastTarget: 2.0 })
     ).toBe(true)
+  })
+})
+
+describe('segmentPreviewVolume', () => {
+  it('scales the master preview volume by the clip volume', () => {
+    expect(segmentPreviewVolume(0.5, 0.5)).toBe(0.25)
+    expect(segmentPreviewVolume(0.8, 0)).toBe(0)
+  })
+
+  it('uses the master volume when the clip has none set', () => {
+    expect(segmentPreviewVolume(0.6)).toBe(0.6)
+  })
+
+  it('clamps to the media element range', () => {
+    expect(segmentPreviewVolume(0.8, 2)).toBe(1)
+    expect(segmentPreviewVolume(0.5, -1)).toBe(0)
+    expect(segmentPreviewVolume(0.5, Number.NaN)).toBe(0)
   })
 })
