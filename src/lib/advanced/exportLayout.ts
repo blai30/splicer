@@ -108,15 +108,19 @@ function fitScene(
   }
 }
 
-// Resolve the output dimensions and the world->output mapping per segment.
-// Auto (lock === null): the output is the largest scene's bounds (scaled down
-// past the encoder limit); every scene is centered in it at 1:1, and only a
-// scene that does not fit is scaled down. Locked: every scene is contain-fit
-// and centered in the locked size. Black fills the rest at encode time.
-export function computeExportBounds(
+type SceneLayout = { scene: FrameScene; fit: SceneFit }
+
+type ExportLayout = { width: number; height: number; scenes: SceneLayout[] }
+
+// Output size plus each scene's fit into it. Auto (lock === null): the output
+// is the largest scene's bounds (scaled down past the encoder limit); every
+// scene is centered in it at 1:1, and only a scene that does not fit is
+// scaled down. Locked: every scene is contain-fit and centered in the locked
+// size. Black fills the rest at encode time.
+function computeExportLayout(
   segments: AdvancedSegment[],
   lock: CanvasSize | null
-): ExportBounds | null {
+): ExportLayout | null {
   const scenes = groupScenes(segments)
   if (scenes.length === 0) return null
 
@@ -133,16 +137,32 @@ export function computeExportBounds(
     width = clampEven(lock.width)
     height = clampEven(lock.height)
   }
+  return {
+    width,
+    height,
+    scenes: scenes.map((scene) => ({
+      scene,
+      fit: fitScene(scene.bounds, width, height, lock !== null),
+    })),
+  }
+}
+
+// Resolve the output dimensions and the world->output mapping per segment.
+export function computeExportBounds(
+  segments: AdvancedSegment[],
+  lock: CanvasSize | null
+): ExportBounds | null {
+  const layout = computeExportLayout(segments, lock)
+  if (!layout) return null
 
   const fitBySegment = new Map<string, { bounds: WorldRect; fit: SceneFit }>()
-  for (const scene of scenes) {
-    const fit = fitScene(scene.bounds, width, height, lock !== null)
+  for (const { scene, fit } of layout.scenes) {
     for (const id of scene.segmentIds) fitBySegment.set(id, { bounds: scene.bounds, fit })
   }
 
   return {
-    width,
-    height,
+    width: layout.width,
+    height: layout.height,
     mapSegment: (segment) => {
       const entry = fitBySegment.get(segment.id)
       if (!entry) return segment.transform
@@ -161,32 +181,28 @@ export function computeExportBounds(
 export type FrameRectScene = { start: number; end: number; rect: WorldRect }
 
 // World-space rects that preview what each scene exports (the dashed
-// indicator). Auto: the scene bounds. Locked: the bounds expanded to the
-// locked aspect ratio, centered, so the letterbox framing is visible.
+// indicator): the output frame mapped back around the scene through the same
+// fit the export uses, so a smaller scene centered in a larger Auto output, or
+// letterboxed in a locked one, shows the black area it will export with.
 export function computeFrameScenes(
   segments: AdvancedSegment[],
   lock: CanvasSize | null
 ): FrameRectScene[] {
-  return groupScenes(segments).map((scene) => {
-    const { bounds } = scene
-    if (lock === null) return { start: scene.start, end: scene.end, rect: bounds }
-    const lockAspect = lock.width / lock.height
-    const boundsAspect = bounds.width / bounds.height
-    let width = bounds.width
-    let height = bounds.height
-    if (boundsAspect > lockAspect) {
-      height = width / lockAspect
-    } else {
-      width = height * lockAspect
+  const layout = computeExportLayout(segments, lock)
+  if (!layout) return []
+  return layout.scenes.map(({ scene, fit }) => {
+    // A zero-size scene has no meaningful fit; show its bounds as they are.
+    if (!(Number.isFinite(fit.scale) && fit.scale > 0)) {
+      return { start: scene.start, end: scene.end, rect: scene.bounds }
     }
     return {
       start: scene.start,
       end: scene.end,
       rect: {
-        minX: bounds.minX - (width - bounds.width) / 2,
-        minY: bounds.minY - (height - bounds.height) / 2,
-        width,
-        height,
+        minX: scene.bounds.minX - fit.offsetX / fit.scale,
+        minY: scene.bounds.minY - fit.offsetY / fit.scale,
+        width: layout.width / fit.scale,
+        height: layout.height / fit.scale,
       },
     }
   })

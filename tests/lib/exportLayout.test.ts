@@ -202,12 +202,31 @@ describe('frame indicator per scene', () => {
   it('follows the scene at the given time, holding the last one through gaps', () => {
     expect(computeFrameRect([first, second], null, 1)).toEqual({ minX: 0, minY: 0, ...HD })
     expect(computeFrameRect([first, second], null, 6)).toEqual({ minX: 0, minY: 0, ...HD })
+    // The smaller second scene exports centered in the 1920x1080 output, so
+    // the indicator shows that frame around it, black border included.
     expect(computeFrameRect([first, second], null, 9)).toEqual({
-      minX: 3000,
-      minY: 0,
-      width: 640,
-      height: 360,
+      minX: 3000 - (1920 - 640) / 2,
+      minY: -(1080 - 360) / 2,
+      ...HD,
     })
+  })
+
+  it('matches the exported framing of every scene, auto and locked', () => {
+    const portrait = makeSegment('c', { x: 500, y: 0, width: 1080, height: 1920 }, { start: 20 })
+    const segments = [first, second, portrait]
+    for (const lock of [null, { width: 1080, height: 1920 }]) {
+      const bounds = computeExportBounds(segments, lock)!
+      const scenes = computeFrameScenes(segments, lock)
+      segments.forEach((segment, i) => {
+        const rect = scenes[i].rect
+        const scale = bounds.width / rect.width
+        const mapped = bounds.mapSegment(segment)
+        expect(scale).toBeCloseTo(bounds.height / rect.height)
+        expect(mapped.x).toBeCloseTo((segment.transform.x - rect.minX) * scale)
+        expect(mapped.y).toBeCloseTo((segment.transform.y - rect.minY) * scale)
+        expect(mapped.width).toBeCloseTo(segment.transform.width * scale)
+      })
+    }
   })
 
   it('indexes scenes by start time', () => {
