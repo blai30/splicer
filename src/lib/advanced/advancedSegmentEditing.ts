@@ -302,12 +302,14 @@ export function splitAdvancedSegment(id: string, atGlobalTime: number): string |
 
   recordAdvancedHistory()
   const newId = crypto.randomUUID()
-  const first = { ...segment, sourceEnd: sourceSplit }
+  // The cut keeps continuous playback, so only the outer edges keep their fades.
+  const first = { ...segment, sourceEnd: sourceSplit, fadeOut: undefined }
   const second = {
     ...segment,
     id: newId,
     sourceStart: sourceSplit,
     timelineStart: atGlobalTime,
+    fadeIn: undefined,
   }
   advancedSegments.value = advancedSegments.value.flatMap((entry) =>
     entry.id === id ? [first, second] : [entry]

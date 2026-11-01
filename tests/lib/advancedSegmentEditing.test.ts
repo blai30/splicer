@@ -8,12 +8,14 @@ import {
   moveSegmentToNewTrack,
   removeAdvancedSegment,
   setSegmentCrop,
+  setSegmentProps,
   setSegmentTransform,
   splitAdvancedSegment,
   trimSegmentEnd,
   trimSegmentStart,
 } from '@/lib/advanced/advancedSegmentEditing'
 import { clearAdvancedSelection } from '@/lib/advanced/advancedSelection'
+import { segmentGainAt } from '@/lib/advanced/segmentGain'
 import { advancedSegments, advancedSelectedId, advancedTracks, clips } from '@/lib/store'
 import type { Clip } from '@/lib/types'
 
@@ -157,5 +159,19 @@ describe('advancedSegmentEditing transform and crop', () => {
     expect(advancedSegments.value[0].crop).toEqual({ x: 5, y: 5, width: 100, height: 50 })
     setSegmentCrop(id, undefined)
     expect(advancedSegments.value[0].crop).toBeUndefined()
+  })
+  it('keeps the outer fades only, so playback stays at full level across the cut', () => {
+    const id = addClipToTrack(makeClip('a'), 'track-1', 0)
+    setSegmentProps(id, { fadeIn: 1, fadeOut: 1 })
+    splitAdvancedSegment(id, 3)
+    const [first, second] = [...advancedSegments.value].sort(
+      (a, b) => a.timelineStart - b.timelineStart
+    )
+    expect(first).toMatchObject({ fadeIn: 1, fadeOut: undefined })
+    expect(second).toMatchObject({ fadeIn: undefined, fadeOut: 1 })
+    expect(segmentGainAt(first, 3 - 0.001)).toBe(1)
+    expect(segmentGainAt(second, 0)).toBe(1)
+    expect(segmentGainAt(first, 0)).toBe(0)
+    expect(segmentGainAt(second, 3)).toBe(0)
   })
 })
