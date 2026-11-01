@@ -213,6 +213,7 @@ export function buildEditPlan(job: ExportJob): EditPlan {
       durationSec: job.slices.reduce((sum, slice) => sum + sliceDurationSec(slice), 0),
       frameRate: nominalFrameRate,
       sourceEquivalent,
+      sourceBitrateBound: sourceEquivalent?.raw ?? null,
       sourceBytes: coveredSourceBytes(
         job.slices.map((slice) => {
           const source = job.sources[slice.sourceIndex]

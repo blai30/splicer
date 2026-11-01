@@ -143,6 +143,23 @@ describe('targetAudioBitrate', () => {
   it('never goes above the preset', () => {
     expect(targetAudioBitrate('low', 'aac', [{ bitrate: 320_000, codec: 'aac' }])).toBe(64_000)
   })
+
+  it('keeps a codec conversion at or under the source bitrate below Maximum', () => {
+    // 64k Opus needs about 91k of AAC, which would grow the file past the source.
+    const opusSource = [{ bitrate: 64_000, codec: 'opus' }]
+    expect(targetAudioBitrate('medium', 'aac', opusSource)).toBe(64_000)
+    expect(targetAudioBitrate('high', 'aac', opusSource)).toBe(64_000)
+    // Maximum is the opt-in tier that may convert at equal quality.
+    expect(targetAudioBitrate('lossless', 'aac', opusSource)).toBe(96_000)
+  })
+
+  it('follows a quiet source down to each codec minimum', () => {
+    const voiceMemo = [{ bitrate: 24_000, codec: 'aac' }]
+    // Some platform AAC encoders reject rates under 32k.
+    expect(targetAudioBitrate('high', 'aac', voiceMemo)).toBe(32_000)
+    expect(targetAudioBitrate('high', 'opus', voiceMemo)).toBe(16_000)
+    expect(targetAudioBitrate('high', 'opus', [{ bitrate: 8_000, codec: 'aac' }])).toBe(16_000)
+  })
 })
 
 function estimateInput(overrides: Partial<EstimateInput> = {}): EstimateInput {
@@ -155,6 +172,7 @@ function estimateInput(overrides: Partial<EstimateInput> = {}): EstimateInput {
     videoBitrate: 2_000_000,
     audioBitrate: 0,
     sourceEquivalent: { codecAdjusted: 2_000_000, raw: 2_000_000 },
+    sourceBitrateBound: 2_000_000,
     sourceBytes: 2_500_000,
     ...overrides,
   }
@@ -171,44 +189,93 @@ describe('estimateOutputBytes', () => {
   })
 
   it('predicts the floor, not the target, for a heavily compressed complex source', () => {
-    // 720p30 floor for H.264 is about 0.025 bpp: ~690 kbps.
+    // 720p30 H.264 floor on complex content: (4800 + 0.027 x 921600) x 30, ~890 kbps.
+    const complexFloor = (4_800 + 0.027 * 1280 * 720) * 30
     const estimate = estimateOutputBytes(
       estimateInput({
         videoBitrate: 105_000,
-        sourceEquivalent: { codecAdjusted: 300_000, raw: 300_000 },
+        sourceEquivalent: { codecAdjusted: 900_000, raw: 900_000 },
+        sourceBitrateBound: 900_000,
       })
     )
     expect(estimate.belowEncoderFloor).toBe(true)
-    expect(estimate.encoderFloorBitrate).toBeCloseTo(691_200)
-    expect(estimate.expected).toBeCloseTo((691_200 * 10 * 1.01) / 8, -3)
+    expect(estimate.encoderFloorBitrate).toBeCloseTo(complexFloor)
+    expect(estimate.expected).toBeCloseTo((complexFloor * 10 * 1.01) / 8, -3)
   })
 
-  it('lets simple content go below the complex-content floor', () => {
+  it('keeps a simple low-bitrate source near its own bitrate at the floor', () => {
+    // tests/fixtures/tiny.mp4: 320x240 at 46 kbps of video. OpenH264 lands at
+    // 36-45 kbps, well under the complex-content floor (~206 kbps).
     const estimate = estimateOutputBytes(
       estimateInput({
-        videoBitrate: 22_000,
-        sourceEquivalent: { codecAdjusted: 22_000, raw: 22_000 },
+        width: 320,
+        height: 240,
+        durationSec: 2,
+        videoBitrate: 16_000,
+        audioBitrate: 64_000,
+        sourceEquivalent: { codecAdjusted: 46_000, raw: 46_000 },
+        sourceBitrateBound: 46_000,
+        sourceBytes: 32_694,
       })
     )
-    expect(estimate.encoderFloorBitrate).toBe(66_000)
+    expect(estimate.belowEncoderFloor).toBe(true)
+    expect(estimate.encoderFloorBitrate).toBeCloseTo(69_000)
+    const bytesAt = (videoBitrate: number) => (((videoBitrate + 64_000) * 2) / 8) * 1.01
+    // The measured exports (27.2 KB at Low, 29.4 KB at High) fall in the range.
+    expect(estimate.low).toBeLessThanOrEqual(bytesAt(36_000))
+    expect(estimate.high).toBeGreaterThanOrEqual(bytesAt(45_000))
+    expect(estimate.expected).toBeLessThan(32_694 * 1.1)
   })
 
   it('caps H.264 at its best-quantizer ceiling', () => {
-    const estimate = estimateOutputBytes(estimateInput({ videoBitrate: 40_000_000 }))
+    const estimate = estimateOutputBytes(
+      estimateInput({ videoBitrate: 40_000_000, sourceBitrateBound: null })
+    )
     expect(estimate.expected).toBeLessThan((12_000_000 * 10) / 8)
   })
 
-  it('expects VP9 VBR to land under its target', () => {
+  it('bounds a table request by the source when layers overlap', () => {
+    // Two 46 kbps 320x240 clips side by side at half size, Maximum: a 1.5 Mbps
+    // table request that OpenH264 meets at about 175 kbps on this content.
+    const estimate = estimateOutputBytes(
+      estimateInput({
+        width: 320,
+        height: 240,
+        durationSec: 2,
+        videoBitrate: 1_480_000,
+        audioBitrate: 64_000,
+        sourceEquivalent: null,
+        sourceBitrateBound: 23_000,
+      })
+    )
+    expect(estimate.low).toBeLessThanOrEqual(60_961)
+    expect(estimate.high).toBeGreaterThanOrEqual(60_961)
+  })
+
+  it('models libvpx overshooting near its floor and undershooting generous targets', () => {
+    const vp9At = (videoBitrate: number) =>
+      estimateOutputBytes(estimateInput({ videoCodec: 'vp9', videoBitrate }))
+    const bytesAt = (videoBitrate: number) => ((videoBitrate * 10) / 8) * 1.01
+    // 720p30 VP9 Medium from a 1.5 Mbps source: 582 kbps asked, ~624 delivered.
+    const medium = vp9At(582_000)
+    expect(medium.expected).toBeGreaterThan(bytesAt(582_000))
+    expect(medium.high).toBeGreaterThanOrEqual(bytesAt(624_000))
+    // Maximum on the same source: 1455 kbps asked, ~1139 delivered.
+    const maximum = vp9At(1_455_000)
+    expect(maximum.expected).toBeLessThan(bytesAt(1_455_000))
+    expect(maximum.low).toBeLessThanOrEqual(bytesAt(1_139_000))
+  })
+
+  it('expects VP9 VBR to land under a generous target', () => {
     const avc = estimateOutputBytes(estimateInput())
     const vp9 = estimateOutputBytes(estimateInput({ videoCodec: 'vp9' }))
     expect(vp9.expected).toBeLessThan(avc.expected)
   })
 
   it('adds audio and widens the band without source stats', () => {
-    const silent = estimateOutputBytes(estimateInput({ sourceEquivalent: null }))
-    const withAudio = estimateOutputBytes(
-      estimateInput({ sourceEquivalent: null, audioBitrate: 128_000 })
-    )
+    const unknown = { sourceEquivalent: null, sourceBitrateBound: null }
+    const silent = estimateOutputBytes(estimateInput(unknown))
+    const withAudio = estimateOutputBytes(estimateInput({ ...unknown, audioBitrate: 128_000 }))
     expect(withAudio.expected - silent.expected).toBeCloseTo((128_000 * 10 * 1.01) / 8, -2)
     expect(silent.high / silent.expected).toBeCloseTo(1.4)
   })

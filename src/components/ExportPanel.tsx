@@ -40,7 +40,11 @@ import type {
   Quality,
   WebmCodec,
 } from '@/lib/types'
-import { estimatePlanBytes, type SizeEstimate } from '@/lib/webcodecs/bitrateModel'
+import {
+  estimatePlanBytes,
+  type SizeEstimate,
+  type SourceEquivalent,
+} from '@/lib/webcodecs/bitrateModel'
 import { buildCompositorPlan } from '@/lib/webcodecs/compositorPlan'
 import { buildEditPlan } from '@/lib/webcodecs/editPlan'
 
@@ -85,6 +89,11 @@ const QUALITY_HINTS: Record<Quality, { relative: string; fixed: string }> = {
     fixed: 'Low: a low bitrate for the output size, for the smallest file.',
   },
 }
+
+// Medium and Low are fractions in the output codec's terms, so converting from
+// a more efficient codec keeps more of the source's bitrate.
+const CONVERSION_HINT =
+  ' The source uses a more efficient codec, so the same quality takes more bits here and the file shrinks less.'
 
 const FRAMERATES: { value: Framerate; label: string }[] = [
   { value: 'original', label: 'Original' },
@@ -174,7 +183,19 @@ type Summary = {
   // False when a source bitrate is unknown (or the Advanced layout mixes
   // sources), so presets fall back to fixed per-resolution bitrates.
   sourceRelative: boolean
+  // The output codec needs more bits than the source's for the same quality.
+  fromMoreEfficientCodec: boolean
   oversizedCanvas: OversizedCanvas | null
+}
+
+function sourceRelation(
+  sourceEquivalent: SourceEquivalent | null
+): Pick<Summary, 'sourceRelative' | 'fromMoreEfficientCodec'> {
+  return {
+    sourceRelative: sourceEquivalent !== null,
+    fromMoreEfficientCodec:
+      sourceEquivalent !== null && sourceEquivalent.codecAdjusted > sourceEquivalent.raw * 1.05,
+  }
 }
 
 // Output size, duration, and a size estimate from the same plan the export
@@ -192,7 +213,7 @@ function summarize(isAdvanced: boolean): Summary | null {
       height: job.canvas.height,
       duration: projectDuration(advancedSegments.value),
       estimate: estimatePlanBytes(plan),
-      sourceRelative: plan.sizeBasis.sourceEquivalent !== null,
+      ...sourceRelation(plan.sizeBasis.sourceEquivalent),
       oversizedCanvas:
         advancedOutputLock.value === null
           ? findOversizedAutoCanvas(visibleAdvancedSegments(advancedSegments.value))
@@ -207,9 +228,23 @@ function summarize(isAdvanced: boolean): Summary | null {
     height: plan.outputHeight,
     duration: plan.sizeBasis.durationSec,
     estimate: estimatePlanBytes(plan),
-    sourceRelative: plan.sizeBasis.sourceEquivalent !== null,
+    ...sourceRelation(plan.sizeBasis.sourceEquivalent),
     oversizedCanvas: null,
   }
+}
+
+// Only a source-relative estimate can say much about the source, and only a
+// clear margin over it is "likely": simple content often lands under the
+// predicted encoder floor.
+const LARGER_THAN_SOURCE_MARGIN = 1.1
+
+function likelyLargerThanSource(summary: Summary): boolean {
+  const { sourceBytes, expected } = summary.estimate
+  return (
+    summary.sourceRelative &&
+    sourceBytes !== null &&
+    expected > sourceBytes * LARGER_THAN_SOURCE_MARGIN
+  )
 }
 
 function formatKbps(bitsPerSecond: number): string {
@@ -316,6 +351,9 @@ export function ExportPanel() {
           {summary && !summary.sourceRelative
             ? QUALITY_HINTS[quality.value].fixed
             : QUALITY_HINTS[quality.value].relative}
+          {summary?.fromMoreEfficientCodec &&
+            (quality.value === 'medium' || quality.value === 'low') &&
+            CONVERSION_HINT}
         </p>
         <OptionButtonGroup
           label="FPS"
@@ -384,18 +422,16 @@ export function ExportPanel() {
               'Add a clip to the timeline to export.'
             )}
           </p>
-          {summary &&
-            summary.estimate.sourceBytes !== null &&
-            summary.estimate.expected > summary.estimate.sourceBytes && (
-              <div class="flex items-start gap-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                <Info class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <p>
-                  {summary.estimate.belowEncoderFloor
-                    ? `Likely larger than the source. The source is more compressed than the encoder can go at ${summary.width}×${summary.height} (about ${formatKbps(summary.estimate.encoderFloorBitrate)} of video), so a lower quality will not shrink it much.`
-                    : 'Likely larger than the source. Pick a lower quality for a smaller file.'}
-                </p>
-              </div>
-            )}
+          {summary && likelyLargerThanSource(summary) && (
+            <div class="flex items-start gap-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              <Info class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <p>
+                {summary.estimate.belowEncoderFloor
+                  ? `Likely larger than the source. The source is more compressed than the encoder can go at ${summary.width}×${summary.height} (about ${formatKbps(summary.estimate.encoderFloorBitrate)} of video), so a lower quality will not shrink it much.`
+                  : 'Likely larger than the source. Pick a lower quality for a smaller file.'}
+              </p>
+            </div>
+          )}
           {summary?.oversizedCanvas && (
             <div class="flex flex-wrap items-start gap-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
               <Info class="mt-0.5 size-4 shrink-0" aria-hidden="true" />

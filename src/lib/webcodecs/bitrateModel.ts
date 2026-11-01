@@ -44,32 +44,38 @@ const MIN_TABLE_VIDEO_BITRATE = 100_000
 const MIN_SOURCE_VIDEO_BITRATE = 16_000
 
 // Measured with Chromium's software encoders (OpenH264, libvpx) on complex
-// content: below about this many bits per pixel per frame, or this many bits
-// per frame at small sizes, they stop following the target. Used only to
-// predict the size and explain it, never to raise the requested bitrate:
-// hardware encoders differ, and simpler content goes lower.
-const ENCODER_FLOOR: Record<string, { bitsPerPixel: number; minBitsPerFrame: number }> = {
-  avc: { bitsPerPixel: 0.025, minBitsPerFrame: 4_400 },
-  vp9: { bitsPerPixel: 0.016, minBitsPerFrame: 3_400 },
-  vp8: { bitsPerPixel: 0.028, minBitsPerFrame: 4_400 },
+// content (testsrc2, mandelbrot, 360p to 720p): below about this many bits per
+// frame, a fixed part plus a part per pixel, they stop following the target.
+// Used only to predict the size and explain it, never to raise the requested
+// bitrate: hardware encoders differ, and simpler content goes lower.
+const ENCODER_FLOOR: Record<string, { baseBitsPerFrame: number; bitsPerPixel: number }> = {
+  avc: { baseBitsPerFrame: 4_800, bitsPerPixel: 0.027 },
+  vp9: { baseBitsPerFrame: 4_000, bitsPerPixel: 0.016 },
+  vp8: { baseBitsPerFrame: 4_800, bitsPerPixel: 0.028 },
 }
 // OpenH264 tops out near this at its best quantizer, whatever the target.
 const ENCODER_CEILING_BPP: Record<string, number> = { avc: 0.4 }
-// libvpx VBR lands under its target on typical content.
-const BITRATE_ADHERENCE: Record<string, number> = { vp9: 0.85 }
-// Simple content lands under the complex-content floor even at the coarsest
-// quantizer. The source's own bitrate bounds how complex it can be.
-const FLOOR_SOURCE_MULTIPLE = 3
+// libvpx VBR overshoots a little near its floor and lands well under a
+// generous target, so its delivered share falls as bits per pixel rise.
+const VP9_ADHERENCE = { lowBpp: 0.02, atLow: 1.05, highBpp: 0.05, atHigh: 0.85 }
+// The source's bitrate bounds how complex the picture can be: simple content
+// lands under the complex-content floor (measured from 0.7x to 2x the source
+// at the coarsest quantizer), and a best-quantizer encode of it stays within
+// a few times the source.
+const FLOOR_SOURCE_MULTIPLE = { low: 0.7, expected: 1.5, high: 3 }
+const CEILING_SOURCE_MULTIPLE = 4
 const MUX_OVERHEAD = 1.01
 
 const AUDIO_PRESETS: Record<MbAudioCodec, Record<Quality, number>> = {
   aac: { lossless: 128_000, high: 128_000, medium: 96_000, low: 64_000 },
   opus: { lossless: 128_000, high: 96_000, medium: 64_000, low: 48_000 },
 }
-// AAC encoders are only reliable on the usual rates; Opus takes any rate.
+// AAC encoders are only reliable on the usual rates, and some platform
+// encoders reject anything under 32k, so a quieter source still gets 32k.
+// Opus takes any rate.
 const AAC_LADDER = [32_000, 48_000, 64_000, 96_000, 128_000, 160_000, 192_000]
 const OPUS_STEP = 8_000
-const OPUS_MIN = 24_000
+const OPUS_MIN = 16_000
 // A source a few percent under a ladder step still rounds to that step.
 const LADDER_TOLERANCE = 1.05
 
@@ -166,6 +172,9 @@ function snapAudioBitrate(bitrate: number, codec: MbAudioCodec): number {
 
 // The preset rate for the codec, capped at the richest audible source (in the
 // output codec's terms) when every audible source has a measured bitrate.
+// Below Maximum the cap is also the source's own bitrate, as for video, so a
+// conversion to a less efficient codec does not grow the file past the source
+// (AAC's 32k minimum aside).
 export function targetAudioBitrate(
   quality: Quality,
   codec: MbAudioCodec,
@@ -179,7 +188,9 @@ export function targetAudioBitrate(
   let cap = 0
   for (const source of sources) {
     const sourceEfficiency = AUDIO_CODEC_EFFICIENCY[source.codec ?? ''] ?? 1
-    cap = Math.max(cap, ((source.bitrate ?? 0) * outputEfficiency) / sourceEfficiency)
+    const bitrate = source.bitrate ?? 0
+    const converted = (bitrate * outputEfficiency) / sourceEfficiency
+    cap = Math.max(cap, quality === 'lossless' ? converted : Math.min(converted, bitrate))
   }
   return snapAudioBitrate(Math.min(preset, cap), codec)
 }
@@ -189,6 +200,10 @@ export type SizeBasis = {
   // Output frame rate used for the encoder floor ("original" resolved).
   frameRate: number
   sourceEquivalent: SourceEquivalent | null
+  // Raw source bits per second the output picture carries, scaled by displayed
+  // area and summed over layers shown together. Bounds how complex the
+  // picture can be, even when overlapping layers leave no source-equivalent.
+  sourceBitrateBound: number | null
   // Bytes of the source footage the export covers, for comparison.
   sourceBytes: number | null
 }
@@ -214,31 +229,61 @@ export type SizeEstimate = {
   encoderFloorBitrate: number
 }
 
+// Share of a VP9 target libvpx delivers at this many bits per pixel.
+function vp9Adherence(bitsPerPixel: number): number {
+  const { lowBpp, atLow, highBpp, atHigh } = VP9_ADHERENCE
+  const progress = Math.min(1, Math.max(0, (bitsPerPixel - lowBpp) / (highBpp - lowBpp)))
+  return atLow + (atHigh - atLow) * progress
+}
+
 export function estimateOutputBytes(input: EstimateInput): SizeEstimate {
   const frameRate = Math.max(1, input.frameRate)
-  const pixelRate = input.width * input.height * frameRate
+  const pixels = input.width * input.height
+  const pixelRate = pixels * frameRate
   const floorModel = ENCODER_FLOOR[input.videoCodec] ?? ENCODER_FLOOR.avc
-  const complexFloor =
-    Math.max(floorModel.bitsPerPixel * input.width * input.height, floorModel.minBitsPerFrame) *
-    frameRate
-  const floor = input.sourceEquivalent
-    ? Math.min(complexFloor, input.sourceEquivalent.raw * FLOOR_SOURCE_MULTIPLE)
-    : complexFloor
+  const complexFloor = (floorModel.baseBitsPerFrame + floorModel.bitsPerPixel * pixels) * frameRate
+  const bound = input.sourceBitrateBound
+  const floorAt = (multiple: number) =>
+    bound !== null ? Math.min(complexFloor, bound * multiple) : complexFloor
+  const floor = floorAt(FLOOR_SOURCE_MULTIPLE.expected)
   const ceilingBpp = ENCODER_CEILING_BPP[input.videoCodec]
-  const ceiling = ceilingBpp === undefined ? Infinity : ceilingBpp * pixelRate
-  const delivered = input.videoBitrate * (BITRATE_ADHERENCE[input.videoCodec] ?? 1)
-  const videoBitrate = Math.min(Math.max(delivered, floor), ceiling)
+  let ceiling = ceilingBpp === undefined ? Infinity : ceilingBpp * pixelRate
+  if (bound !== null)
+    ceiling = Math.min(ceiling, Math.max(complexFloor, bound * CEILING_SOURCE_MULTIPLE))
+  const adherence =
+    input.videoCodec === 'vp9' ? vp9Adherence(input.videoBitrate / Math.max(1, pixelRate)) : 1
+  const delivered = input.videoBitrate * adherence
   const belowEncoderFloor = delivered < floor * 0.95
 
+  // Encoders follow a target closely on complex content (libvpx a bit less);
+  // the floor itself varies with content, and content dependence dominates
+  // without source stats.
+  const spread = !input.sourceEquivalent
+    ? 0.4
+    : belowEncoderFloor
+      ? 0.25
+      : input.videoCodec === 'vp9'
+        ? 0.2
+        : 0.15
+  const videoExpected = Math.min(Math.max(delivered, floor), ceiling)
+  // A request near the floor may land anywhere the source allows: down to its
+  // simplest-content share, or up to its most compressed-complex one.
+  const videoLow = Math.min(
+    videoExpected * (1 - spread),
+    Math.max(delivered, floorAt(FLOOR_SOURCE_MULTIPLE.low))
+  )
+  const videoHigh = Math.max(
+    videoExpected * (1 + spread),
+    Math.min(floorAt(FLOOR_SOURCE_MULTIPLE.high), ceiling)
+  )
+
   const duration = Math.max(0, input.durationSec)
-  const expected = (((videoBitrate + input.audioBitrate) * duration) / 8) * MUX_OVERHEAD
-  // Encoders follow a target closely on complex content; content dependence
-  // dominates at the floor and without source stats.
-  const spread = !input.sourceEquivalent ? 0.4 : belowEncoderFloor ? 0.3 : 0.15
+  const toBytes = (videoBitrate: number) =>
+    (((videoBitrate + input.audioBitrate) * duration) / 8) * MUX_OVERHEAD
   return {
-    low: expected * (1 - spread),
-    expected,
-    high: expected * (1 + spread),
+    low: toBytes(videoLow),
+    expected: toBytes(videoExpected),
+    high: toBytes(videoHigh),
     sourceBytes: input.sourceBytes,
     belowEncoderFloor,
     encoderFloorBitrate: floor,

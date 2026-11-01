@@ -10,6 +10,11 @@ const highBitrate = fixture('high-bitrate.mp4')
 // 640x360 H.264 at ~60 kbps: below what the browser's H.264 encoder can reach
 // at that size, so every preset lands near the encoder floor.
 const lowBitrate = fixture('low-bitrate.mp4')
+// 320x240 30 fps H.264 at ~46 kbps of simple content: the encoder goes under
+// its complex-content floor and the export comes out smaller than the source.
+const tiny = fixture('tiny.mp4')
+// 1280x720 30 fps detailed H.264 (testsrc2) at ~1.5 Mbps, no audio.
+const detailed720p = fixture('detailed-720p.mp4')
 
 const UNIT_BYTES: Record<string, number> = { B: 1, KB: 1_000, MB: 1_000_000, GB: 1_000_000_000 }
 
@@ -22,16 +27,38 @@ async function readEstimate(page: Page): Promise<number> {
   return Number(match[1]) * UNIT_BYTES[match[2]]
 }
 
-async function exportAt(page: Page, label: string, exportsSoFar: number) {
-  await page.getByRole('radio', { name: new RegExp(`^${label}$`) }).click()
-  const estimate = await readEstimate(page)
+// "(83–113 KB)" or "(745 KB–1.0 MB)" -> [83000, 113000]
+async function readRange(page: Page): Promise<[number, number]> {
+  const text = await page.getByText(/~\s*[\d.]+ [KMG]?B/).innerText()
+  const match = text.match(/\(([\d.]+) ?([KMG]?B)?–([\d.]+) ([KMG]?B)\)/)
+  if (!match) throw new Error(`No size range shown in "${text}"`)
+  return [
+    Number(match[1]) * UNIT_BYTES[match[2] ?? match[4]],
+    Number(match[3]) * UNIT_BYTES[match[4]],
+  ]
+}
+
+async function exportCurrent(page: Page, exportsSoFar: number) {
   await page.getByRole('button', { name: /export video/i }).click()
   const links = page.getByRole('link', { name: /splicer-.*\.(mp4|webm)/ })
   await expect(links).toHaveCount(exportsSoFar + 1, { timeout: 90_000 })
   // The newest export is listed first.
   const href = await links.first().getAttribute('href')
-  const bytes = await page.evaluate(async (url) => (await (await fetch(url!)).blob()).size, href)
-  return { estimate, bytes }
+  return page.evaluate(async (url) => (await (await fetch(url!)).blob()).size, href)
+}
+
+async function exportAt(page: Page, label: string, exportsSoFar: number) {
+  await page.getByRole('radio', { name: new RegExp(`^${label}$`) }).click()
+  const estimate = await readEstimate(page)
+  const range = await readRange(page)
+  const bytes = await exportCurrent(page, exportsSoFar)
+  return { estimate, range, bytes }
+}
+
+// Range bounds are rounded for display; allow that rounding.
+function expectInRange(bytes: number, [low, high]: [number, number]) {
+  expect(bytes).toBeGreaterThanOrEqual(low * 0.98)
+  expect(bytes).toBeLessThanOrEqual(high * 1.02)
 }
 
 test('presets order sizes and stay at or under a source above the encoder floor', async ({
@@ -87,6 +114,40 @@ test('a source below the encoder floor gets an honest estimate and note', async 
   }
 })
 
+test('a simple low-bitrate source is not flagged as growing and lands in the range', async ({
+  page,
+}) => {
+  const sourceBytes = statSync(tiny).size
+  await page.goto('/splicer/')
+  await page.locator('input[type="file"]').setInputFiles(tiny)
+  await expect(page.locator('[data-segment]')).toHaveCount(1)
+  await expect(page.getByText(/· source \d+ KB/)).toBeVisible()
+
+  const high = await exportAt(page, 'High', 0)
+  await expect(page.getByText(/likely larger than the source/i)).toHaveCount(0)
+  const low = await exportAt(page, 'Low', 1)
+  await expect(page.getByText(/likely larger than the source/i)).toHaveCount(0)
+  for (const result of [high, low]) {
+    expectInRange(result.bytes, result.range)
+    expect(result.bytes).toBeLessThanOrEqual(sourceBytes * 1.05)
+  }
+})
+
+test('VP9 Medium at 720p lands in the shown range', async ({ page }) => {
+  await page.goto('/splicer/')
+  await page.locator('input[type="file"]').setInputFiles(detailed720p)
+  await expect(page.locator('[data-segment]')).toHaveCount(1)
+  await expect(page.getByText(/· source \d+ KB/)).toBeVisible()
+  await page.getByRole('radio', { name: /^WebM$/ }).click()
+  const medium = await exportAt(page, 'Medium', 0)
+  expectInRange(medium.bytes, medium.range)
+  // libvpx meets a moderate target here; a flat 85% adherence guessed ~14% low.
+  expect(medium.bytes / medium.estimate).toBeGreaterThan(0.85)
+  expect(medium.bytes / medium.estimate).toBeLessThan(1.12)
+  const high = await exportAt(page, 'High', 1)
+  expectInRange(high.bytes, high.range)
+})
+
 test('the quality hint describes the selected preset', async ({ page }) => {
   await page.goto('/splicer/')
   await page.locator('input[type="file"]').setInputFiles(highBitrate)
@@ -125,4 +186,10 @@ test('Advanced warns when clips playing together spread the auto canvas and lock
   await lock.click()
   await expect(page.getByText(/^320×240 ·/)).toBeVisible()
   await expect(lock).toHaveCount(0)
+
+  // Overlapping layers have no source-equivalent, but the sources still
+  // bound the estimate, and nothing claims the export outgrows the source.
+  await expect(page.getByText(/likely larger than the source/i)).toHaveCount(0)
+  const range = await readRange(page)
+  expectInRange(await exportCurrent(page, 0), range)
 })

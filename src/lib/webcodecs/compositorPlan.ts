@@ -33,8 +33,6 @@ export type CompositorPlan = {
   sizeBasis: SizeBasis
 }
 
-// A layer this close to covering the frame stands for the whole picture.
-const DOMINANT_COVERAGE = 0.9
 const OVERLAP_EPSILON_SEC = 1e-6
 
 // Codecs reject odd dimensions for yuv420; floor to even.
@@ -66,46 +64,83 @@ function visibleArea(layer: CompositorLayer, width: number, height: number): num
   return Math.max(0, overlapWidth) * Math.max(0, overlapHeight)
 }
 
-// Source slices for a composition that is one full-frame clip at a time (a
-// plain sequence, possibly with gaps). Anything else (picture-in-picture,
-// side-by-side, small clips) mixes sources in ways a bitrate mean cannot
-// describe, so it returns null and the codec-adjusted table applies.
-export function dominantLayerSlices(
+function layerSlice(
+  job: CompositorJob,
+  layer: CompositorLayer,
+  width: number,
+  height: number
+): SourceSlice {
+  const source = job.sources[layer.sourceIndex]
+  return {
+    durationSec: layerDuration(layer),
+    displayedPixels: visibleArea(layer, width, height),
+    sourceWidth: source?.width ?? 0,
+    sourceHeight: source?.height ?? 0,
+    videoBitrate: source?.videoBitrate,
+    videoCodec: source?.videoCodec,
+  }
+}
+
+function visibleLayers(job: CompositorJob): CompositorLayer[] {
+  return job.layers
+    .filter((layer) => layer.opacity > 0 && layerDuration(layer) > 0)
+    .sort((first, second) => first.timelineStart - second.timelineStart)
+}
+
+// Source slices for a composition that shows one layer at a time (a plain
+// sequence, possibly with gaps). Each slice is scaled by the area it covers,
+// so a smaller scene centered or letterboxed in the output asks for its share
+// of the bits, as Basic does for a fitted clip. Layers shown together
+// (picture-in-picture, side by side) mix sources in ways a bitrate mean
+// cannot describe, so that returns null and the codec-adjusted table applies.
+export function sequentialLayerSlices(
   job: CompositorJob,
   width: number,
   height: number
 ): SourceSlice[] | null {
-  const layers = job.layers
-    .filter((layer) => layer.opacity > 0 && layerDuration(layer) > 0)
-    .sort((first, second) => first.timelineStart - second.timelineStart)
+  const layers = visibleLayers(job)
   if (layers.length === 0) return null
-  const frameArea = width * height
   let previousEnd = -Infinity
-  const slices: SourceSlice[] = []
   for (const layer of layers) {
     if (layer.timelineStart < previousEnd - OVERLAP_EPSILON_SEC) return null
     previousEnd = Math.max(previousEnd, layer.timelineStart + layerDuration(layer))
-    const displayedPixels = visibleArea(layer, width, height)
-    if (displayedPixels < frameArea * DOMINANT_COVERAGE) return null
-    const source = job.sources[layer.sourceIndex]
-    slices.push({
-      durationSec: layerDuration(layer),
-      displayedPixels,
-      sourceWidth: source?.width ?? 0,
-      sourceHeight: source?.height ?? 0,
-      videoBitrate: source?.videoBitrate,
-      videoCodec: source?.videoCodec,
-    })
   }
-  return slices
+  return layers.map((layer) => layerSlice(job, layer, width, height))
+}
+
+// Raw source bits per second of everything on screen, each layer scaled by
+// the area it covers, summed while layers play together and averaged over the
+// time any layer shows. Only bounds the size estimate: it over-counts layers
+// hidden under others, which errs toward a larger file. Null when any visible
+// layer lacks a measured bitrate.
+export function layeredSourceBitrate(
+  job: CompositorJob,
+  width: number,
+  height: number
+): number | null {
+  const layers = visibleLayers(job)
+  let bits = 0
+  let coveredDuration = 0
+  let coveredUntil = -Infinity
+  for (const layer of layers) {
+    const slice = layerSlice(job, layer, width, height)
+    const sourcePixels = slice.sourceWidth * slice.sourceHeight
+    if (!(slice.videoBitrate && slice.videoBitrate > 0) || !(sourcePixels > 0)) return null
+    bits += slice.videoBitrate * (slice.displayedPixels / sourcePixels) * slice.durationSec
+    // Layers are sorted by start, so the union of their spans grows in order.
+    const end = layer.timelineStart + slice.durationSec
+    coveredDuration += Math.max(0, end - Math.max(layer.timelineStart, coveredUntil))
+    coveredUntil = Math.max(coveredUntil, end)
+  }
+  return coveredDuration > 0 ? bits / coveredDuration : null
 }
 
 export function buildCompositorPlan(job: CompositorJob): CompositorPlan {
   const outputWidth = evenFloor(job.canvas.width)
   const outputHeight = evenFloor(job.canvas.height)
-  const dominantSlices = dominantLayerSlices(job, outputWidth, outputHeight)
-  const sourceEquivalent = dominantSlices
-    ? sourceEquivalentBitrate(dominantSlices, job.videoCodec)
+  const sequentialSlices = sequentialLayerSlices(job, outputWidth, outputHeight)
+  const sourceEquivalent = sequentialSlices
+    ? sourceEquivalentBitrate(sequentialSlices, job.videoCodec)
     : null
   const sourceAudio = job.audioLayers
     .filter((layer) => job.sources[layer.sourceIndex]?.hasAudio === true)
@@ -151,6 +186,7 @@ export function buildCompositorPlan(job: CompositorJob): CompositorPlan {
       durationSec: job.durationSec,
       frameRate: fpsGrid,
       sourceEquivalent,
+      sourceBitrateBound: layeredSourceBitrate(job, outputWidth, outputHeight),
       sourceBytes: coveredSourceBytes(
         job.layers.map((layer) => {
           const source = job.sources[layer.sourceIndex]

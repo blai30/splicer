@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildCompositorPlan, dominantLayerSlices } from '@/lib/webcodecs/compositorPlan'
+import {
+  buildCompositorPlan,
+  layeredSourceBitrate,
+  sequentialLayerSlices,
+} from '@/lib/webcodecs/compositorPlan'
 import type { CompositorJob } from '@/lib/webcodecs/compositorProtocol'
 
 function makeJob(overrides: Partial<CompositorJob> = {}): CompositorJob {
@@ -81,28 +85,54 @@ describe('buildCompositorPlan source-aware bitrate', () => {
         layers: [fullFrame, { ...fullFrame, timelineStart: 5 }],
       })
     )
-    expect(dominantLayerSlices(makeJob({ sources: [measured] }), 1920, 1080)).toHaveLength(1)
+    expect(sequentialLayerSlices(makeJob({ sources: [measured] }), 1920, 1080)).toHaveLength(1)
     expect(plan.videoBitrate).toBe(2_000_000)
     expect(plan.sizeBasis.sourceEquivalent?.raw).toBe(2_000_000)
     expect(plan.sizeBasis.sourceBytes).toBe(2_000)
   })
 
-  it('falls back to the table when layers overlap in time', () => {
+  it('falls back to the table when layers overlap in time, bounded by the sources', () => {
     const overlay = {
       ...fullFrame,
       timelineStart: 1,
       transform: { x: 0, y: 0, width: 480, height: 270 },
     }
-    const plan = buildCompositorPlan(makeJob({ sources: [measured], layers: [fullFrame, overlay] }))
+    const job = makeJob({ sources: [measured], layers: [fullFrame, overlay] })
+    const plan = buildCompositorPlan(job)
     expect(plan.sizeBasis.sourceEquivalent).toBeNull()
     expect(plan.videoBitrate).toBe(12_000_000)
+    // 4 s of the full frame plus 4 s of a 1/16 overlay, over the 5 s shown.
+    expect(plan.sizeBasis.sourceBitrateBound).toBeCloseTo((2_000_000 * (4 + 4 / 16)) / 5)
+    expect(layeredSourceBitrate(makeJob({ layers: [fullFrame, overlay] }), 1920, 1080)).toBeNull()
   })
 
-  it('falls back to the table when the only layer leaves much of the frame empty', () => {
-    const small = { ...fullFrame, transform: { x: 0, y: 0, width: 960, height: 1080 } }
-    expect(dominantLayerSlices(makeJob({ sources: [measured], layers: [small] }), 1920, 1080)).toBe(
-      null
+  it('scales a smaller centered second scene by the area it covers', () => {
+    // Auto output 1920x1080 from the first scene; a 1280x720 recording follows,
+    // centered at 1:1 with black around it.
+    const screen = { ...measured, width: 1280, height: 720, videoBitrate: 1_000_000 }
+    const centered = {
+      ...fullFrame,
+      sourceIndex: 1,
+      timelineStart: 4,
+      transform: { x: 320, y: 180, width: 1280, height: 720 },
+    }
+    const plan = buildCompositorPlan(
+      makeJob({ sources: [measured, screen], layers: [fullFrame, centered], durationSec: 8 })
     )
+    expect(plan.sizeBasis.sourceEquivalent?.raw).toBeCloseTo(1_500_000)
+    expect(plan.videoBitrate).toBe(1_500_000)
+    expect(plan.sizeBasis.sourceBitrateBound).toBeCloseTo(1_500_000)
+  })
+
+  it('scales a letterboxed clip under a portrait lock by its fitted area', () => {
+    // 1920x1080 contain-fit into 1080x1920: 1080x607.5, about 32% of the frame.
+    const letterboxed = { ...fullFrame, transform: { x: 0, y: 656.25, width: 1080, height: 607.5 } }
+    const plan = buildCompositorPlan(
+      makeJob({ canvas: { width: 1080, height: 1920 }, sources: [measured], layers: [letterboxed] })
+    )
+    const expected = 2_000_000 * ((1080 * 607.5) / (1920 * 1080))
+    expect(plan.sizeBasis.sourceEquivalent?.raw).toBeCloseTo(expected)
+    expect(plan.videoBitrate).toBe(Math.round(expected))
   })
 
   it('gives VP9 the codec-adjusted table', () => {
