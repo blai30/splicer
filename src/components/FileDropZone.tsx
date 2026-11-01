@@ -2,8 +2,14 @@ import { useSignal } from '@preact/signals'
 import { Upload } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { consumeLaunchedFiles, type LaunchQueue } from '@/lib/launchQueue'
 import { appMode } from '@/lib/store'
 import { importFiles, importFilesIntoAdvanced, prefetchMediaProbe } from '@/lib/videoImport'
+
+function importIntoActiveEditor(files: File[]) {
+  if (appMode.value === 'advanced') void importFilesIntoAdvanced(files)
+  else void importFiles(files)
+}
 
 function hasFiles(event: DragEvent): boolean {
   return [...(event.dataTransfer?.types ?? [])].includes('Files')
@@ -23,6 +29,9 @@ export function FileDropZone() {
       typeof requestIdleCallback === 'function'
         ? requestIdleCallback(prefetchMediaProbe, { timeout: 5000 })
         : window.setTimeout(prefetchMediaProbe, 2000)
+
+    // Videos opened from the OS with the installed app.
+    consumeLaunchedFiles(window as { launchQueue?: LaunchQueue }, importIntoActiveEditor)
 
     function onDragEnter(event: DragEvent) {
       if (!hasFiles(event)) return
@@ -50,9 +59,7 @@ export function FileDropZone() {
       event.preventDefault()
       depth.current = 0
       draggingOver.value = false
-      const files = Array.from(event.dataTransfer?.files ?? [])
-      if (appMode.value === 'advanced') void importFilesIntoAdvanced(files)
-      else void importFiles(files)
+      importIntoActiveEditor(Array.from(event.dataTransfer?.files ?? []))
     }
 
     window.addEventListener('dragenter', onDragEnter)
