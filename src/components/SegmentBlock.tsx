@@ -3,6 +3,7 @@ import clsx from 'clsx/lite'
 import { VolumeX } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { clipBlockHasFocus, focusClipBlock } from '@/components/focusClipBlock'
 import type { ScrollWindow } from '@/components/useTimelineNavigation'
 import { WaveformView } from '@/components/WaveformView'
 import { copyPreview } from '@/lib/copyExport'
@@ -20,11 +21,14 @@ import { createRafThrottler } from '@/lib/timelineDomain'
 import { clampPlayheadForSegment, findDropIndexAtTrackX } from '@/lib/timelineDomain'
 import {
   beginGesture,
+  deleteSegment,
   endGesture,
+  moveSegment,
   reorderSegment,
   trimSegmentEnd,
   trimSegmentStart,
 } from '@/lib/timelineEditing'
+import { adjacentId, clipBlockLabel } from '@/lib/timelineKeyboard'
 import {
   BLOCK_DURATION_MIN_WIDTH_PX,
   BLOCK_NAME_MIN_WIDTH_PX,
@@ -34,17 +38,22 @@ import { DEFAULT_SNAP_FPS, resolveEdgeTime, snapThresholdSeconds } from '@/lib/t
 import type { Segment } from '@/lib/types'
 import { ensureClipWaveform } from '@/lib/videoImport'
 
+const focusSegment = (segmentId: string) => focusClipBlock(`[data-segment-id="${segmentId}"]`)
+
 export function SegmentBlock({
   segment,
   isDragging,
   startX,
   width,
+  isTabStop,
   scrollWindow,
 }: {
   segment: Segment
   isDragging?: boolean
   startX: number
   width: number
+  // The one block in the tab order (roving tabindex).
+  isTabStop: boolean
   // The track's visible window, so the waveform draws only what is in view.
   scrollWindow?: ReadonlySignal<ScrollWindow>
 }) {
@@ -155,12 +164,61 @@ export function SegmentBlock({
     }
   }
 
+  // Keyboard use of a focused block. Plain arrows move the selection to the
+  // neighbouring block, Alt+arrows reorder, Delete removes. Handled keys are
+  // prevented so the global shortcuts (frame steps, delete) skip them.
+  function onKeyDown(event: KeyboardEvent) {
+    if (event.target !== event.currentTarget || event.ctrlKey || event.metaKey) return
+    const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
+    if (step !== 0 && !event.shiftKey) {
+      event.preventDefault()
+      if (event.altKey) {
+        moveSegment(segment.id, step)
+        focusSegment(segment.id)
+        return
+      }
+      const next = adjacentId(
+        timeline.value.map((entry) => entry.id),
+        segment.id,
+        step
+      )
+      const nextSegment = timeline.value.find((entry) => entry.id === next)
+      if (!nextSegment) return
+      selectedSegmentId.value = nextSegment.id
+      seek(nextSegment.startTime)
+      focusSegment(nextSegment.id)
+      return
+    }
+    if (event.key === 'Enter' && !event.altKey && !event.shiftKey) {
+      event.preventDefault()
+      selectedSegmentId.value = segment.id
+      seek(segment.startTime)
+      return
+    }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !event.altKey) {
+      event.preventDefault()
+      deleteSegment(segment.id)
+      // The timeline selected the block that took its place.
+      const nextId = selectedSegmentId.value
+      if (nextId) focusSegment(nextId)
+    }
+  }
+
   function onBodyPointerDown(event: PointerEvent) {
     if (event.button !== 0) return
     const element = event.currentTarget as HTMLElement
     const trackElement = element.closest('[data-track]') as HTMLElement | null
     if (!trackElement) return
     event.stopPropagation()
+    // A click must not move focus onto the block: arrow keys there move the
+    // selection, while after a click they should keep stepping frames. When
+    // a block already has keyboard focus, the focus follows the click.
+    const keepFocus = clipBlockHasFocus('data-segment')
+    event.preventDefault()
+    if (keepFocus) element.focus({ preventScroll: true })
+    // Otherwise blur, as a click on the track always did, so Space plays
+    // rather than pressing whatever button was focused before.
+    else if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     element.setPointerCapture(event.pointerId)
     const startClientX = event.clientX
     let moved = false
@@ -220,8 +278,13 @@ export function SegmentBlock({
     <div
       data-segment
       data-segment-id={segment.id}
+      role="option"
+      aria-selected={isSelected}
+      aria-label={clipBlockLabel(clip?.name ?? 'Clip', formatTime(segmentDuration), segment.muted)}
+      tabIndex={isTabStop ? 0 : -1}
+      onKeyDown={onKeyDown}
       class={clsx(
-        'relative flex h-14 shrink-0 cursor-grab touch-none items-center overflow-hidden rounded border select-none',
+        'relative flex h-14 shrink-0 cursor-grab touch-none items-center overflow-hidden rounded border select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white',
         isSelected
           ? 'border-violet-400 ring-1 ring-violet-400'
           : 'border-black/10 dark:border-white/10',
@@ -230,7 +293,6 @@ export function SegmentBlock({
       )}
       style={{ width: `${width}px` }}
       onPointerDown={onBodyPointerDown}
-      aria-haspopup="menu"
     >
       {clip && (
         <WaveformView

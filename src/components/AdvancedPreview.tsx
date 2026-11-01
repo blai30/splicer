@@ -18,6 +18,7 @@ import { computeContentBounds } from '@/lib/advanced/exportLayout'
 import { clampStageHeight } from '@/lib/advanced/stageHeight'
 import { clampZoom, fitToContent, zoomAtPoint } from '@/lib/advanced/viewportMath'
 import { formatTimecode } from '@/lib/format'
+import { seekAdvancedByKey } from '@/lib/seekKeys'
 import {
   PLAYBACK_SPEED_OPTIONS,
   advancedPlayhead,
@@ -27,6 +28,7 @@ import {
   advancedViewport,
   playbackRate,
 } from '@/lib/store'
+import { seekKeyAction } from '@/lib/timelineKeyboard'
 
 const FIT_PADDING = 40
 
@@ -253,16 +255,32 @@ function SeekBar({ totalDuration }: { totalDuration: number }) {
     seek(ratio * totalDuration)
   }
 
+  const time = Math.min(totalDuration, advancedPlayhead.value)
+  const disabled = totalDuration <= 0
   return (
-    <button
-      type="button"
-      onClick={onSeekClick}
-      disabled={totalDuration <= 0}
+    <div
+      role="slider"
+      tabIndex={disabled ? -1 : 0}
       aria-label="Seek"
-      class="h-1.5 w-full cursor-pointer bg-slate-200 disabled:cursor-default dark:bg-slate-800"
+      aria-disabled={disabled}
+      aria-valuemin={0}
+      aria-valuemax={Math.round(totalDuration * 100) / 100}
+      aria-valuenow={Math.round(time * 100) / 100}
+      aria-valuetext={`${formatTimecode(time)} of ${formatTimecode(totalDuration)}`}
+      onClick={onSeekClick}
+      onKeyDown={(event) => {
+        const action = disabled ? null : seekKeyAction(event)
+        if (!action) return
+        event.preventDefault()
+        seekAdvancedByKey(action)
+      }}
+      class={clsx(
+        'h-1.5 w-full bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:bg-slate-800',
+        disabled ? 'cursor-default' : 'cursor-pointer'
+      )}
     >
       <div class="h-full bg-violet-500" style={{ width: `${progress * 100}%` }} />
-    </button>
+    </div>
   )
 }
 

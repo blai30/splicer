@@ -6,7 +6,7 @@ const fixture = fileURLToPath(new URL('../fixtures/tiny.mp4', import.meta.url))
 
 // Cuts need at least 0.1s on both sides, so seek well inside the clip.
 async function seekToMiddle(page: Page) {
-  const seekBar = page.getByRole('button', { name: 'Seek' })
+  const seekBar = page.getByRole('slider', { name: 'Seek' })
   const box = (await seekBar.boundingBox())!
   await seekBar.click({ position: { x: box.width / 2, y: 2 } })
 }

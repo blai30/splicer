@@ -36,6 +36,7 @@ import { placeReadout } from '@/lib/advanced/advancedTimelineDomain'
 import { editNotice } from '@/lib/editNotice'
 import { formatPreciseTime } from '@/lib/format'
 import { beginScrub, endScrub, seek } from '@/lib/playback'
+import { seekBasicByKey } from '@/lib/seekKeys'
 import {
   GAP_PX,
   PADDING_PX,
@@ -62,6 +63,7 @@ import {
   trackXToHit,
   viewportToTrackX,
   xToGlobalTime,
+  globalTimeOf,
 } from '@/lib/timelineDomain'
 import {
   canRedo,
@@ -79,6 +81,7 @@ import {
   toggleMute,
   undo,
 } from '@/lib/timelineEditing'
+import { rovingTabStop } from '@/lib/timelineKeyboard'
 import {
   fitZoomWithMinWidth,
   formatZoom,
@@ -108,10 +111,20 @@ export function Timeline() {
       PADDING_PX
     )
   )
+  // The playhead's place on the whole edited timeline, for its slider value.
+  const playheadGlobalTime = useComputed(() => {
+    const segments = timeline.value
+    const activeId = selectedSegmentId.value ?? segments[0]?.id
+    return activeId ? (globalTimeOf(segments, activeId, playheadTime.value) ?? 0) : 0
+  })
   const isEmpty = useComputed(() => timeline.value.length === 0)
   const layout = layoutSignal.value
   const segments = timeline.value
   const totalDuration = layoutDuration(layout)
+  const tabStopId = rovingTabStop(
+    segments.map((segment) => segment.id),
+    (id) => id === selectedSegmentId.value
+  )
   const scrollWindow = useScrollWindow(trackRef)
   const { zoomTo, zoomStep, fit } = useTimelineNavigation({
     scrollRef: trackRef,
@@ -409,54 +422,76 @@ export function Timeline() {
               scrollWindow={scrollWindow}
               markerXs={cutMarkerXs(layout, GAP_PX)}
             />
-            {(() => {
-              const dragStateValue = dragState.value
-              const fromIndex = dragStateValue
-                ? segments.findIndex((segment) => segment.id === dragStateValue.segmentId)
-                : -1
-              const result = []
-              for (let i = 0; i < segments.length; i++) {
+            {/* The blocks form one listbox with a single tab stop on the
+                selection; arrow keys move it (see SegmentBlock). */}
+            <div
+              role="listbox"
+              aria-label="Segments"
+              aria-orientation="horizontal"
+              class="contents"
+            >
+              {(() => {
+                const dragStateValue = dragState.value
+                const fromIndex = dragStateValue
+                  ? segments.findIndex((segment) => segment.id === dragStateValue.segmentId)
+                  : -1
+                const result = []
+                for (let i = 0; i < segments.length; i++) {
+                  if (
+                    dragStateValue &&
+                    dragStateValue.dropIndex === i &&
+                    fromIndex !== i &&
+                    fromIndex + 1 !== i
+                  ) {
+                    result.push(
+                      <div
+                        key={`drop-${i}`}
+                        aria-hidden="true"
+                        class="pointer-events-none w-1 shrink-0 self-stretch rounded-full bg-violet-400"
+                      />
+                    )
+                  }
+                  const item = layout[i]
+                  result.push(
+                    <SegmentBlock
+                      key={segments[i].id}
+                      segment={segments[i]}
+                      isDragging={dragStateValue?.segmentId === segments[i].id}
+                      startX={item.startX}
+                      width={item.endX - item.startX}
+                      isTabStop={segments[i].id === tabStopId}
+                      scrollWindow={scrollWindow}
+                    />
+                  )
+                }
                 if (
                   dragStateValue &&
-                  dragStateValue.dropIndex === i &&
-                  fromIndex !== i &&
-                  fromIndex + 1 !== i
+                  dragStateValue.dropIndex === segments.length &&
+                  fromIndex !== segments.length - 1
                 ) {
                   result.push(
                     <div
-                      key={`drop-${i}`}
+                      key="drop-last"
+                      aria-hidden="true"
                       class="pointer-events-none w-1 shrink-0 self-stretch rounded-full bg-violet-400"
                     />
                   )
                 }
-                const item = layout[i]
-                result.push(
-                  <SegmentBlock
-                    key={segments[i].id}
-                    segment={segments[i]}
-                    isDragging={dragStateValue?.segmentId === segments[i].id}
-                    startX={item.startX}
-                    width={item.endX - item.startX}
-                    scrollWindow={scrollWindow}
-                  />
-                )
-              }
-              if (
-                dragStateValue &&
-                dragStateValue.dropIndex === segments.length &&
-                fromIndex !== segments.length - 1
-              ) {
-                result.push(
-                  <div
-                    key="drop-last"
-                    class="pointer-events-none w-1 shrink-0 self-stretch rounded-full bg-violet-400"
-                  />
-                )
-              }
-              return result
-            })()}
+                return result
+              })()}
+            </div>
             <TrimReadout layout={layout} scrollWindow={scrollWindow} />
-            <TimelinePlayhead data-playhead class="top-0" x={playheadX} />
+            <TimelinePlayhead
+              data-playhead
+              class="top-0"
+              x={playheadX}
+              slider={{
+                label: 'Playhead',
+                time: playheadGlobalTime,
+                duration: totalDuration,
+                onSeekKey: seekBasicByKey,
+              }}
+            />
           </div>
         )}
       </div>

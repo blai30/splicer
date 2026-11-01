@@ -4,6 +4,7 @@ import clsx from 'clsx/lite'
 import { VolumeX } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
+import { clipBlockHasFocus, focusClipBlock } from '@/components/focusClipBlock'
 import type { ScrollWindow } from '@/components/useTimelineNavigation'
 import { WaveformView } from '@/components/WaveformView'
 import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
@@ -28,6 +29,10 @@ import {
   type LaneDropTarget,
   type VisibleWindow,
 } from '@/lib/advanced/advancedTimelineDomain'
+import {
+  deleteAdvancedSelected,
+  rippleDeleteAdvancedSelected,
+} from '@/lib/advanced/advancedTimelineEditing'
 import { clampLaneDelta } from '@/lib/advanced/clipEditingDomain'
 import { formatPreciseTime, formatSignedSeconds, formatTime } from '@/lib/format'
 import {
@@ -49,6 +54,7 @@ import {
   pxPerSec,
 } from '@/lib/store'
 import { createEdgeAutoScroller, createRafThrottler } from '@/lib/timelineDomain'
+import { advancedNeighbourId, clipBlockLabel, type ArrowDirection } from '@/lib/timelineKeyboard'
 import { BLOCK_DURATION_MIN_WIDTH_PX, BLOCK_NAME_MIN_WIDTH_PX } from '@/lib/timelineNavigation'
 import {
   resolveEdgeTime,
@@ -115,15 +121,37 @@ function landedOn(edge: number, target: number | null): number | null {
   return target !== null && Math.abs(edge - target) < 1e-6 ? target : null
 }
 
+const ARROW_DIRECTIONS: Record<string, ArrowDirection> = {
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+}
+
+const focusAdvancedBlock = (segmentId: string) =>
+  focusClipBlock(`[data-advanced-segment-id="${segmentId}"]`)
+
+// Select a clip from the keyboard and carry focus to it.
+function moveKeyboardSelection(segmentId: string, extend: boolean) {
+  const target = advancedSegments.value.find((entry) => entry.id === segmentId)
+  if (!target) return
+  selectAdvancedSegment(segmentId, extend ? 'add' : 'replace')
+  setActiveAdvancedTrack(target.trackId)
+  focusAdvancedBlock(segmentId)
+}
+
 export function AdvancedSegmentBlock({
   segment,
   laneHeight,
   width,
   raised,
+  isTabStop,
   scrollWindow,
 }: {
   segment: AdvancedSegment
   laneHeight: number
+  // The one block in the tab order (roving tabindex).
+  isTabStop: boolean
   // Drawn width in px (see advancedBlockSpans).
   width: number
   // A short clip widened past its duration, drawn over its neighbours.
@@ -255,9 +283,66 @@ export function AdvancedSegmentBlock({
     advancedClipMenu.value = { segmentId: segment.id, x: event.clientX, y: event.clientY }
   }
 
+  // Keyboard use of a focused block: arrows move the selection to the
+  // neighbouring clip (Shift adds it to the selection), Enter selects this one
+  // alone, Delete removes the selection and focuses a neighbour. Alt+arrows
+  // stay with the global one-frame nudge. Handled keys are prevented so the
+  // global shortcuts skip them.
+  function onKeyDown(event: KeyboardEvent) {
+    if (event.target !== event.currentTarget || event.ctrlKey || event.metaKey) return
+    const direction = ARROW_DIRECTIONS[event.key]
+    if (direction && !event.altKey) {
+      event.preventDefault()
+      const next = advancedNeighbourId(
+        advancedSegments.value,
+        advancedTracks.value,
+        segment.id,
+        direction
+      )
+      if (next) moveKeyboardSelection(next, event.shiftKey)
+      return
+    }
+    if (event.key === 'Enter' && !event.altKey && !event.shiftKey) {
+      event.preventDefault()
+      moveKeyboardSelection(segment.id, false)
+      return
+    }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !event.altKey) {
+      event.preventDefault()
+      const removed = new Set(advancedSelectedIds.value)
+      removed.add(segment.id)
+      // The nearest clip that survives the delete keeps the focus.
+      const survivor = (['right', 'left', 'down', 'up'] as const)
+        .map((toward) =>
+          advancedNeighbourId(
+            advancedSegments.value.filter(
+              (entry) => entry.id === segment.id || !removed.has(entry.id)
+            ),
+            advancedTracks.value,
+            segment.id,
+            toward
+          )
+        )
+        .find((id) => id !== null)
+      if (!advancedSelectedIds.value.includes(segment.id)) selectAdvancedSegment(segment.id)
+      if (event.shiftKey) rippleDeleteAdvancedSelected()
+      else deleteAdvancedSelected()
+      if (survivor) moveKeyboardSelection(survivor, false)
+    }
+  }
+
   function onBodyPointerDown(event: PointerEvent) {
     if (event.button !== 0) return
     event.stopPropagation()
+    // A click must not move focus onto the block: arrow keys there move the
+    // selection, while after a click they should keep stepping frames. When
+    // a block already has keyboard focus, the focus follows the click.
+    const keepFocus = clipBlockHasFocus('data-advanced-segment')
+    event.preventDefault()
+    if (keepFocus) (event.currentTarget as HTMLElement).focus({ preventScroll: true })
+    // Otherwise blur, as a click on the timeline always did, so Space plays
+    // rather than pressing whatever button was focused before.
+    else if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     setActiveAdvancedTrack(segment.trackId)
     const selectionMode = clickSelectionMode(event)
     if (selectionMode) {
@@ -460,8 +545,17 @@ export function AdvancedSegmentBlock({
       <div
         data-advanced-segment
         data-advanced-segment-id={segment.id}
+        role="option"
+        aria-selected={isSelected}
+        aria-label={clipBlockLabel(
+          clip?.name ?? 'Missing clip',
+          formatTime(duration),
+          segment.muted
+        )}
+        tabIndex={isTabStop ? 0 : -1}
+        onKeyDown={onKeyDown}
         class={clsx(
-          'absolute top-1 bottom-1 flex cursor-grab touch-none items-center overflow-hidden rounded border select-none',
+          'absolute top-1 bottom-1 flex cursor-grab touch-none items-center overflow-hidden rounded border select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white',
           isSelected
             ? 'border-violet-400 ring-1 ring-violet-400'
             : 'border-black/10 dark:border-white/10',
@@ -524,6 +618,7 @@ export function AdvancedSegmentBlock({
       {readout && (
         <div
           data-advanced-readout
+          aria-hidden="true"
           class={clsx(
             'pointer-events-none absolute -top-6 z-50 truncate rounded bg-slate-900/80 px-1.5 py-0.5 text-xs text-white tabular-nums shadow',
             readoutPlacement.alignEnd && '-translate-x-full'

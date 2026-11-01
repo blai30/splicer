@@ -49,6 +49,7 @@ import {
   toggleAdvancedMute,
 } from '@/lib/advanced/advancedTimelineEditing'
 import { laneOverlaps } from '@/lib/advanced/clipEditingDomain'
+import { seekAdvancedByKey } from '@/lib/seekKeys'
 import {
   advancedActiveTrackId,
   advancedClipDragActive,
@@ -57,7 +58,9 @@ import {
   advancedPlayhead,
   advancedPlaying,
   advancedSegments,
+  advancedSelectedId,
   advancedSelectedIds,
+  advancedSelectedSet,
   advancedSelection,
   advancedSnapEnabled,
   advancedSnapLine,
@@ -65,6 +68,7 @@ import {
   pxPerSec,
 } from '@/lib/store'
 import { createEdgeAutoScroller, createRafThrottler } from '@/lib/timelineDomain'
+import { rovingTabStop } from '@/lib/timelineKeyboard'
 import { fitZoom, MIN_BLOCK_WIDTH_PX, ZOOM_STEP_FACTOR } from '@/lib/timelineNavigation'
 
 const LANE_HEIGHT = 56
@@ -91,6 +95,19 @@ export function AdvancedTimeline() {
   const duration = Math.max(projectDuration(segments), advancedDragPreviewEnd.value ?? 0)
   const contentWidth = Math.max(600, duration * pxPerSec.value + 200)
   const blockSpans = advancedBlockSpans(segments, pxPerSec.value, MIN_BLOCK_WIDTH_PX)
+  // The single tab stop: the primary clip, else any selected clip, else the
+  // first clip in track and time order.
+  const laneOrder = tracks.flatMap((track) =>
+    segments
+      .filter((segment) => segment.trackId === track.id)
+      .sort((first, second) => first.timelineStart - second.timelineStart)
+      .map((segment) => segment.id)
+  )
+  const primaryId = advancedSelectedId.value
+  const tabStopId =
+    primaryId && laneOrder.includes(primaryId)
+      ? primaryId
+      : rovingTabStop(laneOrder, (id) => advancedSelectedSet.value.has(id))
   // Read only by the playhead leaf and the follow effect, so playback does not
   // re-render the lanes.
   const playheadX = useComputed(() => PAD_LEFT + advancedPlayhead.value * pxPerSec.value)
@@ -433,8 +450,13 @@ export function AdvancedTimeline() {
             </div>
             <div ref={lanesRef} data-advanced-lanes class="relative">
               {tracks.map((track) => (
+                // Each lane is a listbox of its clips; one tab stop covers
+                // all lanes, and arrow keys move between them.
                 <div
                   key={track.id}
+                  role="listbox"
+                  aria-label={`${track.name} clips`}
+                  aria-multiselectable="true"
                   class={clsx(
                     'relative border-b border-slate-200/40 dark:border-slate-700/40',
                     track.id === activeTrackId && 'bg-violet-500/5'
@@ -447,6 +469,7 @@ export function AdvancedTimeline() {
                     <div
                       key={overlap.start}
                       data-advanced-overlap
+                      aria-hidden="true"
                       title="Clips overlap here; the later one in the track draws on top"
                       class="pointer-events-none absolute top-1 bottom-1 z-26 rounded-sm bg-[repeating-linear-gradient(135deg,rgb(0_0_0/0.35)_0_0.25rem,transparent_0.25rem_0.5rem)] ring-1 ring-amber-300/70"
                       style={{
@@ -466,6 +489,7 @@ export function AdvancedTimeline() {
                           laneHeight={LANE_HEIGHT}
                           width={span?.width ?? 0}
                           raised={span?.raised ?? false}
+                          isTabStop={segment.id === tabStopId}
                           scrollWindow={scrollWindow}
                         />
                       )
@@ -502,7 +526,17 @@ export function AdvancedTimeline() {
                 style={{ left: `${PAD_LEFT + advancedSnapLine.value * pxPerSec.value}px` }}
               />
             )}
-            <TimelinePlayhead data-advanced-playhead class="top-2" x={playheadX} />
+            <TimelinePlayhead
+              data-advanced-playhead
+              class="top-2"
+              x={playheadX}
+              slider={{
+                label: 'Playhead',
+                time: advancedPlayhead,
+                duration: projectDuration(segments),
+                onSeekKey: seekAdvancedByKey,
+              }}
+            />
           </div>
         </div>
       </div>
