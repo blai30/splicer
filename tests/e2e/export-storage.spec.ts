@@ -76,6 +76,39 @@ test('a small MP4 stays in memory with an exact fast-start index', async ({ page
   expect(probe.boxes).toEqual(['ftyp', 'moov', 'mdat'])
 })
 
+// A WebM source has no packet index to bound a reserved MP4 index with, so a
+// small export is built in memory to keep its index up front.
+test('an MP4 from a WebM source keeps fast start', async ({ page }) => {
+  await page.goto('/splicer/')
+  await page.locator('input[type="file"]').setInputFiles(tiny)
+  await expect(page.locator('[data-segment]')).toHaveCount(1)
+  await page.getByRole('radio', { name: /^WebM$/ }).click()
+  await page.getByRole('button', { name: /export video/i }).click()
+  const webmLink = page.getByRole('link', { name: /splicer-.*\.webm/ })
+  await expect(webmLink).toHaveCount(1, { timeout: 90_000 })
+  const webmBytes = await page.evaluate(
+    async (url) => {
+      return Array.from(new Uint8Array(await (await fetch(url)).arrayBuffer()))
+    },
+    (await webmLink.getAttribute('href'))!
+  )
+
+  await page.reload()
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'source.webm',
+    mimeType: 'video/webm',
+    buffer: Buffer.from(webmBytes),
+  })
+  await expect(page.locator('[data-segment]')).toHaveCount(1)
+  await page.getByRole('radio', { name: /^MP4$/ }).click()
+  await page.getByRole('button', { name: /export video/i }).click()
+  const mp4Link = page.getByRole('link', { name: /splicer-.*\.mp4/ })
+  await expect(mp4Link).toHaveCount(1, { timeout: 90_000 })
+  const probe = await probeExport(page, (await mp4Link.getAttribute('href'))!)
+  expect(probe.boxes).toEqual(['ftyp', 'moov', 'mdat'])
+  expect(probe.videoPackets).toBe(60)
+})
+
 test('a canceled export leaves no file behind', async ({ page }) => {
   await page.goto('/splicer/')
   await page.locator('input[type="file"]').setInputFiles([tiny, tiny, tiny, tiny])

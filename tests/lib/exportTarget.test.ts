@@ -46,11 +46,22 @@ describe('packet bounds', () => {
     const tenSeconds = { video: 300, audio: 473 }
     // A 10 s 720p export: the reserve is under 1% of ~4 MB.
     expect(reservedIndexBytes(tenSeconds)).toBeLessThan(40_000)
-    expect(shouldStream(4_000_000, tenSeconds)).toBe(true)
+    expect(shouldStream(4_000_000, 'mp4', tenSeconds)).toBe(true)
     // A 2 s thumbnail-sized export stays in memory with an exact index.
-    expect(shouldStream(35_000, { video: 61, audio: 99 })).toBe(false)
-    // Without a reserve there is nothing to waste.
-    expect(shouldStream(1_000, null)).toBe(true)
+    expect(shouldStream(35_000, 'mov', { video: 61, audio: 99 })).toBe(false)
+  })
+
+  it('keeps unbounded MP4/MOV exports in memory for fast start unless large', () => {
+    const megabyte = 1024 * 1024
+    // A 10 s 720p export from a WebM source, whose packets cannot be counted.
+    expect(shouldStream(5 * megabyte, 'mp4', null)).toBe(false)
+    expect(shouldStream(5 * megabyte, 'mov', null)).toBe(false)
+    expect(shouldStream(2000 * megabyte, 'mp4', null)).toBe(true)
+  })
+
+  it('always streams Matroska, which has no index to place', () => {
+    expect(shouldStream(1_000, 'webm', null)).toBe(true)
+    expect(shouldStream(1_000, 'mkv', null)).toBe(true)
   })
 })
 

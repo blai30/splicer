@@ -62,10 +62,21 @@ export function reservedIndexBytes(packetCounts: PacketCounts): number {
 // grow small exports, which are cheap to build in memory with an exact index.
 const MAX_RESERVE_SHARE = 0.02
 
+// MP4/MOV exports up to this size stay in memory when their packets cannot be
+// bounded, so the index still goes up front for files that play while loading.
+const IN_MEMORY_FAST_START_BYTES = 256 * 1024 * 1024
+
 // Whether to stream an export to disk. Small MP4/MOV files stay in memory,
-// where the index is written exactly instead of reserved.
-export function shouldStream(estimatedBytes: number, packetCounts: PacketCounts | null): boolean {
-  if (!packetCounts) return true
+// where the index is written exactly instead of reserved; so do MP4/MOV files
+// without a packet bound unless they are large, since streaming them would put
+// the index at the end. Matroska has no index to place, so it always streams.
+export function shouldStream(
+  estimatedBytes: number,
+  container: MbContainer,
+  packetCounts: PacketCounts | null
+): boolean {
+  if (container !== 'mp4' && container !== 'mov') return true
+  if (!packetCounts) return estimatedBytes * SIZE_SAFETY_FACTOR > IN_MEMORY_FAST_START_BYTES
   return reservedIndexBytes(packetCounts) <= estimatedBytes * MAX_RESERVE_SHARE
 }
 
@@ -119,7 +130,14 @@ async function streamingTarget(
     await tabDir.removeEntry(fileName)
     return null
   }
-  const access = await fileHandle.createSyncAccessHandle()
+  let access: SyncAccessHandle
+  try {
+    access = await fileHandle.createSyncAccessHandle()
+  } catch (error) {
+    // Nothing will reference the empty file once the caller falls back.
+    await tabDir.removeEntry(fileName).catch(() => {})
+    throw error
+  }
   const storageName = `${storageDir}/${fileName}`
   onStorageFile(storageName)
   let open = true
@@ -172,7 +190,7 @@ export async function createExportTarget(options: {
   if (!storageDir || typeof navigator === 'undefined' || !navigator.storage?.getDirectory) {
     return memoryTarget()
   }
-  if (!shouldStream(estimatedBytes, packetCounts)) return memoryTarget()
+  if (!shouldStream(estimatedBytes, container, packetCounts)) return memoryTarget()
   try {
     if (!hasRoomFor(await navigator.storage.estimate(), estimatedBytes)) return memoryTarget()
     return (await streamingTarget(storageDir, container, onStorageFile)) ?? memoryTarget()
