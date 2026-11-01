@@ -5,10 +5,13 @@ import { accumulatePeaks } from './waveform'
 // Stream-decode the audio track and fold it into `peakCount` max-abs buckets
 // spread over `duration`. Memory stays bounded by one decoded chunk at a time,
 // so arbitrarily long files are fine. Empty when there is no decodable audio.
+// `checkpoint` is awaited between decoded chunks, so a paused gate holds the
+// decode in place.
 export async function extractWaveformPeaks(
   file: File,
   duration: number,
-  peakCount: number
+  peakCount: number,
+  checkpoint?: () => Promise<void>
 ): Promise<Float32Array> {
   if (!(duration > 0) || peakCount <= 0) return new Float32Array(0)
   const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) })
@@ -19,6 +22,7 @@ export async function extractWaveformPeaks(
     const sink = new AudioSampleSink(track)
     let scratch = new Float32Array(0)
     for await (const sample of sink.samples()) {
+      if (checkpoint) await checkpoint()
       let more = true
       try {
         const channelCount = sample.numberOfChannels

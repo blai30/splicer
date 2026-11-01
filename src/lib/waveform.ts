@@ -104,15 +104,53 @@ export function visibleSpan(
 }
 
 // Runs async tasks one at a time, in order. A failed task does not stop the
-// ones queued after it.
-export function createSerialQueue() {
+// ones queued after it. `beforeTask` is awaited before each task starts (a
+// pause gate, for one).
+export function createSerialQueue(beforeTask?: () => Promise<void>) {
   let tail: Promise<unknown> = Promise.resolve()
   return function enqueue<T>(task: () => Promise<T>): Promise<T> {
-    const result = tail.then(task)
+    const result = tail.then(async () => {
+      await beforeTask?.()
+      return task()
+    })
     tail = result.catch(() => {})
     return result
   }
 }
 
+export type PauseGate = {
+  readonly paused: boolean
+  pause: () => void
+  resume: () => void
+  // Resolves at once while running, or on the next resume while paused.
+  wait: () => Promise<void>
+}
+
+// Lets background work hold at its next checkpoint (between tasks, or between
+// decoded chunks) while something more urgent, like an export, runs.
+export function createPauseGate(): PauseGate {
+  let resumed: Promise<void> | null = null
+  let release: (() => void) | null = null
+  return {
+    get paused() {
+      return resumed !== null
+    },
+    pause() {
+      if (resumed) return
+      resumed = new Promise((resolve) => (release = resolve))
+    },
+    resume() {
+      release?.()
+      resumed = null
+      release = null
+    },
+    wait: () => resumed ?? Promise.resolve(),
+  }
+}
+
 export type WaveformRequest = { id: number; file: File; duration: number; peakCount: number }
+export type WaveformWorkerMessage =
+  | ({ type: 'extract' } & WaveformRequest)
+  | { type: 'pause' }
+  | { type: 'resume' }
 export type WaveformResponse = { id: number; peaks: Float32Array }

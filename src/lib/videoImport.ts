@@ -1,3 +1,4 @@
+import { effect } from '@preact/signals'
 import {
   ALL_FORMATS,
   BlobSource,
@@ -9,14 +10,16 @@ import {
 
 import { appendClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
 import { info, warn, error as logError } from '@/lib/logger'
-import { clips, getClipById, importErrors, importing } from '@/lib/store'
+import { clips, exporting, getClipById, importErrors, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
 import type { Clip } from '@/lib/types'
 import {
+  createPauseGate,
   createSerialQueue,
   waveformPeakCount,
   type WaveformRequest,
   type WaveformResponse,
+  type WaveformWorkerMessage,
 } from '@/lib/waveform'
 import { extractWaveformPeaks } from '@/lib/waveformExtract'
 
@@ -188,8 +191,10 @@ export function checkPlayable(url: string, timeoutMs = METADATA_TIMEOUT_MS): Pro
 }
 
 // Waveform extraction runs in one long-lived worker, one clip at a time, so a
-// batch import never decodes several audio tracks at once.
-const enqueueWaveform = createSerialQueue()
+// batch import never decodes several audio tracks at once. It holds while an
+// export runs: decoding in the background slowed an early export by a third.
+const waveformGate = createPauseGate()
+const enqueueWaveform = createSerialQueue(waveformGate.wait)
 let waveformWorker: Worker | null = null
 let nextWaveformRequestId = 1
 const waveformReplies = new Map<
@@ -218,7 +223,12 @@ function getWaveformWorker(): Worker | null {
     waveformWorker?.terminate()
     waveformWorker = null
     for (const { request, resolve } of waveformReplies.values()) {
-      void extractWaveformPeaks(request.file, request.duration, request.peakCount).then(resolve)
+      void extractWaveformPeaks(
+        request.file,
+        request.duration,
+        request.peakCount,
+        waveformGate.wait
+      ).then(resolve)
     }
     waveformReplies.clear()
   }
@@ -227,14 +237,24 @@ function getWaveformWorker(): Worker | null {
 
 function requestPeaks(file: File, duration: number, peakCount: number): Promise<Float32Array> {
   const worker = getWaveformWorker()
-  if (!worker) return extractWaveformPeaks(file, duration, peakCount)
+  if (!worker) return extractWaveformPeaks(file, duration, peakCount, waveformGate.wait)
   const id = nextWaveformRequestId++
   const request: WaveformRequest = { id, file, duration, peakCount }
   return new Promise((resolve) => {
     waveformReplies.set(id, { request, resolve })
-    worker.postMessage(request)
+    const message: WaveformWorkerMessage = { type: 'extract', ...request }
+    worker.postMessage(message)
   })
 }
+
+// Pause both the queue and an extraction already running in the worker.
+effect(() => {
+  const paused = exporting.value
+  if (paused) waveformGate.pause()
+  else waveformGate.resume()
+  const message: WaveformWorkerMessage = { type: paused ? 'pause' : 'resume' }
+  waveformWorker?.postMessage(message)
+})
 
 const waveformPending = new Set<string>()
 

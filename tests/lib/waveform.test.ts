@@ -7,6 +7,7 @@ import {
   MIN_PEAK_COUNT,
   accumulatePeaks,
   computeBars,
+  createPauseGate,
   createSerialQueue,
   visibleSpan,
   waveformPeakCount,
@@ -186,5 +187,45 @@ describe('extractWaveformPeaks', () => {
     const peaks = await extractWaveformPeaks(fixture('tall-silent.mp4'), 1, 2000)
     expect(peaks).toBeInstanceOf(Float32Array)
     expect(peaks.length).toBe(0)
+  })
+})
+
+describe('createPauseGate', () => {
+  it('holds waiters while paused and releases them on resume', async () => {
+    const gate = createPauseGate()
+    await gate.wait()
+    gate.pause()
+    gate.pause()
+    expect(gate.paused).toBe(true)
+    let released = false
+    const waiting = gate.wait().then(() => (released = true))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(released).toBe(false)
+    gate.resume()
+    await waiting
+    expect(released).toBe(true)
+    expect(gate.paused).toBe(false)
+  })
+
+  it('keeps queued tasks from starting until it resumes', async () => {
+    const gate = createPauseGate()
+    const enqueue = createSerialQueue(gate.wait)
+    const started: string[] = []
+    gate.pause()
+    const first = enqueue(async () => started.push('a'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(started).toEqual([])
+    gate.resume()
+    await first
+    expect(started).toEqual(['a'])
+
+    // A pause between tasks holds the next one.
+    gate.pause()
+    const second = enqueue(async () => started.push('b'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(started).toEqual(['a'])
+    gate.resume()
+    await second
+    expect(started).toEqual(['a', 'b'])
   })
 })
