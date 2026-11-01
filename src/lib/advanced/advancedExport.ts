@@ -20,6 +20,14 @@ import {
 import type { CompositorJob } from '@/lib/webcodecs/compositorProtocol'
 import type { JobSource } from '@/lib/webcodecs/protocol'
 
+// A hidden track turns its video off; its audio still plays (as in preview).
+export function visibleAdvancedSegments(segments: AdvancedSegment[]): AdvancedSegment[] {
+  const hiddenTrackIds = new Set(
+    advancedTracks.value.filter((track) => track.hidden).map((track) => track.id)
+  )
+  return segments.filter((segment) => !hiddenTrackIds.has(segment.trackId))
+}
+
 // Resolve the Advanced project into a serializable compositor job. One source
 // per distinct clip; each segment becomes a layer referencing its source.
 // Returns null when any clip is missing.
@@ -51,15 +59,11 @@ export function buildCompositorJob(
     return sourceIndex
   }
 
-  const hiddenTrackIds = new Set(
-    advancedTracks.value.filter((track) => track.hidden).map((track) => track.id)
-  )
   const mutedTrackIds = new Set(
     advancedTracks.value.filter((track) => track.muted).map((track) => track.id)
   )
 
-  // A hidden track turns its video off; its audio still plays (as in preview).
-  const visibleSegments = segments.filter((segment) => !hiddenTrackIds.has(segment.trackId))
+  const visibleSegments = visibleAdvancedSegments(segments)
 
   const exportBounds = computeExportBounds(visibleSegments, advancedOutputLock.value)
   if (!exportBounds) return null
@@ -74,7 +78,7 @@ export function buildCompositorJob(
       sourceEnd: segment.sourceEnd,
       timelineStart: segment.timelineStart,
       trackId: segment.trackId,
-      transform: exportBounds.mapTransform(segment.transform),
+      transform: exportBounds.mapSegment(segment),
       crop: segment.crop,
       muted: segment.muted === true,
       opacity: segment.opacity ?? 1,

@@ -1,4 +1,4 @@
-import { batch, useSignal } from '@preact/signals'
+import { batch, useComputed, useSignal } from '@preact/signals'
 
 import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import { displayTime } from '@/lib/advanced/advancedPlayback'
@@ -10,7 +10,7 @@ import {
 import { orderedForRender, segmentsActiveAt } from '@/lib/advanced/advancedTimelineDomain'
 import { pointInTransform, screenDeltaToWorld } from '@/lib/advanced/canvasCoords'
 import { defaultCrop, resizeCropWithBox } from '@/lib/advanced/cropMath'
-import { computeFrameRect } from '@/lib/advanced/exportLayout'
+import { computeFrameScenes, sceneIndexAt } from '@/lib/advanced/exportLayout'
 import { snapCandidates, snapMove } from '@/lib/advanced/snapMath'
 import { RESIZE_HANDLES, resizeTransform, type ResizeHandle } from '@/lib/advanced/transformMath'
 import { screenToWorld, worldToScreen } from '@/lib/advanced/viewportMath'
@@ -55,12 +55,20 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
   const viewport = advancedViewport.value
   const selectedId = advancedSelectedId.value
   const selected = advancedSegments.value.find((segment) => segment.id === selectedId) ?? null
-  // Frame what export renders: hidden tracks are left out of the output.
-  const hidden = hiddenTrackIds()
-  const frame = computeFrameRect(
-    advancedSegments.value.filter((segment) => !hidden.has(segment.trackId)),
-    advancedOutputLock.value
+  // Frame what export renders: hidden tracks are left out of the output, and
+  // each scene (clips on screen together) is framed on its own.
+  const frameScenes = useComputed(() => {
+    const hidden = hiddenTrackIds()
+    return computeFrameScenes(
+      advancedSegments.value.filter((segment) => !hidden.has(segment.trackId)),
+      advancedOutputLock.value
+    )
+  })
+  // An index, so playback re-renders the overlay only when the scene changes.
+  const frameSceneIndex = useComputed(() =>
+    sceneIndexAt(frameScenes.value, displayTime(advancedPlayhead.value))
   )
+  const frame = frameScenes.value[frameSceneIndex.value]?.rect ?? null
 
   // Begin moving a segment with the pointer captured on `captureElement`. Used by
   // both the selection box (press the already-selected clip) and a press on an
