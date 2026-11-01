@@ -7,14 +7,7 @@ import { useEffect, useRef } from 'preact/hooks'
 import { VolumeControl } from '@/components/VolumeControl'
 import { formatTimecode } from '@/lib/format'
 import { attachVideo, detachVideo, setPlaybackRate, stepFrame, togglePlay } from '@/lib/playback'
-import {
-  clips,
-  currentPlaybackTime,
-  getClipById,
-  playing,
-  selectedSegmentId,
-  timeline,
-} from '@/lib/store'
+import { currentPlaybackTime, getClipById, playing, selectedSegmentId, timeline } from '@/lib/store'
 
 const DEFAULT_PREVIEW_HEIGHT = 600
 const DEFAULT_PREVIEW_MAX_WIDTH = 1600
@@ -96,21 +89,6 @@ export function VideoPreview() {
   }
 
   const hasContent = timeline.value.length > 0
-  // Position on the whole edited timeline: every segment before the active
-  // one, plus the offset inside it.
-  void clips.value
-  const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
-  let elapsedBefore = 0
-  let totalDuration = 0
-  let passedActive = false
-  for (const segment of timeline.value) {
-    const length = segment.endTime - segment.startTime
-    if (segment.id === activeId) passedActive = true
-    else if (!passedActive) elapsedBefore += length
-    totalDuration += length
-  }
-  const position = Math.min(totalDuration, elapsedBefore + currentPlaybackTime.value)
-  const timecode = `${formatTimecode(position)} / ${formatTimecode(totalDuration)}`
 
   return (
     <div
@@ -205,15 +183,33 @@ export function VideoPreview() {
                 </option>
               ))}
             </select>
-            <span class="hidden text-sm text-slate-500 tabular-nums sm:inline dark:text-slate-400">
-              {timecode}
-            </span>
+            <PlaybackTimecode class="hidden sm:inline" />
           </div>
         </div>
-        <div class="pb-2 text-center text-sm text-slate-500 tabular-nums sm:hidden dark:text-slate-400">
-          {timecode}
-        </div>
+        <PlaybackTimecode class="block pb-2 text-center sm:hidden" />
       </div>
     </div>
+  )
+}
+
+// Position on the whole edited timeline: every segment before the active one,
+// plus the offset inside it. A leaf, so the per-frame playback time re-renders
+// only this text and not the preview around it.
+function PlaybackTimecode({ class: className }: { class: string }) {
+  const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
+  let elapsedBefore = 0
+  let totalDuration = 0
+  let passedActive = false
+  for (const segment of timeline.value) {
+    const length = segment.endTime - segment.startTime
+    if (segment.id === activeId) passedActive = true
+    else if (!passedActive) elapsedBefore += length
+    totalDuration += length
+  }
+  const position = Math.min(totalDuration, elapsedBefore + currentPlaybackTime.value)
+  return (
+    <span class={clsx('text-sm text-slate-500 tabular-nums dark:text-slate-400', className)}>
+      {formatTimecode(position)} / {formatTimecode(totalDuration)}
+    </span>
   )
 }

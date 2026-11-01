@@ -1,3 +1,4 @@
+import { useComputed } from '@preact/signals'
 import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
@@ -15,6 +16,7 @@ import {
 import { useEffect, useRef } from 'preact/hooks'
 
 import { SegmentBlock } from '@/components/SegmentBlock'
+import { TimelinePlayhead } from '@/components/TimelinePlayhead'
 import { ZoomSlider } from '@/components/ZoomSlider'
 import { seek } from '@/lib/playback'
 import {
@@ -55,14 +57,24 @@ export function Timeline() {
   const trackSeekHandlerRef = useRef<ReturnType<typeof createTrackSeekHandler> | null>(null)
   const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
 
-  const activeSegmentId = selectedSegmentId.value ?? timeline.value[0]?.id
-  const segments = timeline.value
-  // Build layout once per render to avoid repeated O(n) scans.
-  const layout = buildSegmentLayout(segments, pxPerSec.value, GAP_PX, PADDING_PX)
-  const activeLayout = layout.find((layoutItem) => layoutItem.segment.id === activeSegmentId)
-  const playheadLeft = activeLayout
-    ? activeLayout.startX + (playheadTime.value - activeLayout.segment.startTime) * pxPerSec.value
-    : PADDING_PX
+  const layoutSignal = useComputed(() =>
+    buildSegmentLayout(timeline.value, pxPerSec.value, GAP_PX, PADDING_PX)
+  )
+  // Read only by the playhead leaf: the timeline itself must not subscribe to
+  // the per-frame playhead time.
+  const playheadX = useComputed(() => {
+    const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
+    const item = layoutSignal.value.find((entry) => entry.segment.id === activeId)
+    return item
+      ? item.startX + (playheadTime.value - item.segment.startTime) * pxPerSec.value
+      : PADDING_PX
+  })
+  const layout = layoutSignal.value
+
+  function activeLayoutItem() {
+    const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
+    return layoutSignal.value.find((entry) => entry.segment.id === activeId)
+  }
 
   function onTrackPointerDown(event: PointerEvent) {
     if (!trackRef.current) return
@@ -88,6 +100,7 @@ export function Timeline() {
   }
 
   function onPlayheadPointerDown(event: PointerEvent) {
+    const activeLayout = activeLayoutItem()
     if (!activeLayout || !trackRef.current) return
 
     // Create and cache handler for this drag session using precomputed layout
@@ -375,17 +388,12 @@ export function Timeline() {
               }
               return result
             })()}
-            <div
+            <TimelinePlayhead
               data-playhead
-              class="absolute top-0 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize touch-none"
-              style={{ left: `${playheadLeft}px` }}
+              class="top-0"
+              x={playheadX}
               onPointerDown={onPlayheadPointerDown}
-            >
-              <div class="pointer-events-none absolute inset-x-0 top-0 bottom-0 flex justify-center">
-                <div class="h-full w-0.5 bg-violet-400" />
-              </div>
-              <div class="pointer-events-none absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1 rounded-full bg-violet-400" />
-            </div>
+            />
           </div>
         )}
       </div>

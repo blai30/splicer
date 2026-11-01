@@ -1,4 +1,4 @@
-import { effect } from '@preact/signals'
+import { batch, effect } from '@preact/signals'
 
 import {
   currentPlaybackTime,
@@ -56,8 +56,12 @@ function tickPlayhead() {
   if (!video) return
   const info = getActiveSegmentInfo()
   const segmentStart = info?.start ?? 0
-  playheadTime.value = video.currentTime
-  currentPlaybackTime.value = Math.max(0, video.currentTime - segmentStart)
+  const time = video.currentTime
+  // One notification per frame for both time signals.
+  batch(() => {
+    playheadTime.value = time
+    currentPlaybackTime.value = Math.max(0, time - segmentStart)
+  })
   // Check the segment boundary every frame: timeupdate alone fires only a few
   // times per second, letting playback overshoot the out-point audibly.
   advanceAtSegmentEnd()

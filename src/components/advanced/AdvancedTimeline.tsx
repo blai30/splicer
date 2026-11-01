@@ -1,3 +1,4 @@
+import { useComputed } from '@preact/signals'
 import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
@@ -16,6 +17,7 @@ import { useEffect, useRef } from 'preact/hooks'
 
 import { AdvancedSegmentBlock } from '@/components/advanced/AdvancedSegmentBlock'
 import { AdvancedTrackHeaders } from '@/components/advanced/AdvancedTrackHeaders'
+import { TimelinePlayhead } from '@/components/TimelinePlayhead'
 import { ZoomSlider } from '@/components/ZoomSlider'
 import {
   canRedoAdvanced,
@@ -62,7 +64,8 @@ export function AdvancedTimeline() {
   // carry it past the committed end with the lanes and drop zones beneath it.
   const duration = Math.max(projectDuration(segments), advancedDragPreviewEnd.value ?? 0)
   const contentWidth = Math.max(600, duration * pxPerSec.value + 200)
-  const playheadLeft = PAD_LEFT + advancedPlayhead.value * pxPerSec.value
+  // Read only by the playhead leaf, so playback does not re-render the lanes.
+  const playheadX = useComputed(() => PAD_LEFT + advancedPlayhead.value * pxPerSec.value)
 
   // Map a viewport X to a timeline time, accounting for horizontal scroll.
   function timeFromClientX(clientX: number): number {
@@ -337,16 +340,7 @@ export function AdvancedTimeline() {
                 style={{ left: `${PAD_LEFT + advancedSnapLine.value * pxPerSec.value}px` }}
               />
             )}
-            <div
-              data-advanced-playhead
-              class="absolute top-2 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize touch-none"
-              style={{ left: `${playheadLeft}px` }}
-            >
-              <div class="pointer-events-none absolute inset-x-0 top-0 bottom-0 flex justify-center">
-                <div class="h-full w-0.5 bg-violet-400" />
-              </div>
-              <div class="pointer-events-none absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1 rounded-full bg-violet-400" />
-            </div>
+            <TimelinePlayhead data-advanced-playhead class="top-2" x={playheadX} />
           </div>
         </div>
       </div>
