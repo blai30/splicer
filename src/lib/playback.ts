@@ -32,6 +32,9 @@ let disposeEffects: (() => void) | null = null
 // Seek requested while a source switch is still loading metadata; applied in
 // onloadedmetadata instead of being overwritten by the segment start.
 let pendingSeekTime: number | null = null
+// Set by the end-of-timeline reset so the next same-source sync rewinds even
+// when the position sits exactly on the segment's out-point.
+let rewindOnSync = false
 
 // play() rejects when interrupted by a later load() or when no source is set;
 // neither case should surface as an unhandled rejection.
@@ -104,8 +107,17 @@ function advanceAtSegmentEnd() {
       video.pause()
       playing.value = false
       currentPlaybackTime.value = 0
-      if (segments.length > 0) {
-        selectedSegmentId.value = segments[0].id
+      const first = segments[0]
+      if (first) {
+        // Reset to the start of the timeline. When the first segment is already
+        // selected or shares this clip, no source switch happens, so rewind here.
+        rewindOnSync = true
+        selectedSegmentId.value = first.id
+        if (rewindOnSync && video.src === getActiveSegmentInfo()?.url) {
+          rewindOnSync = false
+          video.currentTime = first.startTime
+          playheadTime.value = first.startTime
+        }
       }
     }
   }
@@ -170,7 +182,9 @@ function syncSource() {
     // resting exactly on the out-point stays put (mute toggles and unrelated
     // edits re-run this effect); auto-advance landing on it restarts.
     const time = videoElement.currentTime
-    const pastEnd = autoAdvance ? time >= info.end : time > info.end + 1e-3
+    const forceRewind = autoAdvance || rewindOnSync
+    rewindOnSync = false
+    const pastEnd = forceRewind ? time >= info.end : time > info.end + 1e-3
     if (time < info.start - 1e-3 || pastEnd) {
       videoElement.currentTime = info.start
       playheadTime.value = info.start
@@ -203,6 +217,7 @@ export function detachVideo() {
   stopTicking()
   pendingSeekTime = null
   resumeAfterSwitch = false
+  rewindOnSync = false
   playing.value = false
   disposeEffects?.()
   disposeEffects = null

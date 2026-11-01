@@ -163,7 +163,7 @@ export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
 
   function startResize(handle: ResizeHandle) {
     return (event: PointerEvent) => {
-      if (!selected) return
+      if (event.button !== 0 || !selected) return
       const active = selected
       event.stopPropagation()
       const element = event.currentTarget as HTMLElement

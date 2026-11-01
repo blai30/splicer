@@ -89,15 +89,32 @@ let gesturePending = false
 // mid-drag snapshot on the redo stack.
 let gestureActive = false
 
+// End the gesture when the pointer is released anywhere. The dragged element's
+// own pointerup handler runs first (this listens in the bubble phase on
+// window), and this also covers an element removed mid-drag (e.g. Delete
+// pressed while trimming), whose own listeners never fire. Without it the
+// gesture would stay active and block undo for the rest of the session.
+function onGlobalPointerEnd() {
+  endGesture()
+}
+
 export function beginGesture() {
   gesturePending = true
   gestureActive = true
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointerup', onGlobalPointerEnd)
+    window.addEventListener('pointercancel', onGlobalPointerEnd)
+  }
 }
 
 // Disarm a gesture that ended without mutating anything.
 export function endGesture() {
   gesturePending = false
   gestureActive = false
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pointerup', onGlobalPointerEnd)
+    window.removeEventListener('pointercancel', onGlobalPointerEnd)
+  }
 }
 
 function consumeGesturePending() {

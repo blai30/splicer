@@ -44,6 +44,7 @@ export function SegmentBlock({
   function onTrimPointerDown(side: 'left' | 'right') {
     return (event: PointerEvent) => {
       event.stopPropagation()
+      if (event.button !== 0) return
       const handle = side === 'left' ? leftRef.current! : rightRef.current!
       handle.setPointerCapture(event.pointerId)
       const startClientX = event.clientX
