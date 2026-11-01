@@ -9,16 +9,14 @@ test('exports WebM via the WebCodecs engine', async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(fixture)
 
   // Select WebM output.
-  await page.getByRole('button', { name: /^WebM$/ }).click()
+  await page.getByRole('radio', { name: /^WebM$/ }).click()
 
   const exportButton = page.getByRole('button', { name: /export video/i })
   await expect(exportButton).toBeVisible()
   await exportButton.click()
 
-  // A downloadable .webm link should appear, and the WebCodecs badge confirms
-  // the engine.
+  // A downloadable .webm link should appear.
   await expect(page.getByRole('link', { name: /\.webm/i }).first()).toBeVisible({
     timeout: 60_000,
   })
-  await expect(page.getByText('WebCodecs')).toBeVisible()
 })

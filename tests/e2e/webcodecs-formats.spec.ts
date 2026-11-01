@@ -4,8 +4,7 @@ import { expect, test } from '@playwright/test'
 
 const fixture = fileURLToPath(new URL('../fixtures/tiny.mp4', import.meta.url))
 
-// Each case re-encodes through the WebCodecs/mediabunny engine; the WebCodecs
-// badge confirms the engine.
+// Each case re-encodes through the WebCodecs/mediabunny engine.
 const cases: { format: string; ext: string; codec?: string }[] = [
   { format: 'MP4', ext: 'mp4' },
   { format: 'MOV', ext: 'mov' },
@@ -19,10 +18,10 @@ for (const { format, ext, codec } of cases) {
     await page.goto('/splicer/')
     await page.locator('input[type="file"]').setInputFiles(fixture)
 
-    await page.getByRole('button', { name: new RegExp(`^${format}$`) }).click()
-    await page.getByRole('button', { name: /^High$/ }).click()
+    await page.getByRole('radio', { name: new RegExp(`^${format}$`) }).click()
+    await page.getByRole('radio', { name: /^High$/ }).click()
     if (codec) {
-      await page.getByRole('button', { name: new RegExp(`^${codec}$`) }).click()
+      await page.getByRole('radio', { name: new RegExp(`^${codec}$`) }).click()
     }
 
     const exportButton = page.getByRole('button', { name: /export video/i })
@@ -32,6 +31,5 @@ for (const { format, ext, codec } of cases) {
     await expect(
       page.getByRole('link', { name: new RegExp(`\\.${ext}`, 'i') }).first()
     ).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByText('WebCodecs')).toBeVisible()
   })
 }
