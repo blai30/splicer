@@ -72,12 +72,20 @@ describe('advancedHistory', () => {
     expect(advancedSegments.value[0].sourceStart).toBe(0)
   })
 
-  it('undoes an import: removes the clip and its segment', () => {
+  it('undoes an import: removes the segment, keeps the clip for redo, then releases it', async () => {
     addClipToTrack(makeClip('a'), 'track-1', 0)
     expect(advancedSegments.value).toHaveLength(1)
     expect(clips.value).toHaveLength(1)
     undoAdvanced()
     expect(advancedSegments.value).toHaveLength(0)
+    // Redo can still bring the segment back, so the clip stays in the pool.
+    expect(clips.value).toHaveLength(1)
+    redoAdvanced()
+    expect(advancedSegments.value).toHaveLength(1)
+    undoAdvanced()
+    // A new edit drops the redo branch; nothing references the clip anymore.
+    addTrack()
+    await Promise.resolve()
     expect(clips.value).toHaveLength(0)
   })
 
