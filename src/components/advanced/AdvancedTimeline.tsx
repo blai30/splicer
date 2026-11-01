@@ -2,6 +2,8 @@ import clsx from 'clsx/lite'
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
+  Magnet,
+  Plus,
   Redo2,
   Scissors,
   Trash2,
@@ -22,7 +24,6 @@ import {
   undoAdvanced,
 } from '@/lib/advanced/advancedHistory'
 import { seek } from '@/lib/advanced/advancedPlayback'
-import { moveSegment } from '@/lib/advanced/advancedSegmentEditing'
 import { projectDuration, TIMELINE_PAD_LEFT } from '@/lib/advanced/advancedTimelineDomain'
 import {
   cutAdvancedAtPlayhead,
@@ -32,15 +33,19 @@ import {
   toggleAdvancedMute,
 } from '@/lib/advanced/advancedTimelineEditing'
 import {
+  advancedClipDragActive,
+  advancedNewTrackTarget,
   advancedPlayhead,
   advancedSegments,
   advancedSelectedId,
+  advancedSnapEnabled,
+  advancedSnapLine,
   advancedTracks,
   pxPerSec,
   ZOOM_MAX,
   ZOOM_MIN,
 } from '@/lib/store'
-import { computeZoomScroll, createRafThrottler } from '@/lib/timelineDomain'
+import { computeZoomScroll, createEdgeAutoScroller, createRafThrottler } from '@/lib/timelineDomain'
 
 const LANE_HEIGHT = 56
 const PAD_LEFT = TIMELINE_PAD_LEFT
@@ -48,7 +53,7 @@ const ZOOM_SCALE_FACTOR = 1.25
 
 export function AdvancedTimeline() {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const scrubThrottlerRef = useRef<ReturnType<typeof createRafThrottler> | null>(null)
+  const stopScrubRef = useRef<(() => void) | null>(null)
 
   const tracks = advancedTracks.value
   const segments = advancedSegments.value
@@ -73,13 +78,25 @@ export function AdvancedTimeline() {
     seek(timeFromClientX(event.clientX))
     container.setPointerCapture(event.pointerId)
     const throttler = createRafThrottler()
-    scrubThrottlerRef.current = throttler
+    let lastClientX = event.clientX
+    // Scrubbing past an edge keeps scrolling and seeking at the held position.
+    const autoScroll = createEdgeAutoScroller(container, () =>
+      throttler.queue(() => seek(timeFromClientX(lastClientX)))
+    )
+    stopScrubRef.current = () => {
+      throttler.cancel()
+      autoScroll.stop()
+    }
 
     function onMove(moveEvent: PointerEvent) {
+      lastClientX = moveEvent.clientX
       throttler.queue(() => seek(timeFromClientX(moveEvent.clientX)))
+      autoScroll.update(moveEvent.clientX)
     }
     function onUp(upEvent: PointerEvent) {
       throttler.cancel()
+      autoScroll.stop()
+      stopScrubRef.current = null
       // Commit a final seek at the release point so a fast flick (whose last
       // throttled move was canceled above) still lands the playhead precisely.
       seek(timeFromClientX(upEvent.clientX))
@@ -103,8 +120,8 @@ export function AdvancedTimeline() {
     startScrub(event, event.currentTarget as HTMLElement)
   }
 
-  // Cancel any pending throttled seek if we unmount mid-drag.
-  useEffect(() => () => scrubThrottlerRef.current?.cancel(), [])
+  // Cancel any pending throttled seek or auto-scroll if we unmount mid-drag.
+  useEffect(() => () => stopScrubRef.current?.(), [])
 
   function zoomTo(newPx: number, anchorX?: number) {
     const scroller = scrollRef.current
@@ -140,17 +157,6 @@ export function AdvancedTimeline() {
   const selectedSegment = segments.find((segment) => segment.id === advancedSelectedId.value)
   const toolbarDisabled = !selectedSegment
 
-  function makeRequestMove(segmentId: string) {
-    return (deltaTime: number, deltaLanes: number) => {
-      const segment = advancedSegments.value.find((entry) => entry.id === segmentId)
-      if (!segment) return
-      const laneIndex = tracks.findIndex((track) => track.id === segment.trackId)
-      const nextLane = Math.min(tracks.length - 1, Math.max(0, laneIndex + deltaLanes))
-      const nextTrackId = tracks[nextLane]?.id ?? segment.trackId
-      moveSegment(segmentId, nextTrackId, segment.timelineStart + deltaTime)
-    }
-  }
-
   return (
     <div class="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/40">
       {/* Header */}
@@ -177,6 +183,20 @@ export function AdvancedTimeline() {
               aria-label="Redo"
             >
               <Redo2 class="h-3.5 w-3.5" />
+            </button>
+            <button
+              class={clsx(
+                'flex items-center justify-center rounded p-1.5 transition-colors hover:duration-0',
+                advancedSnapEnabled.value
+                  ? 'bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 dark:text-violet-300'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100'
+              )}
+              onClick={() => (advancedSnapEnabled.value = !advancedSnapEnabled.value)}
+              aria-pressed={advancedSnapEnabled.value}
+              title="Snap clips to edges and the playhead (S, hold Alt while dragging to skip)"
+              aria-label="Snapping"
+            >
+              <Magnet class="h-3.5 w-3.5" />
             </button>
             <span class="mx-0.5 h-4 w-px bg-slate-300 dark:bg-slate-700" aria-hidden="true" />
             <button
@@ -266,35 +286,53 @@ export function AdvancedTimeline() {
         <AdvancedTrackHeaders laneHeight={LANE_HEIGHT} />
         <div
           ref={scrollRef}
+          data-advanced-scroller
           onWheel={onWheel}
           class="relative min-h-0 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto dark:scrollbar-thumb-slate-700"
           onPointerDown={onTrackPointerDown}
         >
           {/* spacer matching the headers' Add-track button row */}
           <div style={{ width: `${contentWidth}px` }}>
-            <div class="h-7" />
-            {tracks.map((track) => (
-              <div
-                key={track.id}
-                class="relative border-b border-slate-200/40 dark:border-slate-700/40"
-                style={{ height: `${LANE_HEIGHT}px` }}
-              >
-                {segments
-                  .filter((segment) => segment.trackId === track.id)
-                  .map((segment) => (
-                    <AdvancedSegmentBlock
-                      key={segment.id}
-                      segment={segment}
-                      laneHeight={LANE_HEIGHT}
-                      onRequestMove={makeRequestMove(segment.id)}
-                    />
-                  ))}
+            <div class="flex h-7 items-stretch py-0.5">
+              {advancedClipDragActive.value && (
+                <NewTrackDropZone active={advancedNewTrackTarget.value === 'top'} />
+              )}
+            </div>
+            <div data-advanced-lanes>
+              {tracks.map((track) => (
+                <div
+                  key={track.id}
+                  class="relative border-b border-slate-200/40 dark:border-slate-700/40"
+                  style={{ height: `${LANE_HEIGHT}px` }}
+                >
+                  {segments
+                    .filter((segment) => segment.trackId === track.id)
+                    .map((segment) => (
+                      <AdvancedSegmentBlock
+                        key={segment.id}
+                        segment={segment}
+                        laneHeight={LANE_HEIGHT}
+                      />
+                    ))}
+                </div>
+              ))}
+            </div>
+            {advancedClipDragActive.value && (
+              <div class="flex h-7 items-stretch py-0.5">
+                <NewTrackDropZone active={advancedNewTrackTarget.value === 'bottom'} />
               </div>
-            ))}
+            )}
             {segments.length === 0 && (
               <p class="pointer-events-none absolute top-9 left-4 text-sm text-slate-500 dark:text-slate-400">
                 Drop video files anywhere, or use Add video above, to place clips here.
               </p>
+            )}
+            {advancedSnapLine.value !== null && (
+              <div
+                data-advanced-snap-line
+                class="pointer-events-none absolute top-7 bottom-0 z-35 w-px -translate-x-1/2 bg-amber-400"
+                style={{ left: `${PAD_LEFT + advancedSnapLine.value * pxPerSec.value}px` }}
+              />
             )}
             <div
               data-advanced-playhead
@@ -309,6 +347,28 @@ export function AdvancedTimeline() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Dashed target shown above the first lane and below the last while a clip is
+// dragged; dropping there creates a track in that position.
+function NewTrackDropZone({ active }: { active: boolean }) {
+  return (
+    <div
+      data-advanced-new-track-zone
+      class={clsx(
+        'pointer-events-none flex w-full items-center rounded border-2 border-dashed text-sm transition-colors',
+        active
+          ? 'border-violet-400 bg-violet-400/15 text-violet-700 dark:text-violet-200'
+          : 'border-violet-400/60 text-slate-500 dark:text-slate-400'
+      )}
+    >
+      {/* Sticky so the label stays in view however far the lanes are scrolled. */}
+      <span class="sticky left-2 flex items-center gap-1 px-2">
+        <Plus class="h-3.5 w-3.5" />
+        New track
+      </span>
     </div>
   )
 }

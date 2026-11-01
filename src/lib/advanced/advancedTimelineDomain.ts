@@ -43,3 +43,21 @@ export function orderedForRender(segments: AdvancedSegment[], tracks: Track[]): 
     return firstRank - secondRank
   })
 }
+
+export type LaneDropTarget =
+  | { kind: 'lane'; index: number }
+  | { kind: 'new'; position: 'top' | 'bottom' }
+
+// Which lane a dragged clip lands in, from the pointer's offset below the top
+// of the first lane. Above the first lane or below the last one means a new
+// track there.
+export function laneDropTarget(
+  offsetY: number,
+  laneHeight: number,
+  laneCount: number
+): LaneDropTarget {
+  if (offsetY < 0) return { kind: 'new', position: 'top' }
+  const index = Math.floor(offsetY / laneHeight)
+  if (index >= laneCount) return { kind: 'new', position: 'bottom' }
+  return { kind: 'lane', index }
+}

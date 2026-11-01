@@ -5,36 +5,87 @@ import { useEffect, useRef } from 'preact/hooks'
 import { WaveformView } from '@/components/WaveformView'
 import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
+  moveSegment,
+  moveSegmentToNewTrack,
+  selectAdvancedSegment,
   trimSegmentEnd,
   trimSegmentStart,
-  selectAdvancedSegment,
 } from '@/lib/advanced/advancedSegmentEditing'
-import { segmentDuration, TIMELINE_PAD_LEFT } from '@/lib/advanced/advancedTimelineDomain'
-import { formatTime } from '@/lib/format'
-import { advancedSelectedId, clipColor, getClipById, pxPerSec } from '@/lib/store'
-import { createRafThrottler } from '@/lib/timelineDomain'
+import {
+  laneDropTarget,
+  segmentDuration,
+  segmentEndTime,
+  TIMELINE_PAD_LEFT,
+  type LaneDropTarget,
+} from '@/lib/advanced/advancedTimelineDomain'
+import { formatPreciseTime, formatSignedSeconds, formatTime } from '@/lib/format'
+import {
+  advancedClipDragActive,
+  advancedNewTrackTarget,
+  advancedPlayhead,
+  advancedSegments,
+  advancedSelectedId,
+  advancedSnapEnabled,
+  advancedSnapLine,
+  advancedTracks,
+  clipColor,
+  getClipById,
+  pxPerSec,
+} from '@/lib/store'
+import { createEdgeAutoScroller, createRafThrottler } from '@/lib/timelineDomain'
+import {
+  resolveEdgeTime,
+  resolveMoveStart,
+  snapThresholdSeconds,
+  timeSnapTargets,
+} from '@/lib/timelineSnap'
 import type { AdvancedSegment } from '@/lib/types'
 import { ensureClipWaveform } from '@/lib/videoImport'
+
+type MovePreview = { start: number; target: LaneDropTarget; snapTarget: number | null }
+type PointerSample = { clientX: number; clientY: number; altKey: boolean }
+
+// Where an edit gesture measures from: the scroller (for scroll-aware deltas and
+// edge auto-scroll) and the lanes container (for the lane under the pointer).
+function gestureSurfaces(element: HTMLElement) {
+  return {
+    scroller: element.closest<HTMLElement>('[data-advanced-scroller]'),
+    lanes: element.closest<HTMLElement>('[data-advanced-lanes]'),
+  }
+}
+
+function samplePointer(event: PointerEvent): PointerSample {
+  return { clientX: event.clientX, clientY: event.clientY, altKey: event.altKey }
+}
+
+// Snap only to an exact landing: a trim clamped short of its target (by the
+// media bounds or the minimum length) shows no line.
+function landedOn(edge: number, target: number | null): number | null {
+  return target !== null && Math.abs(edge - target) < 1e-6 ? target : null
+}
 
 export function AdvancedSegmentBlock({
   segment,
   laneHeight,
-  onRequestMove,
 }: {
   segment: AdvancedSegment
   laneHeight: number
-  onRequestMove: (deltaTime: number, deltaLanes: number) => void
 }) {
-  // Live offset while the body is being dragged (time in px, lanes in px), so
-  // the block follows the pointer before the move commits on release.
-  const dragOffset = useSignal<{ x: number; y: number } | null>(null)
+  // Live drop preview while the body is dragged, so the block follows the
+  // pointer before the move commits on release.
+  const movePreview = useSignal<MovePreview | null>(null)
+  const trimSide = useSignal<'left' | 'right' | null>(null)
   const leftRef = useRef<HTMLDivElement>(null)
   const rightRef = useRef<HTMLDivElement>(null)
+  // Ends an in-flight gesture if the block unmounts mid-drag (e.g. Delete).
+  const cancelGestureRef = useRef<(() => void) | null>(null)
   const clip = getClipById(segment.clipId)
   const duration = segmentDuration(segment)
   const isSelected = advancedSelectedId.value === segment.id
   const left = TIMELINE_PAD_LEFT + segment.timelineStart * pxPerSec.value
   const width = Math.max(2, duration * pxPerSec.value)
+  const tracks = advancedTracks.value
+  const laneIndex = tracks.findIndex((track) => track.id === segment.trackId)
 
   useEffect(() => {
     if (!clip) return
@@ -42,38 +93,83 @@ export function AdvancedSegmentBlock({
     void ensureClipWaveform(clip.id)
   }, [clip?.id, clip?.waveformPeaks?.length])
 
+  useEffect(() => () => cancelGestureRef.current?.(), [])
+
+  function snapOptions(altKey: boolean) {
+    return {
+      thresholdSec: snapThresholdSeconds(pxPerSec.value),
+      // Holding Alt places freely for one gesture without turning snapping off.
+      snap: advancedSnapEnabled.value && !altKey,
+      fps: clip?.frameRate,
+    }
+  }
+
   function onTrimPointerDown(side: 'left' | 'right') {
     return (event: PointerEvent) => {
       event.stopPropagation()
       if (event.button !== 0) return
       const handle = (side === 'left' ? leftRef.current : rightRef.current)!
       handle.setPointerCapture(event.pointerId)
+      const { scroller } = gestureSurfaces(handle)
       const startClientX = event.clientX
-      const startValue = side === 'left' ? segment.sourceStart : segment.sourceEnd
+      const startScrollLeft = scroller?.scrollLeft ?? 0
+      const origin = segment
+      const originEnd = segmentEndTime(origin)
+      const targets = timeSnapTargets(
+        advancedSegments.value,
+        new Set([origin.id]),
+        advancedPlayhead.value
+      )
+      let lastPointer = samplePointer(event)
+      let moved = false
       // One undo entry per trim gesture, consumed by the first trim mutation.
       beginAdvancedGesture()
+      trimSide.value = side
       const throttler = createRafThrottler()
+      const autoScroll = scroller
+        ? createEdgeAutoScroller(scroller, () => throttler.queue(() => apply(lastPointer)))
+        : null
 
-      function apply(pointerEvent: PointerEvent) {
-        const deltaTime = (pointerEvent.clientX - startClientX) / pxPerSec.value
-        if (side === 'left') trimSegmentStart(segment.id, startValue + deltaTime)
-        else trimSegmentEnd(segment.id, startValue + deltaTime)
+      // The dragged edge moves in timeline time (where the snap targets live),
+      // then converts back to the source time the trim actions take.
+      function apply(pointer: PointerSample) {
+        const scrollDelta = (scroller?.scrollLeft ?? 0) - startScrollLeft
+        const deltaTime = (pointer.clientX - startClientX + scrollDelta) / pxPerSec.value
+        const rawEdge = (side === 'left' ? origin.timelineStart : originEnd) + deltaTime
+        const edge = resolveEdgeTime(rawEdge, targets, snapOptions(pointer.altKey))
+        const nextSourceTime = origin.sourceStart + (edge.time - origin.timelineStart)
+        if (side === 'left') trimSegmentStart(origin.id, nextSourceTime)
+        else trimSegmentEnd(origin.id, nextSourceTime)
+        const live = advancedSegments.value.find((entry) => entry.id === origin.id)
+        if (!live) return
+        const landedEdge = side === 'left' ? live.timelineStart : segmentEndTime(live)
+        advancedSnapLine.value = landedOn(landedEdge, edge.target)
       }
       function onMove(moveEvent: PointerEvent) {
-        throttler.queue(() => apply(moveEvent))
+        lastPointer = samplePointer(moveEvent)
+        if (moveEvent.clientX !== startClientX) moved = true
+        if (!moved) return
+        throttler.queue(() => apply(lastPointer))
+        autoScroll?.update(moveEvent.clientX)
       }
-      function onUp(upEvent: PointerEvent) {
+      function finish(upEvent: PointerEvent | null) {
         throttler.cancel()
-        // Land exactly where the pointer was released.
-        if (upEvent.type === 'pointerup') apply(upEvent)
+        autoScroll?.stop()
+        // Land exactly where the pointer was released. A click without movement
+        // must not re-quantize an untouched edge.
+        if (upEvent?.type === 'pointerup' && moved) apply(samplePointer(upEvent))
         endAdvancedGesture()
+        trimSide.value = null
+        advancedSnapLine.value = null
+        cancelGestureRef.current = null
         handle.removeEventListener('pointermove', onMove)
-        handle.removeEventListener('pointerup', onUp)
-        handle.removeEventListener('pointercancel', onUp)
+        handle.removeEventListener('pointerup', finish)
+        handle.removeEventListener('pointercancel', finish)
       }
+      cancelGestureRef.current = () => finish(null)
       handle.addEventListener('pointermove', onMove)
-      handle.addEventListener('pointerup', onUp)
-      handle.addEventListener('pointercancel', onUp)
+      handle.addEventListener('pointerup', finish)
+      handle.addEventListener('pointercancel', finish)
     }
   }
 
@@ -82,37 +178,80 @@ export function AdvancedSegmentBlock({
     event.stopPropagation()
     const element = event.currentTarget as HTMLElement
     element.setPointerCapture(event.pointerId)
+    const { scroller, lanes } = gestureSurfaces(element)
     const startClientX = event.clientX
     const startClientY = event.clientY
+    const startScrollLeft = scroller?.scrollLeft ?? 0
+    const origin = segment
+    // Computed once: nothing else moves while this clip is dragged.
+    const targets = timeSnapTargets(
+      advancedSegments.value,
+      new Set([origin.id]),
+      advancedPlayhead.value
+    )
+    let lastPointer = samplePointer(event)
     let moved = false
-    selectAdvancedSegment(segment.id)
+    selectAdvancedSegment(origin.id)
+    const autoScroll = scroller
+      ? createEdgeAutoScroller(scroller, () => preview(lastPointer))
+      : null
 
-    // Clamp so the block never previews left of the timeline origin.
-    function offsetFor(moveEvent: PointerEvent) {
-      const minX = -segment.timelineStart * pxPerSec.value
-      return {
-        x: Math.max(minX, moveEvent.clientX - startClientX),
-        y: Math.round((moveEvent.clientY - startClientY) / laneHeight) * laneHeight,
-      }
+    function resolve(pointer: PointerSample): MovePreview {
+      const scrollDelta = (scroller?.scrollLeft ?? 0) - startScrollLeft
+      const rawStart =
+        origin.timelineStart + (pointer.clientX - startClientX + scrollDelta) / pxPerSec.value
+      const { start, target: snapTarget } = resolveMoveStart(
+        rawStart,
+        segmentDuration(origin),
+        targets,
+        snapOptions(pointer.altKey)
+      )
+      const lanesTop = lanes?.getBoundingClientRect().top
+      const target =
+        lanesTop === undefined
+          ? ({ kind: 'lane', index: laneIndex } as const)
+          : laneDropTarget(pointer.clientY - lanesTop, laneHeight, advancedTracks.value.length)
+      return { start, target, snapTarget }
+    }
+
+    function preview(pointer: PointerSample) {
+      const next = resolve(pointer)
+      movePreview.value = next
+      advancedSnapLine.value = next.snapTarget
+      advancedNewTrackTarget.value = next.target.kind === 'new' ? next.target.position : null
     }
 
     function onMove(moveEvent: PointerEvent) {
+      lastPointer = samplePointer(moveEvent)
       if (
         !moved &&
         Math.hypot(moveEvent.clientX - startClientX, moveEvent.clientY - startClientY) > 4
       ) {
         moved = true
+        advancedClipDragActive.value = true
       }
-      if (moved) dragOffset.value = offsetFor(moveEvent)
+      if (!moved) return
+      preview(lastPointer)
+      autoScroll?.update(moveEvent.clientX)
     }
-    function finish(upEvent: PointerEvent, commit: boolean) {
+    function finish(upEvent: PointerEvent | null, commit: boolean) {
       element.removeEventListener('pointermove', onMove)
       element.removeEventListener('pointerup', onUp)
       element.removeEventListener('pointercancel', onCancel)
-      dragOffset.value = null
-      if (!commit || !moved) return
-      const offset = offsetFor(upEvent)
-      onRequestMove(offset.x / pxPerSec.value, Math.round(offset.y / laneHeight))
+      autoScroll?.stop()
+      movePreview.value = null
+      advancedSnapLine.value = null
+      advancedNewTrackTarget.value = null
+      advancedClipDragActive.value = false
+      cancelGestureRef.current = null
+      if (!commit || !moved || !upEvent) return
+      const { start, target } = resolve(samplePointer(upEvent))
+      if (target.kind === 'new') {
+        moveSegmentToNewTrack(origin.id, target.position, start)
+        return
+      }
+      const trackId = advancedTracks.value[target.index]?.id ?? origin.trackId
+      moveSegment(origin.id, trackId, start)
     }
     function onUp(upEvent: PointerEvent) {
       finish(upEvent, true)
@@ -120,58 +259,100 @@ export function AdvancedSegmentBlock({
     function onCancel(cancelEvent: PointerEvent) {
       finish(cancelEvent, false)
     }
+    cancelGestureRef.current = () => finish(null, false)
     element.addEventListener('pointermove', onMove)
     element.addEventListener('pointerup', onUp)
     element.addEventListener('pointercancel', onCancel)
   }
 
+  // A new-track drop previews in the nearest existing lane; the dashed drop
+  // zone highlights to show where the track will be created.
+  const preview = movePreview.value
+  const previewLane =
+    preview === null
+      ? laneIndex
+      : preview.target.kind === 'lane'
+        ? preview.target.index
+        : preview.target.position === 'top'
+          ? 0
+          : tracks.length - 1
+  const offsetX = preview ? (preview.start - segment.timelineStart) * pxPerSec.value : 0
+  const offsetY = (previewLane - laneIndex) * laneHeight
+  const offsetTransform = preview ? `translate(${offsetX}px, ${offsetY}px)` : undefined
+
+  let readout: string | null = null
+  if (preview) {
+    const trackLabel =
+      preview.target.kind === 'new' ? 'New track' : (tracks[preview.target.index]?.name ?? '')
+    readout = [
+      `Start ${formatPreciseTime(preview.start)}`,
+      formatSignedSeconds(preview.start - segment.timelineStart),
+      trackLabel,
+    ].join(' · ')
+  } else if (trimSide.value) {
+    readout = [
+      `In ${formatPreciseTime(segment.sourceStart)}`,
+      `Out ${formatPreciseTime(segment.sourceEnd)}`,
+      `Duration ${duration.toFixed(2)}s`,
+    ].join(' · ')
+  }
+
   return (
-    <div
-      data-advanced-segment
-      class={clsx(
-        'absolute top-1 bottom-1 flex cursor-grab touch-none items-center overflow-hidden rounded border select-none',
-        isSelected
-          ? 'border-violet-400 ring-1 ring-violet-400'
-          : 'border-black/10 dark:border-white/10',
-        clipColor(segment.clipId),
-        dragOffset.value && 'z-40 cursor-grabbing opacity-80 shadow-lg'
-      )}
-      style={{
-        left: `${left}px`,
-        width: `${width}px`,
-        transform: dragOffset.value
-          ? `translate(${dragOffset.value.x}px, ${dragOffset.value.y}px)`
-          : undefined,
-      }}
-      title={clip ? `${clip.name} (drag to move, edges to trim)` : 'Missing clip'}
-      onPointerDown={onBodyPointerDown}
-    >
-      {clip && (
-        <WaveformView
-          peaks={clip.waveformPeaks ?? []}
-          clipDuration={clip.duration}
-          segmentStart={segment.sourceStart}
-          segmentEnd={segment.sourceEnd}
-          class="absolute inset-0 h-full w-full opacity-80"
+    <>
+      <div
+        data-advanced-segment
+        class={clsx(
+          'absolute top-1 bottom-1 flex cursor-grab touch-none items-center overflow-hidden rounded border select-none',
+          isSelected
+            ? 'border-violet-400 ring-1 ring-violet-400'
+            : 'border-black/10 dark:border-white/10',
+          clipColor(segment.clipId),
+          preview && 'z-40 cursor-grabbing opacity-80 shadow-lg'
+        )}
+        style={{ left: `${left}px`, width: `${width}px`, transform: offsetTransform }}
+        title={
+          clip
+            ? `${clip.name} (drag to move, edges to trim, hold Alt to skip snapping)`
+            : 'Missing clip'
+        }
+        onPointerDown={onBodyPointerDown}
+      >
+        {clip && (
+          <WaveformView
+            peaks={clip.waveformPeaks ?? []}
+            clipDuration={clip.duration}
+            segmentStart={segment.sourceStart}
+            segmentEnd={segment.sourceEnd}
+            class="absolute inset-0 h-full w-full opacity-80"
+          />
+        )}
+        <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
+          {clip?.name ?? 'Clip'}
+          {segment.muted && <span class="ml-1">{'\u{1F507}'}</span>}
+        </span>
+        <span class="relative z-10 ml-auto shrink-0 self-end pr-2 text-sm text-white/70">
+          {formatTime(duration)}
+        </span>
+        <div
+          ref={leftRef}
+          class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 hover:bg-white/70 hover:duration-0"
+          onPointerDown={onTrimPointerDown('left')}
         />
+        <div
+          ref={rightRef}
+          class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 hover:bg-white/70 hover:duration-0"
+          onPointerDown={onTrimPointerDown('right')}
+        />
+      </div>
+      {readout && (
+        <div
+          data-advanced-readout
+          class="pointer-events-none absolute -top-6 z-50 rounded bg-slate-900/80 px-1.5 py-0.5 text-xs whitespace-nowrap text-white tabular-nums shadow"
+          style={{ left: `${left}px`, transform: offsetTransform }}
+        >
+          {readout}
+        </div>
       )}
-      <span class="relative z-10 mt-1 self-start truncate px-2 text-sm font-medium text-white">
-        {clip?.name ?? 'Clip'}
-        {segment.muted && <span class="ml-1">{'\u{1F507}'}</span>}
-      </span>
-      <span class="relative z-10 ml-auto shrink-0 self-end pr-2 text-sm text-white/70">
-        {formatTime(duration)}
-      </span>
-      <div
-        ref={leftRef}
-        class="absolute top-0 bottom-0 left-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 hover:bg-white/70 hover:duration-0"
-        onPointerDown={onTrimPointerDown('left')}
-      />
-      <div
-        ref={rightRef}
-        class="absolute top-0 right-0 bottom-0 z-20 w-2 cursor-ew-resize touch-none bg-white/40 hover:bg-white/70 hover:duration-0"
-        onPointerDown={onTrimPointerDown('right')}
-      />
-    </div>
+    </>
   )
 }

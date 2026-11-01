@@ -2,19 +2,25 @@ import { recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
 import { advancedSegments, advancedTracks } from '@/lib/store'
 import type { Track } from '@/lib/types'
 
-export function addTrack(): string {
-  recordAdvancedHistory()
-  const id = crypto.randomUUID()
-  // Number after the highest existing "Track N" so names stay unique after
-  // tracks are removed.
+// Number after the highest existing "Track N" so names stay unique after
+// tracks are removed.
+export function nextTrackName(tracks: Track[]): string {
   let highest = 0
-  for (const track of advancedTracks.value) {
+  for (const track of tracks) {
     const match = /^Track (\d+)$/.exec(track.name)
     if (match) highest = Math.max(highest, Number(match[1]))
   }
-  const name = `Track ${Math.max(highest, advancedTracks.value.length) + 1}`
+  return `Track ${Math.max(highest, tracks.length) + 1}`
+}
+
+export function addTrack(): string {
+  recordAdvancedHistory()
+  const id = crypto.randomUUID()
   // Insert at the top (front), since the top lane renders on top.
-  advancedTracks.value = [{ id, name }, ...advancedTracks.value]
+  advancedTracks.value = [
+    { id, name: nextTrackName(advancedTracks.value) },
+    ...advancedTracks.value,
+  ]
   return id
 }
 

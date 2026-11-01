@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { canUndoAdvanced, resetAdvancedHistory, undoAdvanced } from '@/lib/advanced/advancedHistory'
 import {
   addClipToTrack,
   appendClipToTrack,
   moveSegment,
+  moveSegmentToNewTrack,
   removeAdvancedSegment,
   setSegmentCrop,
   setSegmentTransform,
@@ -33,6 +35,30 @@ describe('advancedSegmentEditing', () => {
     advancedSegments.value = []
     advancedSelectedId.value = null
     advancedTracks.value = [{ id: 'track-1', name: 'Track 1' }]
+    resetAdvancedHistory()
+  })
+
+  it.each(['top', 'bottom'] as const)(
+    'moves a clip onto a new %s track as one undo step',
+    (position) => {
+      const id = addClipToTrack(makeClip('a'), 'track-1', 0)
+      resetAdvancedHistory()
+      const trackId = moveSegmentToNewTrack(id, position, 2.5)
+      const tracks = advancedTracks.value
+      expect(tracks).toHaveLength(2)
+      expect(tracks[position === 'top' ? 0 : 1]).toEqual({ id: trackId, name: 'Track 2' })
+      expect(advancedSegments.value[0]).toMatchObject({ trackId, timelineStart: 2.5 })
+
+      undoAdvanced()
+      expect(advancedTracks.value).toEqual([{ id: 'track-1', name: 'Track 1' }])
+      expect(advancedSegments.value[0]).toMatchObject({ trackId: 'track-1', timelineStart: 0 })
+      expect(canUndoAdvanced.value).toBe(false)
+    }
+  )
+
+  it('does not create a track for a missing clip', () => {
+    expect(moveSegmentToNewTrack('missing', 'top', 0)).toBeNull()
+    expect(advancedTracks.value).toHaveLength(1)
   })
 
   it('adds multiple clips as separate segments at native size at the world origin', () => {

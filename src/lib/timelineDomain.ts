@@ -275,3 +275,55 @@ export function computeZoomScroll(
   const timeAtCursor = (anchorX + currentScroll - padding) / oldPx
   return timeAtCursor * newPx + padding - anchorX
 }
+
+export const EDGE_SCROLL_ZONE_PX = 40
+export const EDGE_SCROLL_MAX_PX_PER_FRAME = 20
+
+// Horizontal auto-scroll speed while a gesture holds the pointer near (or past)
+// a scroller edge: negative scrolls left, positive right, scaled linearly by how
+// deep the pointer is in the edge zone and capped beyond the edge.
+export function edgeScrollVelocity(
+  pointerX: number,
+  viewLeft: number,
+  viewRight: number,
+  zonePx = EDGE_SCROLL_ZONE_PX,
+  maxPxPerFrame = EDGE_SCROLL_MAX_PX_PER_FRAME
+): number {
+  if (viewRight - viewLeft <= zonePx * 2 || zonePx <= 0) return 0
+  const leftDepth = viewLeft + zonePx - pointerX
+  if (leftDepth > 0) return -Math.round(maxPxPerFrame * Math.min(1, leftDepth / zonePx))
+  const rightDepth = pointerX - (viewRight - zonePx)
+  if (rightDepth > 0) return Math.round(maxPxPerFrame * Math.min(1, rightDepth / zonePx))
+  return 0
+}
+
+// Drives edge auto-scroll for one pointer gesture. update() records the latest
+// pointer X and starts a frame loop while it sits in an edge zone; each frame
+// that actually scrolls calls onScroll so the gesture can re-apply itself at
+// the unchanged pointer position (no pointermove fires while it holds still).
+export function createEdgeAutoScroller(scroller: HTMLElement, onScroll: () => void) {
+  let pointerX = 0
+  let frameId: number | null = null
+
+  function step() {
+    frameId = null
+    const rect = scroller.getBoundingClientRect()
+    const velocity = edgeScrollVelocity(pointerX, rect.left, rect.right)
+    if (velocity === 0) return
+    const before = scroller.scrollLeft
+    scroller.scrollLeft = Math.max(0, before + velocity)
+    if (scroller.scrollLeft !== before) onScroll()
+    frameId = requestAnimationFrame(step)
+  }
+
+  return {
+    update(clientX: number) {
+      pointerX = clientX
+      if (frameId === null) frameId = requestAnimationFrame(step)
+    },
+    stop() {
+      if (frameId !== null) cancelAnimationFrame(frameId)
+      frameId = null
+    },
+  }
+}

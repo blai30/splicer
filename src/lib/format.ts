@@ -13,6 +13,22 @@ export function formatTimecode(seconds: number): string {
   return `${minutes}:${sec.toString().padStart(2, '0')}.${ms}`
 }
 
+// "0:12.40": hundredths, for gesture readouts that need to show frame-level moves.
+export function formatPreciseTime(seconds: number): string {
+  const hundredths = Math.round(Math.max(0, seconds) * 100)
+  const minutes = Math.floor(hundredths / 6000)
+  const sec = Math.floor((hundredths % 6000) / 100)
+  const fraction = hundredths % 100
+  return `${minutes}:${sec.toString().padStart(2, '0')}.${fraction.toString().padStart(2, '0')}`
+}
+
+// "+1.20s" / "−0.50s" (a true minus sign, so the column does not jitter).
+export function formatSignedSeconds(seconds: number): string {
+  const rounded = Math.round(seconds * 100) / 100
+  const sign = rounded < 0 ? '\u2212' : '+'
+  return `${sign}${Math.abs(rounded).toFixed(2)}s`
+}
+
 export function formatSize(bytes: number): string {
   if (bytes >= 1_000_000_000_000) return `${(bytes / 1_000_000_000_000).toFixed(1)} TB`
   if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`

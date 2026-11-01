@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  laneDropTarget,
   orderedForRender,
   projectDuration,
   segmentEndTime,
@@ -30,6 +31,13 @@ describe('advancedTimelineDomain', () => {
   it('computes segment end and project duration', () => {
     expect(segmentEndTime(seg('a', 'top', 2, 3))).toBe(5)
     expect(projectDuration([seg('a', 'top', 2, 3), seg('b', 'bot', 0, 4)])).toBe(5)
+  })
+
+  it('maps a pointer offset to a lane or a new track above or below', () => {
+    expect(laneDropTarget(-1, 56, 2)).toEqual({ kind: 'new', position: 'top' })
+    expect(laneDropTarget(0, 56, 2)).toEqual({ kind: 'lane', index: 0 })
+    expect(laneDropTarget(57, 56, 2)).toEqual({ kind: 'lane', index: 1 })
+    expect(laneDropTarget(112, 56, 2)).toEqual({ kind: 'new', position: 'bottom' })
   })
 
   it('computes where one track ends, ignoring other tracks', () => {

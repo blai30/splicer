@@ -180,6 +180,11 @@ export const advancedStageHeight = signal<number>(
 export const advancedSnapEnabled = signal<boolean>(
   loadFromStorage('advancedSnapEnabled', true, isBoolean)
 )
+// Transient timeline gesture feedback (not persisted): the time a dragged edge
+// snapped to, and whether a clip drag is active and aiming at a new track.
+export const advancedSnapLine = signal<number | null>(null)
+export const advancedClipDragActive = signal(false)
+export const advancedNewTrackTarget = signal<'top' | 'bottom' | null>(null)
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])
 export const advancedSelectedId = signal<string | null>(null)

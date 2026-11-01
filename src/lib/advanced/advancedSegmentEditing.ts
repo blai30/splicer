@@ -1,5 +1,8 @@
+import { batch } from '@preact/signals'
+
 import { consumeAdvancedGesture, recordAdvancedHistory } from '@/lib/advanced/advancedHistory'
 import { ADV_MIN_SEGMENT_DURATION, trackEndTime } from '@/lib/advanced/advancedTimelineDomain'
+import { nextTrackName } from '@/lib/advanced/advancedTrackEditing'
 import { addClipToPool } from '@/lib/clipPool'
 import { advancedSegments, advancedSelectedId, advancedTracks, getClipById } from '@/lib/store'
 import type { Clip, CropParams, Transform } from '@/lib/types'
@@ -42,6 +45,28 @@ export function moveSegment(id: string, trackId: string, timelineStart: number):
   advancedSegments.value = advancedSegments.value.map((segment) =>
     segment.id === id ? { ...segment, trackId, timelineStart: nextStart } : segment
   )
+}
+
+// Drop a clip onto a brand-new track above the top lane or below the bottom
+// one. Creating the track and moving the clip is one undo step.
+export function moveSegmentToNewTrack(
+  id: string,
+  position: 'top' | 'bottom',
+  timelineStart: number
+): string | null {
+  if (!advancedSegments.value.some((segment) => segment.id === id)) return null
+  recordAdvancedHistory()
+  const track = { id: crypto.randomUUID(), name: nextTrackName(advancedTracks.value) }
+  batch(() => {
+    advancedTracks.value =
+      position === 'top' ? [track, ...advancedTracks.value] : [...advancedTracks.value, track]
+    advancedSegments.value = advancedSegments.value.map((segment) =>
+      segment.id === id
+        ? { ...segment, trackId: track.id, timelineStart: Math.max(0, timelineStart) }
+        : segment
+    )
+  })
+  return track.id
 }
 
 export function removeAdvancedSegment(id: string): void {
