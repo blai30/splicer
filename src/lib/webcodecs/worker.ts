@@ -1,6 +1,7 @@
 import { ensureAacEncoder } from './aacFallback'
 import { encodeAudioSlice } from './audioEncode'
 import { buildEditPlan } from './editPlan'
+import { canPassThrough } from './framePassthrough'
 import { SourceCache } from './mediabunnyInput'
 import { createOutput, type OutputHandle } from './mediabunnyOutput'
 import {
@@ -55,7 +56,15 @@ async function runExport(job: ExportJob): Promise<void> {
     for (const slice of plan.slices) {
       if (canceled) throw new CanceledError()
       const reader = await sources.get(slice.sourceIndex)
-      await encodeVideoSlice({ reader, slice, plan, out, onFrameEncoded, shouldCancel })
+      await encodeVideoSlice({
+        reader,
+        slice,
+        plan,
+        out,
+        onFrameEncoded,
+        shouldCancel,
+        passThrough: canPassThrough(slice, job.sources[slice.sourceIndex], plan),
+      })
       if (plan.hasAudioOutput) {
         audioFrame = await encodeAudioSlice({
           reader,

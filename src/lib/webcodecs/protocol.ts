@@ -9,6 +9,8 @@ export type JobSource = {
   hasAudio: boolean
   // Average source frame rate, when known.
   frameRate?: number
+  // Clockwise container rotation; display width/height already include it.
+  rotation?: number
   // Probed source stats, when known. They let the bitrate model aim relative
   // to the source instead of a fixed table, and let the UI compare sizes.
   durationSec?: number
@@ -25,6 +27,7 @@ export function jobSourceFromClip(clip: Clip): JobSource {
     height: clip.height,
     hasAudio: clip.hasAudio !== false,
     frameRate: clip.frameRate,
+    rotation: clip.rotation,
     durationSec: clip.duration,
     videoBitrate: clip.videoBitrate,
     videoCodec: clip.videoCodec,

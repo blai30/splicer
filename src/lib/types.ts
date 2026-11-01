@@ -8,6 +8,9 @@ export type Clip = {
   // Average frames per second, used for frame stepping. Absent on clips
   // created before probing recorded it.
   frameRate?: number
+  // Clockwise rotation from the container metadata (0, 90, 180, 270). Absent
+  // on clips probed before it was recorded.
+  rotation?: number
   objectUrl: string
   // Max-abs audio peaks over the whole clip (see lib/waveform.ts); empty
   // until extracted or when the clip has no audio.

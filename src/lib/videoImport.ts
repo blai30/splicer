@@ -54,6 +54,7 @@ export type MediaProbe = StreamStats & {
   width: number
   height: number
   frameRate: number
+  rotation: number
   hasAudio: boolean
 }
 
@@ -124,6 +125,7 @@ export async function probeMedia(file: File): Promise<MediaProbe> {
       duration,
       width: videoTrack.displayWidth,
       height: videoTrack.displayHeight,
+      rotation: videoTrack.rotation,
       // Frame stepping needs some rate; the default stands in when unmeasured.
       frameRate: stats.frameRate ?? DEFAULT_FRAME_RATE,
       hasAudio,
@@ -296,6 +298,7 @@ export async function createClip(file: File): Promise<Clip | null> {
       width: probe.width,
       height: probe.height,
       frameRate: probe.frameRate,
+      rotation: probe.rotation,
       objectUrl,
       waveformPeaks: new Float32Array(0),
       hasAudio: probe.hasAudio,
