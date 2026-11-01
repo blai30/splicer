@@ -34,7 +34,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
   - cut at playhead
   - delete
 - Drag segment trim handles for interactive left/right trimming.
-- Seek by clicking/dragging in the timeline or on its time ruler (the ruler scrubs across cuts, which it marks).
+- Seek by clicking or dragging the playhead, the time ruler, or empty track. Scrubbing crosses cuts (marked on the ruler), and presses in gaps or padding land on the nearest segment edge.
 - The view follows the playhead during playback and after keyboard seeks, pausing briefly after you scroll by hand.
 - Fit the whole timeline in view with one click; the first import zooms out to fit a long timeline.
 

@@ -35,6 +35,8 @@ let pendingSeekTime: number | null = null
 // Set by the end-of-timeline reset so the next same-source sync rewinds even
 // when the position sits exactly on the segment's out-point.
 let rewindOnSync = false
+// Set when a scrub paused playback, so its release resumes it.
+let resumeAfterScrub = false
 
 // play() rejects when interrupted by a later load() or when no source is set;
 // neither case should surface as an unhandled rejection.
@@ -230,6 +232,7 @@ export function detachVideo() {
   pendingSeekTime = null
   resumeAfterSwitch = false
   rewindOnSync = false
+  resumeAfterScrub = false
   playing.value = false
   disposeEffects?.()
   disposeEffects = null
@@ -295,4 +298,18 @@ export function goToStart() {
   if (video && !video.paused) video.pause()
   selectedSegmentId.value = first.id
   seek(first.startTime)
+}
+
+// A scrub holds playback still while the pointer moves the playhead (crossing
+// cuts would otherwise race the auto-advance), then resumes on release.
+export function beginScrub() {
+  if (!video || video.paused) return
+  resumeAfterScrub = true
+  video.pause()
+}
+
+export function endScrub() {
+  if (!video || !resumeAfterScrub) return
+  resumeAfterScrub = false
+  playSafely(video)
 }

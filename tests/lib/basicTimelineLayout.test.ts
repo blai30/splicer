@@ -4,11 +4,11 @@ import {
   buildSegmentLayout,
   cutMarkerXs,
   findDropIndexAtTrackX,
-  findSegmentAtTrackX,
-  globalTimeToSegment,
   globalTimeToX,
   layoutDuration,
   playheadXInLayout,
+  segmentAtGlobalTime,
+  trackXToHit,
   xToGlobalTime,
 } from '@/lib/timelineDomain'
 import { fitZoomWithMinWidth, ZOOM_MIN } from '@/lib/timelineNavigation'
@@ -56,11 +56,23 @@ describe('Basic layout mapping across cuts', () => {
   })
 
   it('finds the segment and source time at a concatenated time', () => {
-    expect(globalTimeToSegment(layout, 1.5)).toEqual({ segment: segments[0], time: 11.5 })
-    expect(globalTimeToSegment(layout, 2)).toEqual({ segment: segments[1], time: 0 })
+    expect(segmentAtGlobalTime(segments, 1.5)).toEqual({
+      index: 0,
+      segment: segments[0],
+      localTime: 11.5,
+    })
+    expect(segmentAtGlobalTime(segments, 2)).toEqual({
+      index: 1,
+      segment: segments[1],
+      localTime: 0,
+    })
     // The very end is the last segment's out-point.
-    expect(globalTimeToSegment(layout, 5)).toEqual({ segment: segments[1], time: 3 })
-    expect(globalTimeToSegment([], 1)).toBeNull()
+    expect(segmentAtGlobalTime(segments, 5)).toEqual({
+      index: 1,
+      segment: segments[1],
+      localTime: 3,
+    })
+    expect(segmentAtGlobalTime([], 1)).toBeNull()
   })
 
   it('marks cuts at the middle of each gap', () => {
@@ -94,7 +106,7 @@ describe('minimum block width', () => {
       [28, 36],
     ])
     expect(playheadXInLayout(narrow, 'a', 11, PADDING)).toBe(20)
-    expect(findSegmentAtTrackX(narrow, 20)).toEqual({ segment: segments[0], time: 11 })
+    expect(trackXToHit(narrow, 20)).toEqual({ segment: segments[0], time: 11 })
     expect(globalTimeToX(narrow, 3.5)).toBe(32)
   })
 

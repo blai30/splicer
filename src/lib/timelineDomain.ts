@@ -118,19 +118,6 @@ export function segmentXToTime(item: SegmentLayoutItem, x: number): number {
   return item.segment.startTime + ((x - item.startX) / width) * itemDuration(item)
 }
 
-export function findSegmentAtTrackX(
-  layout: SegmentLayoutItem[],
-  x: number
-): { segment: Segment; time: number } | null {
-  for (const item of layout) {
-    if (x >= item.startX && x <= item.endX) {
-      return { segment: item.segment, time: segmentXToTime(item, x) }
-    }
-  }
-
-  return null
-}
-
 // Total length of the edited (concatenated) timeline.
 export function layoutDuration(layout: SegmentLayoutItem[]): number {
   let total = 0
@@ -166,25 +153,95 @@ export function xToGlobalTime(layout: SegmentLayoutItem[], x: number): number {
   return elapsed
 }
 
-// The segment and source time playing at a concatenated-timeline time. The
-// very end resolves to the last segment's out-point.
-export function globalTimeToSegment(
-  layout: SegmentLayoutItem[],
+// Total length of the edited (concatenated) timeline.
+export function totalDuration(segments: Segment[]): number {
+  let total = 0
+  for (const segment of segments) total += segment.endTime - segment.startTime
+  return total
+}
+
+// The segment playing at a concatenated-timeline time, with its index and the
+// source time inside it. A time on a cut resolves to the later segment; the
+// very end (and past it) to the last segment's out-point, and before the
+// start to the first segment's in-point.
+export function segmentAtGlobalTime(
+  segments: Segment[],
   globalTime: number
-): { segment: Segment; time: number } | null {
+): { index: number; segment: Segment; localTime: number } | null {
+  if (segments.length === 0) return null
   let elapsed = 0
-  for (const item of layout) {
-    const duration = itemDuration(item)
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i]
+    const duration = segment.endTime - segment.startTime
     if (globalTime < elapsed + duration) {
       return {
-        segment: item.segment,
-        time: item.segment.startTime + Math.max(0, globalTime - elapsed),
+        index: i,
+        segment,
+        localTime: segment.startTime + Math.max(0, globalTime - elapsed),
       }
     }
     elapsed += duration
   }
-  const last = layout.at(-1)
-  return last ? { segment: last.segment, time: last.segment.endTime } : null
+  const index = segments.length - 1
+  return { index, segment: segments[index], localTime: segments[index].endTime }
+}
+
+// Concatenated-timeline time of a source time inside one segment, clamped to
+// that segment. Null when the segment is not on the timeline.
+export function globalTimeOf(
+  segments: Segment[],
+  segmentId: string,
+  localTime: number
+): number | null {
+  let elapsed = 0
+  for (const segment of segments) {
+    if (segment.id === segmentId) {
+      return elapsed + (clampPlayheadForSegment(segment, localTime) - segment.startTime)
+    }
+    elapsed += segment.endTime - segment.startTime
+  }
+  return null
+}
+
+// Concatenated-timeline times of every cut, from 0 through the timeline end.
+export function cutTimes(segments: Segment[]): number[] {
+  const times = [0]
+  let elapsed = 0
+  for (const segment of segments) {
+    elapsed += segment.endTime - segment.startTime
+    times.push(elapsed)
+  }
+  return times
+}
+
+// The segment and source time a press at track x points to. Inside a block
+// that is the time under the pointer; a gap resolves to whichever neighbouring
+// edge is closer, and the padding (or anything past the blocks) to the first
+// in-point or the last out-point. Null only for an empty timeline.
+export function trackXToHit(
+  layout: SegmentLayoutItem[],
+  x: number
+): { segment: Segment; time: number } | null {
+  if (layout.length === 0) return null
+  for (let i = 0; i < layout.length; i++) {
+    const item = layout[i]
+    if (x < item.startX) {
+      const previous = layout[i - 1]
+      // Ties go to the later block, matching a time on a cut.
+      if (previous && x - previous.endX < item.startX - x) {
+        return { segment: previous.segment, time: previous.segment.endTime }
+      }
+      return { segment: item.segment, time: item.segment.startTime }
+    }
+    if (x <= item.endX) {
+      return {
+        segment: item.segment,
+        time: clampPlayheadForSegment(item.segment, segmentXToTime(item, x)),
+      }
+    }
+  }
+  const last = layout[layout.length - 1]
+  return { segment: last.segment, time: last.segment.endTime }
 }
 
 // Centers of the gaps between blocks: where the cuts sit on the ruler.
@@ -260,95 +317,6 @@ export function viewportToTrackX(
   return clientX - trackRect.left + trackScrollLeft
 }
 
-export function createTrackSeekHandler(options: {
-  layout: SegmentLayoutItem[]
-  trackElement: HTMLElement
-  onSeek: (segmentId: string, time: number) => void
-}) {
-  const { layout, trackElement, onSeek } = options
-  const throttler = createRafThrottler()
-
-  return {
-    onPointerDown(event: PointerEvent) {
-      if (layout.length === 0) return
-
-      function seekFromPointer(pointerEvent: PointerEvent) {
-        const rect = trackElement.getBoundingClientRect()
-        const trackX = viewportToTrackX(pointerEvent.clientX, rect, trackElement.scrollLeft)
-        const hit = findSegmentAtTrackX(layout, trackX)
-        if (!hit) return
-        onSeek(hit.segment.id, hit.time)
-      }
-
-      seekFromPointer(event)
-      trackElement.setPointerCapture(event.pointerId)
-
-      function onMove(moveEvent: PointerEvent) {
-        throttler.queue(() => seekFromPointer(moveEvent))
-      }
-
-      function onUp() {
-        throttler.cancel()
-        trackElement.removeEventListener('pointermove', onMove)
-        trackElement.removeEventListener('pointerup', onUp)
-        trackElement.removeEventListener('pointercancel', onUp)
-      }
-
-      trackElement.addEventListener('pointermove', onMove)
-      trackElement.addEventListener('pointerup', onUp)
-      trackElement.addEventListener('pointercancel', onUp)
-    },
-
-    cleanup() {
-      throttler.cancel()
-    },
-  }
-}
-
-export function createPlayheadDragHandler(options: {
-  item: SegmentLayoutItem
-  trackElement: HTMLElement
-  onUpdate: (time: number) => void
-}) {
-  const { item, trackElement, onUpdate } = options
-  const { segment } = item
-  const throttler = createRafThrottler()
-
-  return {
-    onPointerDown(event: PointerEvent) {
-      event.stopPropagation()
-      const element = event.currentTarget as HTMLElement
-      element.setPointerCapture(event.pointerId)
-
-      function syncPlayheadFromPointer(moveEvent: PointerEvent) {
-        const rect = trackElement.getBoundingClientRect()
-        const trackX = viewportToTrackX(moveEvent.clientX, rect, trackElement.scrollLeft)
-        const clampedTime = clampPlayheadForSegment(segment, segmentXToTime(item, trackX))
-        onUpdate(clampedTime)
-      }
-
-      function onMove(moveEvent: PointerEvent) {
-        throttler.queue(() => syncPlayheadFromPointer(moveEvent))
-      }
-
-      function onUp() {
-        throttler.cancel()
-        element.removeEventListener('pointermove', onMove)
-        element.removeEventListener('pointerup', onUp)
-        element.removeEventListener('pointercancel', onUp)
-      }
-
-      element.addEventListener('pointermove', onMove)
-      element.addEventListener('pointerup', onUp)
-      element.addEventListener('pointercancel', onUp)
-    },
-
-    cleanup() {
-      throttler.cancel()
-    },
-  }
-}
-
 export const EDGE_SCROLL_ZONE_PX = 40
 export const EDGE_SCROLL_MAX_PX_PER_FRAME = 20
 // Share of a narrow view each edge zone may take, so a phone-width timeline
@@ -407,6 +375,81 @@ export function createEdgeAutoScroller(scroller: HTMLElement, onScroll: () => vo
     stop() {
       if (frameId !== null) cancelAnimationFrame(frameId)
       frameId = null
+    },
+  }
+}
+
+// One pointer gesture that moves the Basic playhead: presses on the ruler, the
+// playhead itself, or the empty track all scrub through here. Each position
+// resolves with trackXToHit, so a drag crosses cuts (selecting the segment
+// under the pointer) and presses in gaps or padding land on the nearest edge.
+// Holding the pointer past a scroller edge keeps scrolling and scrubbing.
+export function createScrubHandler(options: {
+  trackElement: HTMLElement
+  // Read on every move, so edits or zoom during the gesture are respected.
+  getLayout: () => SegmentLayoutItem[]
+  onSeek: (segmentId: string, time: number) => void
+  onEnd?: () => void
+}) {
+  const { trackElement, getLayout, onSeek, onEnd } = options
+  const throttler = createRafThrottler()
+  let stopActive: (() => void) | null = null
+
+  function seekAtClientX(clientX: number) {
+    const x = viewportToTrackX(
+      clientX,
+      trackElement.getBoundingClientRect(),
+      trackElement.scrollLeft
+    )
+    const hit = trackXToHit(getLayout(), x)
+    if (hit) onSeek(hit.segment.id, hit.time)
+  }
+
+  return {
+    // `seekOnPress` is false when grabbing the playhead itself: the press
+    // must not nudge it to the pointer before the drag moves.
+    onPointerDown(event: PointerEvent, seekOnPress = true) {
+      stopActive?.()
+      if (seekOnPress) seekAtClientX(event.clientX)
+      trackElement.setPointerCapture(event.pointerId)
+      let lastClientX = event.clientX
+      let moved = seekOnPress
+      const autoScroll = createEdgeAutoScroller(trackElement, () =>
+        throttler.queue(() => seekAtClientX(lastClientX))
+      )
+
+      function stop() {
+        throttler.cancel()
+        autoScroll.stop()
+        stopActive = null
+        trackElement.removeEventListener('pointermove', onMove)
+        trackElement.removeEventListener('pointerup', onUp)
+        trackElement.removeEventListener('pointercancel', onCancel)
+        onEnd?.()
+      }
+      function onMove(moveEvent: PointerEvent) {
+        lastClientX = moveEvent.clientX
+        moved = true
+        throttler.queue(() => seekAtClientX(moveEvent.clientX))
+        autoScroll.update(moveEvent.clientX)
+      }
+      function onUp(upEvent: PointerEvent) {
+        // Land exactly where the pointer was released.
+        if (moved) seekAtClientX(upEvent.clientX)
+        stop()
+      }
+      function onCancel() {
+        stop()
+      }
+
+      stopActive = stop
+      trackElement.addEventListener('pointermove', onMove)
+      trackElement.addEventListener('pointerup', onUp)
+      trackElement.addEventListener('pointercancel', onCancel)
+    },
+
+    cleanup() {
+      stopActive?.()
     },
   }
 }

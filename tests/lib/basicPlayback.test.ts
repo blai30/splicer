@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { attachVideo, detachVideo } from '@/lib/playback'
+import { attachVideo, beginScrub, detachVideo, endScrub } from '@/lib/playback'
 import {
   clips,
   currentPlaybackTime,
@@ -33,10 +33,15 @@ class FakeVideo {
     this.currentTime = 0
     this.readyState = 0
   }
+  playCalls = 0
   play() {
+    this.playCalls += 1
+    this.paused = false
     return Promise.resolve()
   }
-  pause() {}
+  pause() {
+    this.paused = true
+  }
   removeAttribute() {}
 }
 
@@ -92,5 +97,23 @@ describe('Basic playback across a cut between two files', () => {
     video.onloadedmetadata?.()
     expect(video.currentTime).toBe(50)
     expect(playheadTime.value).toBe(50)
+  })
+})
+
+describe('Basic scrubbing', () => {
+  it('pauses playback for the gesture and resumes it on release', () => {
+    video.paused = false
+    beginScrub()
+    expect(video.paused).toBe(true)
+    endScrub()
+    expect(video.playCalls).toBe(1)
+    expect(video.paused).toBe(false)
+  })
+
+  it('leaves a paused preview paused', () => {
+    beginScrub()
+    endScrub()
+    expect(video.playCalls).toBe(0)
+    expect(video.paused).toBe(true)
   })
 })

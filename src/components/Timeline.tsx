@@ -21,7 +21,7 @@ import { TimelinePlayhead } from '@/components/TimelinePlayhead'
 import { TimeRuler } from '@/components/TimeRuler'
 import { useScrollWindow, useTimelineNavigation } from '@/components/useTimelineNavigation'
 import { ZoomSlider } from '@/components/ZoomSlider'
-import { seek } from '@/lib/playback'
+import { beginScrub, endScrub, seek } from '@/lib/playback'
 import {
   GAP_PX,
   PADDING_PX,
@@ -36,16 +36,11 @@ import {
 } from '@/lib/store'
 import {
   buildSegmentLayout,
-  createEdgeAutoScroller,
-  createPlayheadDragHandler,
-  createRafThrottler,
-  createTrackSeekHandler,
+  createScrubHandler,
   cutMarkerXs,
-  globalTimeToSegment,
   globalTimeToX,
   layoutDuration,
   playheadXInLayout,
-  viewportToTrackX,
   xToGlobalTime,
 } from '@/lib/timelineDomain'
 import {
@@ -75,9 +70,7 @@ function layoutAt(segments: Segment[], zoom: number) {
 export function Timeline() {
   const trackRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const trackSeekHandlerRef = useRef<ReturnType<typeof createTrackSeekHandler> | null>(null)
-  const playheadDragHandlerRef = useRef<ReturnType<typeof createPlayheadDragHandler> | null>(null)
-  const stopRulerScrubRef = useRef<(() => void) | null>(null)
+  const scrubHandlerRef = useRef<ReturnType<typeof createScrubHandler> | null>(null)
 
   const layoutSignal = useComputed(() => layoutAt(timeline.value, pxPerSec.value))
   // Read only by the playhead leaf and the follow effect: the timeline itself
@@ -112,94 +105,35 @@ export function Timeline() {
     isEmpty,
   })
 
-  function activeLayoutItem() {
-    const activeId = selectedSegmentId.value ?? timeline.value[0]?.id
-    return layoutSignal.value.find((entry) => entry.segment.id === activeId)
-  }
-
-  // Seek on the concatenated timeline: the ruler spans every segment, so a
-  // scrub can cross cuts, selecting whichever segment is under the pointer.
-  function seekAtClientX(track: HTMLElement, clientX: number) {
-    const current = layoutSignal.value
-    const x = viewportToTrackX(clientX, track.getBoundingClientRect(), track.scrollLeft)
-    const hit = globalTimeToSegment(current, xToGlobalTime(current, x))
-    if (!hit) return
-    selectedSegmentId.value = hit.segment.id
-    seek(hit.time)
-  }
-
-  function startRulerScrub(event: PointerEvent, track: HTMLElement) {
-    seekAtClientX(track, event.clientX)
-    track.setPointerCapture(event.pointerId)
-    const throttler = createRafThrottler()
-    let lastClientX = event.clientX
-    // Scrubbing past an edge keeps scrolling and seeking at the held position.
-    const autoScroll = createEdgeAutoScroller(track, () =>
-      throttler.queue(() => seekAtClientX(track, lastClientX))
-    )
-    function stop() {
-      throttler.cancel()
-      autoScroll.stop()
-      stopRulerScrubRef.current = null
-      track.removeEventListener('pointermove', onMove)
-      track.removeEventListener('pointerup', onUp)
-      track.removeEventListener('pointercancel', stop)
-    }
-    function onMove(moveEvent: PointerEvent) {
-      lastClientX = moveEvent.clientX
-      throttler.queue(() => seekAtClientX(track, moveEvent.clientX))
-      autoScroll.update(moveEvent.clientX)
-    }
-    function onUp(upEvent: PointerEvent) {
-      stop()
-      seekAtClientX(track, upEvent.clientX)
-    }
-    stopRulerScrubRef.current = stop
-    track.addEventListener('pointermove', onMove)
-    track.addEventListener('pointerup', onUp)
-    track.addEventListener('pointercancel', stop)
-  }
-
-  function onTrackPointerDown(event: PointerEvent) {
-    if (!trackRef.current) return
-    if (timeline.value.length === 0) return
-    if (event.button !== 0) return
-    const target = event.target as HTMLElement
-    // Ignore clicks on playhead and segment containers
-    if (target.closest('[data-playhead]')) return
-    if (target.closest('[data-segment]')) return
-    if (target.closest('[data-time-ruler]')) {
-      startRulerScrub(event, trackRef.current)
-      return
-    }
-
-    // Create and cache handler for this drag session
-    trackSeekHandlerRef.current = createTrackSeekHandler({
-      layout: layoutSignal.value,
-      trackElement: trackRef.current,
+  // Every press that moves the playhead (ruler, playhead, empty track) runs
+  // the same scrub, which crosses cuts and resolves gaps to the nearest edge.
+  function startScrub(event: PointerEvent, seekOnPress: boolean) {
+    const track = trackRef.current
+    if (!track) return
+    scrubHandlerRef.current?.cleanup()
+    beginScrub()
+    scrubHandlerRef.current = createScrubHandler({
+      trackElement: track,
+      getLayout: () => layoutSignal.peek(),
       onSeek(segmentId, time) {
         selectedSegmentId.value = segmentId
         seek(time)
       },
-    })
-
-    trackSeekHandlerRef.current.onPointerDown(event)
-  }
-
-  function onPlayheadPointerDown(event: PointerEvent) {
-    const activeLayout = activeLayoutItem()
-    if (!activeLayout || !trackRef.current) return
-
-    // Create and cache handler for this drag session using precomputed layout
-    playheadDragHandlerRef.current = createPlayheadDragHandler({
-      item: activeLayout,
-      trackElement: trackRef.current,
-      onUpdate(time) {
-        seek(time)
+      onEnd() {
+        scrubHandlerRef.current = null
+        endScrub()
       },
     })
+    scrubHandlerRef.current.onPointerDown(event, seekOnPress)
+  }
 
-    playheadDragHandlerRef.current.onPointerDown(event)
+  function onTrackPointerDown(event: PointerEvent) {
+    if (timeline.value.length === 0) return
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    // Blocks handle their own presses (select, reorder, trim).
+    if (target.closest('[data-segment]')) return
+    startScrub(event, !target.closest('[data-playhead]'))
   }
 
   function applyZoomInput(input: HTMLInputElement) {
@@ -210,15 +144,8 @@ export function Timeline() {
     input.value = formatZoom(pxPerSec.value)
   }
 
-  // Cleanup any pending drag handlers on unmount
-  useEffect(
-    () => () => {
-      trackSeekHandlerRef.current?.cleanup()
-      playheadDragHandlerRef.current?.cleanup()
-      stopRulerScrubRef.current?.()
-    },
-    []
-  )
+  // End a scrub still in progress on unmount.
+  useEffect(() => () => scrubHandlerRef.current?.cleanup(), [])
 
   function onWheel(event: WheelEvent) {
     if (!trackRef.current) return
@@ -477,12 +404,7 @@ export function Timeline() {
               }
               return result
             })()}
-            <TimelinePlayhead
-              data-playhead
-              class="top-0"
-              x={playheadX}
-              onPointerDown={onPlayheadPointerDown}
-            />
+            <TimelinePlayhead data-playhead class="top-0" x={playheadX} />
           </div>
         )}
       </div>
