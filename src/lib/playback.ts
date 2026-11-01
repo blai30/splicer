@@ -166,6 +166,14 @@ function syncSource() {
     videoElement.src = info.url
     videoElement.load()
     if (!resume) playing.value = false
+    // Until the new source reports its position, rest the playhead at the
+    // segment start: the old source's time means nothing in this clip, and the
+    // timeline would otherwise draw (and follow) it at a stale spot. A seek
+    // issued right after the switch still overrides this.
+    batch(() => {
+      playheadTime.value = info.start
+      currentPlaybackTime.value = 0
+    })
     videoElement.onloadedmetadata = () => {
       // A seek issued while the new source was loading wins over the default
       // segment start (e.g. clicking into a segment from a different clip).

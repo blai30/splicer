@@ -59,17 +59,17 @@ import {
   toggleMute,
   undo,
 } from '@/lib/timelineEditing'
-import { fitZoom, MIN_BLOCK_WIDTH_PX, ZOOM_STEP_FACTOR } from '@/lib/timelineNavigation'
+import {
+  fitZoomWithMinWidth,
+  formatZoom,
+  MIN_BLOCK_WIDTH_PX,
+  ZOOM_STEP_FACTOR,
+} from '@/lib/timelineNavigation'
 import type { Segment } from '@/lib/types'
 import { FILE_INPUT_ACCEPT, importFiles } from '@/lib/videoImport'
 
 function layoutAt(segments: Segment[], zoom: number) {
   return buildSegmentLayout(segments, zoom, GAP_PX, PADDING_PX, MIN_BLOCK_WIDTH_PX)
-}
-
-// The zoom box shows a decimal only where it matters (below 10 px/s).
-function formatZoom(zoom: number): string {
-  return zoom < 10 ? String(Math.round(zoom * 10) / 10) : String(Math.round(zoom))
 }
 
 export function Timeline() {
@@ -101,9 +101,10 @@ export function Timeline() {
       timeToX: (time, zoom) => globalTimeToX(layoutAt(segments, zoom), time),
       xToTime: (x, zoom) => xToGlobalTime(layoutAt(segments, zoom), x),
       fitZoom: (viewWidth) =>
-        fitZoom(
+        fitZoomWithMinWidth(
           viewWidth - 2 * PADDING_PX - GAP_PX * Math.max(0, segments.length - 1),
-          totalDuration
+          segments.map((segment) => segment.endTime - segment.startTime),
+          MIN_BLOCK_WIDTH_PX
         ),
     },
     playheadX,
@@ -245,7 +246,7 @@ export function Timeline() {
 
   return (
     <div
-      class="relative flex h-64 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur transition-colors hover:duration-0 md:h-48 dark:border-slate-700/60 dark:bg-slate-900/40"
+      class="relative flex min-h-64 shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200/60 bg-slate-50/40 backdrop-blur transition-colors hover:duration-0 md:h-48 md:min-h-0 dark:border-slate-700/60 dark:bg-slate-900/40"
       onWheel={onWheel}
     >
       {/* Header */}
@@ -342,6 +343,8 @@ export function Timeline() {
               Delete
             </button>
           </div>
+          {/* On phones the zoom-out/in buttons give way to the slider and Fit,
+              so the toolbar keeps its rows and the track keeps room for the clips. */}
           <div class="flex shrink-0 items-center gap-2 md:gap-3">
             <button
               onClick={() => fit()}
@@ -354,7 +357,7 @@ export function Timeline() {
             </button>
             <button
               onClick={() => zoomStep(-1)}
-              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
+              class="hidden text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 md:block dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom out"
               aria-label="Zoom out"
             >
@@ -367,7 +370,7 @@ export function Timeline() {
             />
             <button
               onClick={() => zoomStep(1)}
-              class="text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
+              class="hidden text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 md:block dark:text-slate-500 dark:hover:text-slate-300"
               title="Zoom in"
               aria-label="Zoom in"
             >
@@ -396,13 +399,14 @@ export function Timeline() {
         </div>
       </div>
 
-      {/* Track */}
+      {/* Track. On phones the toolbar can wrap onto several rows, so the card
+          grows instead of squeezing the track below the ruler plus a clip. */}
       <div
         ref={trackRef}
         data-track
         role="region"
         aria-label="Timeline scrubber - click to seek, drag edges to trim segments"
-        class="relative min-h-0 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto overflow-y-hidden dark:scrollbar-thumb-slate-700"
+        class="relative min-h-30 flex-1 scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent overflow-x-auto overflow-y-hidden md:min-h-0 dark:scrollbar-thumb-slate-700"
         onPointerDown={onTrackPointerDown}
       >
         {isEmpty.value ? (

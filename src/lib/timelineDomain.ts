@@ -193,7 +193,9 @@ export function cutMarkerXs(layout: SegmentLayoutItem[], gapPx: number): number[
 }
 
 // Track x of the Basic playhead: the playhead time inside the active block,
-// or `fallbackX` when no block is active.
+// or `fallbackX` when no block is active. The time is clamped to the block
+// because it can briefly belong to the previous segment's source (e.g. right
+// after playback crosses a cut, before the next file reports its position).
 export function playheadXInLayout(
   layout: SegmentLayoutItem[],
   activeSegmentId: string | undefined,
@@ -201,7 +203,9 @@ export function playheadXInLayout(
   fallbackX: number
 ): number {
   const item = layout.find((entry) => entry.segment.id === activeSegmentId)
-  return item ? segmentTimeToX(item, playheadTime) : fallbackX
+  return item
+    ? segmentTimeToX(item, clampPlayheadForSegment(item.segment, playheadTime))
+    : fallbackX
 }
 
 export function findDropIndexAtTrackX(

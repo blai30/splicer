@@ -1,6 +1,7 @@
 import clsx from 'clsx/lite'
 
 import {
+  formatZoom,
   sliderFractionToZoom,
   stepZoom,
   ZOOM_MAX,
@@ -70,8 +71,8 @@ export function ZoomSlider({
       aria-label="Timeline zoom"
       aria-valuemin={ZOOM_MIN}
       aria-valuemax={ZOOM_MAX}
-      aria-valuenow={Math.round(value * 10) / 10}
-      aria-valuetext={`${Math.round(value * 10) / 10} pixels per second`}
+      aria-valuenow={Number(formatZoom(value))}
+      aria-valuetext={`${formatZoom(value)} pixels per second`}
       class={clsx(
         'relative h-5 touch-none rounded-sm outline-none select-none focus-visible:ring-2 focus-visible:ring-violet-400',
         className ?? 'w-28'

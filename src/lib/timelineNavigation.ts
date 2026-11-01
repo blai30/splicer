@@ -1,8 +1,8 @@
 import { formatRulerLabel } from '@/lib/format'
 
 // Timeline zoom range in px per second, shared by both editors. The floor is
-// low enough for an hour-long project to fit a laptop-width view.
-export const ZOOM_MIN = 1
+// low enough for an hour-long project to fit a laptop-width view (about 900 px).
+export const ZOOM_MIN = 0.25
 export const ZOOM_MAX = 200
 // One zoom step (buttons, keys, slider arrows, Ctrl+wheel notch).
 export const ZOOM_STEP_FACTOR = 1.25
@@ -18,6 +18,13 @@ export function clampTimelineZoom(pxPerSec: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, pxPerSec))
 }
 
+// A zoom level for display: decimals only where they matter at low zoom.
+export function formatZoom(pxPerSec: number): string {
+  if (pxPerSec < 1) return String(Math.round(pxPerSec * 100) / 100)
+  if (pxPerSec < 10) return String(Math.round(pxPerSec * 10) / 10)
+  return String(Math.round(pxPerSec))
+}
+
 export function stepZoom(pxPerSec: number, direction: 1 | -1): number {
   return clampTimelineZoom(pxPerSec * ZOOM_STEP_FACTOR ** direction)
 }
@@ -27,6 +34,37 @@ export function stepZoom(pxPerSec: number, direction: 1 | -1): number {
 export function fitZoom(availablePx: number, duration: number): number | null {
   if (!(duration > 0) || !(availablePx > 0)) return null
   return clampTimelineZoom(availablePx / duration)
+}
+
+// fitZoom for a layout that draws every block at least `minWidthPx` wide
+// (Basic): widened blocks take fixed space whatever the zoom, so their pixels
+// and durations come out of the fit. Removing them only lowers the zoom, which
+// can widen more blocks, so this repeats until the widened set is stable.
+export function fitZoomWithMinWidth(
+  availablePx: number,
+  durations: number[],
+  minWidthPx: number
+): number | null {
+  const totalDuration = durations.reduce((sum, duration) => sum + duration, 0)
+  if (!(totalDuration > 0) || !(availablePx > 0)) return null
+  let zoom = availablePx / totalDuration
+  for (let pass = 0; pass <= durations.length; pass++) {
+    let widenedPx = 0
+    let flexibleDuration = 0
+    for (const duration of durations) {
+      if (duration * zoom < minWidthPx) widenedPx += minWidthPx
+      else flexibleDuration += duration
+    }
+    // Every block is at its minimum width: the largest zoom that keeps them
+    // all there gives the same layout with the most room inside them.
+    if (flexibleDuration <= 0) return clampTimelineZoom(minWidthPx / Math.max(...durations))
+    const nextZoom = (availablePx - widenedPx) / flexibleDuration
+    // Even the minimum widths alone overflow the view; zoom out as far as allowed.
+    if (nextZoom <= 0) return ZOOM_MIN
+    if (Math.abs(nextZoom - zoom) < 1e-9) break
+    zoom = nextZoom
+  }
+  return clampTimelineZoom(zoom)
 }
 
 // Slider position (0..1) for a zoom level, on a log scale so each step of the
@@ -70,14 +108,28 @@ export function followScrollTarget(
   return Math.abs(target - scrollLeft) < 1 ? null : target
 }
 
+// Pauses follow after manual scrolling. Scroll events carry no source, so the
+// timeline reports every scrollLeft it sets itself (noteScrollSet); any other
+// position seen in a scroll event (wheel anywhere on the card, scrollbar
+// drag, keyboard) came from the user.
 export function createFollowSuspension(now: () => number = () => performance.now()) {
   let resumeAt = -Infinity
+  let ownScrollLeft: number | null = null
+  function suspend() {
+    resumeAt = now() + FOLLOW_SUSPEND_MS
+  }
   return {
-    suspend() {
-      resumeAt = now() + FOLLOW_SUSPEND_MS
-    },
+    suspend,
     isSuspended() {
       return now() < resumeAt
+    },
+    noteScrollSet(scrollLeft: number) {
+      ownScrollLeft = scrollLeft
+    },
+    onScroll(scrollLeft: number) {
+      if (ownScrollLeft !== null && Math.abs(scrollLeft - ownScrollLeft) < 1) return
+      ownScrollLeft = null
+      suspend()
     },
   }
 }

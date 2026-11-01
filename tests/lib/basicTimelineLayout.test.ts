@@ -11,6 +11,7 @@ import {
   playheadXInLayout,
   xToGlobalTime,
 } from '@/lib/timelineDomain'
+import { fitZoomWithMinWidth, ZOOM_MIN } from '@/lib/timelineNavigation'
 import type { Segment } from '@/lib/types'
 
 const GAP = 4
@@ -72,6 +73,15 @@ describe('Basic layout mapping across cuts', () => {
     expect(playheadXInLayout(layout, 'b', 1.5, PADDING)).toBe(370)
     expect(playheadXInLayout(layout, undefined, 0, PADDING)).toBe(PADDING)
   })
+
+  it('pins a playhead time outside the active segment to that block', () => {
+    // Playback just crossed from 'a' (ended at 12 s) into 'b' (0..3 s) and the
+    // new source has not reported its position yet: the stale 12 s must not
+    // map past 'b', nor the 0 s of 'b' before 'a' when 'a' is active.
+    expect(playheadXInLayout(layout, 'b', 12, PADDING)).toBe(520)
+    expect(playheadXInLayout(layout, 'a', 0, PADDING)).toBe(16)
+    expect(playheadXInLayout(layout, 'b', -5, PADDING)).toBe(220)
+  })
 })
 
 describe('minimum block width', () => {
@@ -93,5 +103,45 @@ describe('minimum block width', () => {
     expect(findDropIndexAtTrackX(segments, 3, 1, GAP, 8)).toBe(0)
     expect(findDropIndexAtTrackX(segments, 5, 1, GAP, 8)).toBe(1)
     expect(findDropIndexAtTrackX(segments, 17, 1, GAP, 8)).toBe(2)
+  })
+})
+
+describe('fit with the minimum block width', () => {
+  const VIEW = 1000
+  const MIN_WIDTH = 8
+
+  function fittedLayout(fitSegments: Segment[]) {
+    const available = VIEW - 2 * PADDING - GAP * (fitSegments.length - 1)
+    const zoom = fitZoomWithMinWidth(
+      available,
+      fitSegments.map((entry) => entry.endTime - entry.startTime),
+      MIN_WIDTH
+    )
+    return { zoom, layout: buildSegmentLayout(fitSegments, zoom ?? 0, GAP, PADDING, MIN_WIDTH) }
+  }
+
+  it('keeps a long clip plus many short cut fragments inside the view', () => {
+    const fragments = Array.from({ length: 60 }, (_, i) => segment(`f${i}`, i, i + 0.2))
+    const { zoom, layout: fitted } = fittedLayout([segment('long', 0, 600), ...fragments])
+    const contentEnd = fitted.at(-1)!.endX + PADDING
+    expect(contentEnd).toBeLessThanOrEqual(VIEW + 1e-6)
+    // The long clip takes all the room the fragments leave, so the view is full.
+    expect(contentEnd).toBeCloseTo(VIEW)
+    // Below the plain duration-based fit, which ignores the widened fragments.
+    expect(zoom).toBeLessThan((VIEW - 2 * PADDING - GAP * 60) / 612)
+  })
+
+  it('matches the plain fit when no block reaches the minimum', () => {
+    const { zoom } = fittedLayout([segment('a', 0, 10), segment('b', 0, 30)])
+    expect(zoom).toBeCloseTo((VIEW - 2 * PADDING - GAP) / 40)
+  })
+
+  it('zooms out as far as allowed when the minimum widths alone overflow', () => {
+    const crowd = Array.from({ length: 200 }, (_, i) => segment(`c${i}`, 0, 0.5))
+    expect(fittedLayout([segment('long', 0, 100), ...crowd]).zoom).toBe(ZOOM_MIN)
+  })
+
+  it('has nothing to fit for an empty timeline', () => {
+    expect(fitZoomWithMinWidth(VIEW, [], MIN_WIDTH)).toBeNull()
   })
 })

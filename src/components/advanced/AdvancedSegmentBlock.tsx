@@ -37,11 +37,7 @@ import {
   pxPerSec,
 } from '@/lib/store'
 import { createEdgeAutoScroller, createRafThrottler } from '@/lib/timelineDomain'
-import {
-  BLOCK_DURATION_MIN_WIDTH_PX,
-  BLOCK_NAME_MIN_WIDTH_PX,
-  MIN_BLOCK_WIDTH_PX,
-} from '@/lib/timelineNavigation'
+import { BLOCK_DURATION_MIN_WIDTH_PX, BLOCK_NAME_MIN_WIDTH_PX } from '@/lib/timelineNavigation'
 import {
   resolveEdgeTime,
   resolveMoveStart,
@@ -101,9 +97,15 @@ function landedOn(edge: number, target: number | null): number | null {
 export function AdvancedSegmentBlock({
   segment,
   laneHeight,
+  width,
+  raised,
 }: {
   segment: AdvancedSegment
   laneHeight: number
+  // Drawn width in px (see advancedBlockSpans).
+  width: number
+  // A short clip widened past its duration, drawn over its neighbours.
+  raised: boolean
 }) {
   // Live drop preview while the body is dragged, so the block follows the
   // pointer before the move commits on release.
@@ -118,7 +120,6 @@ export function AdvancedSegmentBlock({
   const duration = segmentDuration(segment)
   const isSelected = advancedSelectedId.value === segment.id
   const left = TIMELINE_PAD_LEFT + segment.timelineStart * pxPerSec.value
-  const width = Math.max(MIN_BLOCK_WIDTH_PX, duration * pxPerSec.value)
   const tracks = advancedTracks.value
   const laneIndex = tracks.findIndex((track) => track.id === segment.trackId)
 
@@ -363,6 +364,8 @@ export function AdvancedSegmentBlock({
             ? 'border-violet-400 ring-1 ring-violet-400'
             : 'border-black/10 dark:border-white/10',
           clipColor(segment.clipId),
+          // Above neighbouring blocks' trim handles (z-20), below the playhead (z-30).
+          raised && 'z-25',
           preview && 'z-40 cursor-grabbing opacity-80 shadow-lg'
         )}
         style={{ left: `${left}px`, width: `${width}px`, transform: offsetTransform }}

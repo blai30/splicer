@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  advancedBlockSpans,
   advancedWheelAction,
   laneDropTarget,
   orderedForRender,
@@ -10,6 +11,7 @@ import {
   segmentsActiveAt,
   trackEndTime,
 } from '@/lib/advanced/advancedTimelineDomain'
+import { MIN_BLOCK_WIDTH_PX, ZOOM_MIN } from '@/lib/timelineNavigation'
 import type { AdvancedSegment, Track } from '@/lib/types'
 
 function seg(id: string, trackId: string, start: number, srcLen: number): AdvancedSegment {
@@ -116,5 +118,42 @@ describe('advancedWheelAction', () => {
 
   it('leaves horizontal trackpad swipes to the browser', () => {
     expect(wheel({ deltaX: 60, deltaY: 10 })).toBe('native')
+  })
+})
+
+describe('advancedBlockSpans', () => {
+  it('keeps every adjacent short clip visible at the lowest zoom', () => {
+    // long, short, long, short, short placed back to back on one track.
+    const lane = [
+      seg('long-1', 'top', 0, 30),
+      seg('short-1', 'top', 30, 2),
+      seg('long-2', 'top', 32, 30),
+      seg('short-2', 'top', 62, 2),
+      seg('short-3', 'top', 64, 2),
+    ]
+    const spans = advancedBlockSpans(lane, 1, MIN_BLOCK_WIDTH_PX)
+    expect(spans.get('long-1')).toEqual({ width: 30, raised: false })
+    expect(spans.get('long-2')).toEqual({ width: 30, raised: false })
+    // A short clip before a long one is drawn full minimum width on top of it.
+    expect(spans.get('short-1')).toEqual({ width: MIN_BLOCK_WIDTH_PX, raised: true })
+    // One followed by another short clip stops where that one starts.
+    expect(spans.get('short-2')).toEqual({ width: 2, raised: true })
+    expect(spans.get('short-3')).toEqual({ width: MIN_BLOCK_WIDTH_PX, raised: true })
+  })
+
+  it('never draws a block narrower than its duration, even at ZOOM_MIN', () => {
+    const lane = [seg('a', 'top', 0, 1), seg('b', 'top', 1, 1)]
+    const spans = advancedBlockSpans(lane, ZOOM_MIN, MIN_BLOCK_WIDTH_PX)
+    expect(spans.get('a')).toEqual({ width: ZOOM_MIN, raised: true })
+    expect(spans.get('b')).toEqual({ width: MIN_BLOCK_WIDTH_PX, raised: true })
+  })
+
+  it('caps only against clips on the same track', () => {
+    const spans = advancedBlockSpans(
+      [seg('a', 'top', 0, 1), seg('b', 'bot', 1, 1)],
+      1,
+      MIN_BLOCK_WIDTH_PX
+    )
+    expect(spans.get('a')?.width).toBe(MIN_BLOCK_WIDTH_PX)
   })
 })

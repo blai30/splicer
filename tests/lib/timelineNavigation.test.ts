@@ -7,6 +7,7 @@ import {
   createFollowSuspension,
   FOLLOW_SUSPEND_MS,
   fitZoom,
+  formatZoom,
   followScrollTarget,
   rulerSpacing,
   rulerTicks,
@@ -40,6 +41,14 @@ describe('zoom steps', () => {
   })
 })
 
+describe('formatZoom', () => {
+  it('shows decimals only at low zoom', () => {
+    expect(formatZoom(0.25)).toBe('0.25')
+    expect(formatZoom(2.56)).toBe('2.6')
+    expect(formatZoom(80.4)).toBe('80')
+  })
+})
+
 describe('fitZoom', () => {
   it('spreads the duration across the available width', () => {
     expect(fitZoom(1000, 10)).toBe(100)
@@ -47,8 +56,9 @@ describe('fitZoom', () => {
   })
 
   it('reaches the floor for long projects and the ceiling for short ones', () => {
-    // An hour on a 1200 px view needs 1/3 px/s; the floor keeps it legible.
-    expect(fitZoom(1200, 3600)).toBe(ZOOM_MIN)
+    // An hour fits a laptop-width view; two hours on it hit the floor.
+    expect(fitZoom(1200, 3600)).toBeCloseTo(1 / 3)
+    expect(fitZoom(1000, 7200)).toBe(ZOOM_MIN)
     expect(fitZoom(1000, 0.5)).toBe(ZOOM_MAX)
   })
 
@@ -112,6 +122,24 @@ describe('createFollowSuspension', () => {
     expect(suspension.isSuspended()).toBe(true)
     now += 1
     expect(suspension.isSuspended()).toBe(false)
+  })
+
+  it('ignores scroll events for positions the timeline set itself', () => {
+    const suspension = createFollowSuspension(() => 0)
+    suspension.noteScrollSet(400)
+    suspension.onScroll(400.4)
+    expect(suspension.isSuspended()).toBe(false)
+  })
+
+  it('suspends on any other scroll position, such as a wheel over the header or a scrollbar drag', () => {
+    const suspension = createFollowSuspension(() => 0)
+    suspension.onScroll(120)
+    expect(suspension.isSuspended()).toBe(true)
+
+    const afterOwnScroll = createFollowSuspension(() => 0)
+    afterOwnScroll.noteScrollSet(400)
+    afterOwnScroll.onScroll(450)
+    expect(afterOwnScroll.isSuspended()).toBe(true)
   })
 })
 

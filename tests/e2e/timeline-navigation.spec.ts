@@ -91,7 +91,7 @@ test('Fit and zoom steps in Basic', async ({ page }) => {
   const slider = page.getByRole('slider', { name: 'Timeline zoom' })
   await slider.focus()
   await slider.press('Home')
-  await expect(zoomBox(page)).toHaveValue('1')
+  await expect(zoomBox(page)).toHaveValue('0.25')
   await page.getByRole('button', { name: 'Fit timeline to view' }).click()
   await expect(zoomBox(page)).toHaveValue('200')
 })
@@ -135,3 +135,34 @@ test('the Basic track follows the playhead during playback at high zoom', async 
   expect(playhead.x).toBeGreaterThanOrEqual(view.x)
   expect(playhead.x).toBeLessThanOrEqual(view.x + view.width)
 })
+
+test('a wheel over the Basic header pauses follow instead of being snapped back', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 700, height: 900 })
+  await page.goto('/splicer/')
+  await importBasicClips(page, 3)
+  for (let step = 0; step < 12; step++) await page.locator('body').press('=')
+  const track = basicTrack(page)
+
+  await page.getByTitle('Play (Space)').click()
+  await expect.poll(() => scrollLeftOf(track), { timeout: 8000 }).toBeGreaterThan(100)
+  // Scroll back to the start from the toolbar row, away from the track itself.
+  await page.getByText('Timeline', { exact: true }).hover()
+  await page.mouse.wheel(0, -100_000)
+  await expect.poll(() => scrollLeftOf(track)).toBe(0)
+  await page.waitForTimeout(500)
+  expect(await scrollLeftOf(track)).toBe(0)
+})
+
+for (const width of [375, 320]) {
+  test(`Basic clips stay inside the track on a ${width} px phone`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/splicer/')
+    await importBasicClips(page, 1)
+    const trackBox = (await basicTrack(page).boundingBox())!
+    const blockBox = (await page.locator('[data-segment]').boundingBox())!
+    expect(blockBox.y).toBeGreaterThanOrEqual(trackBox.y)
+    expect(blockBox.y + blockBox.height).toBeLessThanOrEqual(trackBox.y + trackBox.height)
+  })
+}

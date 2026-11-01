@@ -107,3 +107,41 @@ export function advancedWheelAction(input: {
   if (Math.abs(input.deltaX) >= Math.abs(input.deltaY)) return 'native'
   return input.lanesOverflowView ? 'native' : 'horizontal'
 }
+
+export type BlockSpan = { width: number; raised: boolean }
+
+// Drawn width of every clip block, keyed by segment id. Lanes are laid out
+// linearly, so a block widened to `minWidthPx` would run under the clip after
+// it; widened blocks are therefore raised above their full-width neighbours,
+// and capped at the start of the next widened block on the same track so a run
+// of short clips still shows a piece of each one.
+export function advancedBlockSpans(
+  segments: AdvancedSegment[],
+  pxPerSec: number,
+  minWidthPx: number
+): Map<string, BlockSpan> {
+  const spans = new Map<string, BlockSpan>()
+  const byTrack = new Map<string, AdvancedSegment[]>()
+  for (const segment of segments) {
+    const lane = byTrack.get(segment.trackId) ?? []
+    lane.push(segment)
+    byTrack.set(segment.trackId, lane)
+  }
+  for (const lane of byTrack.values()) {
+    const ordered = [...lane].sort((first, second) => first.timelineStart - second.timelineStart)
+    let nextRaisedStart = Infinity
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      const segment = ordered[i]
+      const naturalWidth = segmentDuration(segment) * pxPerSec
+      if (naturalWidth >= minWidthPx) {
+        spans.set(segment.id, { width: naturalWidth, raised: false })
+        continue
+      }
+      const roomPx = (nextRaisedStart - segment.timelineStart) * pxPerSec
+      const width = Math.max(naturalWidth, Math.min(minWidthPx, roomPx))
+      spans.set(segment.id, { width, raised: true })
+      nextRaisedStart = segment.timelineStart
+    }
+  }
+  return spans
+}

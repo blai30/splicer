@@ -83,10 +83,17 @@ export function useTimelineNavigation({
   // A held pointer means a scrub or drag owns the scroll position.
   const pointerHeld = useRef(false)
 
+  // Every scroll the timeline makes itself goes through here, so the follow
+  // suspension can tell it apart from the user's.
+  function setScrollLeft(scroller: HTMLElement, left: number) {
+    scroller.scrollLeft = Math.max(0, left)
+    suspension.noteScrollSet(scroller.scrollLeft)
+  }
+
   function applyScroll(scroller: HTMLElement, left: number) {
     // Applied after the re-render resizes the content; set now, the browser
     // would clamp it to the old scroll range.
-    requestAnimationFrame(() => (scroller.scrollLeft = Math.max(0, left)))
+    requestAnimationFrame(() => setScrollLeft(scroller, left))
   }
 
   // Zoom to `nextZoom`, keeping the time under `anchorViewportX` (px from the
@@ -118,7 +125,7 @@ export function useTimelineNavigation({
     const zoom = geometryRef.current.fitZoom(scroller.clientWidth)
     if (zoom === null) return
     pxPerSec.value = zoomOutOnly ? Math.min(zoom, pxPerSec.value) : zoom
-    scroller.scrollLeft = 0
+    setScrollLeft(scroller, 0)
     applyScroll(scroller, 0)
   }
 
@@ -127,7 +134,7 @@ export function useTimelineNavigation({
     if (!scroller || pointerHeld.current) return
     // Only an actually hidden playhead scrolls; a visible one near the edge stays.
     const target = followScrollTarget(playheadX.value, scroller.scrollLeft, scroller.clientWidth, 1)
-    if (target !== null) scroller.scrollLeft = target
+    if (target !== null) setScrollLeft(scroller, target)
   }
 
   useEffect(() => {
@@ -135,6 +142,11 @@ export function useTimelineNavigation({
     if (!scroller) return
     function onWheel() {
       suspension.suspend()
+    }
+    function onScroll() {
+      // A held pointer suspends on release anyway; its edge auto-scroll is
+      // part of that gesture.
+      if (!pointerHeld.current) suspension.onScroll(scroller!.scrollLeft)
     }
     function onPointerDown() {
       pointerHeld.current = true
@@ -146,12 +158,14 @@ export function useTimelineNavigation({
       suspension.suspend()
     }
     scroller.addEventListener('wheel', onWheel, { passive: true })
+    scroller.addEventListener('scroll', onScroll, { passive: true })
     // Capture phase: clip blocks stop their presses from bubbling.
     scroller.addEventListener('pointerdown', onPointerDown, { capture: true })
     window.addEventListener('pointerup', onPointerUp)
     window.addEventListener('pointercancel', onPointerUp)
     return () => {
       scroller.removeEventListener('wheel', onWheel)
+      scroller.removeEventListener('scroll', onScroll)
       scroller.removeEventListener('pointerdown', onPointerDown, { capture: true })
       window.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('pointercancel', onPointerUp)
@@ -165,7 +179,7 @@ export function useTimelineNavigation({
     const scroller = scrollRef.current
     if (!scroller || pointerHeld.current || suspension.isSuspended()) return
     const target = followScrollTarget(x, scroller.scrollLeft, scroller.clientWidth)
-    if (target !== null) scroller.scrollLeft = target
+    if (target !== null) setScrollLeft(scroller, target)
   })
 
   // Untracked fit: the trigger depends on content and import state, not on zoom.

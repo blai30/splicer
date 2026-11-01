@@ -30,6 +30,7 @@ import {
 } from '@/lib/advanced/advancedHistory'
 import { seek } from '@/lib/advanced/advancedPlayback'
 import {
+  advancedBlockSpans,
   advancedWheelAction,
   projectDuration,
   TIMELINE_PAD_LEFT,
@@ -55,7 +56,7 @@ import {
   pxPerSec,
 } from '@/lib/store'
 import { createEdgeAutoScroller, createRafThrottler } from '@/lib/timelineDomain'
-import { fitZoom, ZOOM_STEP_FACTOR } from '@/lib/timelineNavigation'
+import { fitZoom, MIN_BLOCK_WIDTH_PX, ZOOM_STEP_FACTOR } from '@/lib/timelineNavigation'
 
 const LANE_HEIGHT = 56
 const PAD_LEFT = TIMELINE_PAD_LEFT
@@ -73,6 +74,7 @@ export function AdvancedTimeline() {
   // carry it past the committed end with the lanes and drop zones beneath it.
   const duration = Math.max(projectDuration(segments), advancedDragPreviewEnd.value ?? 0)
   const contentWidth = Math.max(600, duration * pxPerSec.value + 200)
+  const blockSpans = advancedBlockSpans(segments, pxPerSec.value, MIN_BLOCK_WIDTH_PX)
   // Read only by the playhead leaf and the follow effect, so playback does not
   // re-render the lanes.
   const playheadX = useComputed(() => PAD_LEFT + advancedPlayhead.value * pxPerSec.value)
@@ -354,13 +356,18 @@ export function AdvancedTimeline() {
                 >
                   {segments
                     .filter((segment) => segment.trackId === track.id)
-                    .map((segment) => (
-                      <AdvancedSegmentBlock
-                        key={segment.id}
-                        segment={segment}
-                        laneHeight={LANE_HEIGHT}
-                      />
-                    ))}
+                    .map((segment) => {
+                      const span = blockSpans.get(segment.id)
+                      return (
+                        <AdvancedSegmentBlock
+                          key={segment.id}
+                          segment={segment}
+                          laneHeight={LANE_HEIGHT}
+                          width={span?.width ?? 0}
+                          raised={span?.raised ?? false}
+                        />
+                      )
+                    })}
                 </div>
               ))}
             </div>
