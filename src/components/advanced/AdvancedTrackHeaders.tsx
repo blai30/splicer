@@ -37,7 +37,8 @@ export function AdvancedTrackHeaders({ laneHeight }: { laneHeight: number }) {
           key={track.id}
           data-advanced-track-header
           class={clsx(
-            'flex items-center gap-1 border-b border-l-2 border-b-slate-200/40 pr-2 pl-1.5 dark:border-b-slate-700/40',
+            // Tight gaps and padding leave room for 'Track N' at the active weight.
+            'flex items-center gap-0.5 border-b border-l-2 border-b-slate-200/40 pr-1 pl-1 dark:border-b-slate-700/40',
             track.id === activeId ? 'border-l-violet-500 bg-violet-500/5' : 'border-l-transparent'
           )}
           style={{ height: `${laneHeight}px` }}
@@ -150,7 +151,7 @@ function TrackName({ track, active }: { track: Track; active: boolean }) {
       aria-keyshortcuts="F2"
       title="Click to paste and import here, double-click or F2 to rename"
       class={clsx(
-        'mr-auto min-w-0 truncate rounded px-1 text-left text-sm transition-colors hover:bg-slate-100 hover:duration-0 dark:hover:bg-slate-700/50',
+        'mr-auto min-w-0 truncate rounded px-0.5 text-left text-sm transition-colors hover:bg-slate-100 hover:duration-0 dark:hover:bg-slate-700/50',
         active
           ? 'font-semibold text-violet-700 dark:text-violet-300'
           : 'text-slate-700 dark:text-slate-200'
