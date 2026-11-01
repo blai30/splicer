@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// Drives the production preview build (base path /splicer/, COOP/COEP headers
-// set by astro preview). The webServer builds and serves automatically.
+// Drives the production preview build (base path /splicer/). The webServer
+// builds and serves automatically.
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,

@@ -4,11 +4,6 @@ import sitemap from '@astrojs/sitemap'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'astro/config'
 
-const coopCoep = {
-  'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp',
-}
-
 export default defineConfig({
   site: 'https://blai30.github.io',
   trailingSlash: 'always',
@@ -27,7 +22,5 @@ export default defineConfig({
     // via dynamic import only when the browser lacks native AAC; ES output is
     // required (the default 'iife' cannot code-split).
     worker: { format: 'es' },
-    server: { headers: coopCoep },
-    preview: { headers: coopCoep },
   },
 })
