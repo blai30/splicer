@@ -1,4 +1,5 @@
 import { EtaTracker } from '@/lib/exportEta'
+import { deleteStoredExport, exportStorageDir } from '@/lib/exportStorage'
 import { exportEtaSeconds, exporting, exportProgress } from '@/lib/store'
 import type { WorkerResponse } from '@/lib/webcodecs/protocol'
 
@@ -9,7 +10,9 @@ export class ExportCanceledError extends Error {
   }
 }
 
-export type ExportOutput = { url: string; size: number }
+// storageName is set when the file was streamed to the origin private file
+// system and must be deleted with its record.
+export type ExportOutput = { url: string; size: number; storageName?: string }
 
 type ActiveExport = { worker: Worker; settle: (error: Error) => void }
 
@@ -33,6 +36,8 @@ export function runExportWorker(
     const worker = createWorker()
     const eta = new EtaTracker()
     let settled = false
+    // The streamed file the worker is writing, if any.
+    let storageName: string | undefined
 
     exportProgress.value = 0
     exportEtaSeconds.value = null
@@ -49,6 +54,8 @@ export function runExportWorker(
         resolve(result.output)
       } else {
         exportProgress.value = 0
+        // A worker stopped mid-export leaves a partial file behind.
+        if (storageName) void deleteStoredExport(storageName)
         reject(result.error ?? new Error('Export failed'))
       }
     }
@@ -66,9 +73,17 @@ export function runExportWorker(
           exportEtaSeconds.value = eta.etaSeconds(message.progress, now)
           break
         }
+        case 'storage':
+          // A retry replaces the first attempt's file, which the worker deleted.
+          storageName = message.storageName
+          break
         case 'done': {
-          const blob = new Blob([message.buffer], { type: mimeType })
-          finish({ output: { url: URL.createObjectURL(blob), size: blob.size } })
+          // Wrapping the disk-backed file references it rather than copying it.
+          const blob = new Blob(['file' in message ? message.file : message.buffer], {
+            type: mimeType,
+          })
+          storageName = 'file' in message ? message.storageName : undefined
+          finish({ output: { url: URL.createObjectURL(blob), size: blob.size, storageName } })
           break
         }
         case 'canceled':
@@ -85,7 +100,7 @@ export function runExportWorker(
       finish({ error: new Error(event.message || 'The export worker crashed') })
     }
 
-    worker.postMessage({ type: 'export', job })
+    worker.postMessage({ type: 'export', job, storageDir: exportStorageDir() })
   })
 }
 

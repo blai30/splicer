@@ -58,10 +58,25 @@ export type ExportJob = {
   audioCodec: MbAudioCodec
 }
 
-export type WorkerRequest = { type: 'export'; job: ExportJob } | { type: 'cancel' }
+// Where streamed exports live in the origin private file system. Each tab
+// writes under its own folder (see exportStorage.ts) so a startup sweep in one
+// tab never deletes another tab's files.
+export const EXPORTS_DIR = 'exports'
+
+// storageDir names this tab's folder for streamed exports (see
+// exportStorage.ts); without it the export is built in memory.
+export type WorkerRequest =
+  | { type: 'export'; job: ExportJob; storageDir?: string }
+  | { type: 'cancel' }
 
 export type WorkerResponse =
   | { type: 'progress'; progress: number }
+  // The streamed file an export writes into, sent before any data so the page
+  // can delete it if it terminates the worker mid-export.
+  | { type: 'storage'; storageName: string }
+  // A file streamed to the origin private file system; storageName is its
+  // path under the exports folder, for deleting it later.
+  | { type: 'done'; file: File; storageName: string }
   | { type: 'done'; buffer: ArrayBuffer }
   | { type: 'canceled' }
   | { type: 'error'; message: string; unsupported: boolean }

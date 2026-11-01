@@ -1,6 +1,5 @@
 import {
   AudioSampleSource,
-  BufferTarget,
   MkvOutputFormat,
   MovOutputFormat,
   Mp4OutputFormat,
@@ -11,6 +10,14 @@ import {
 } from 'mediabunny'
 
 import type { MbAudioCodec, MbContainer, MbVideoCodec } from '../exportCodecs'
+import {
+  chooseFastStart,
+  packetBudget,
+  type ExportResult,
+  type ExportTarget,
+  type FastStart,
+  type PacketCounts,
+} from './exportTarget'
 
 // Every export writes audio in this layout. Encoders need constant parameters,
 // so sources with other rates/channel counts are normalized first (see
@@ -33,13 +40,13 @@ export type OutputParams = {
   audioBitrate: number
 }
 
-function outputFormatFor(container: MbContainer): OutputFormat {
+function outputFormatFor(container: MbContainer, fastStart: FastStart): OutputFormat {
   switch (container) {
     case 'mp4':
       // Fast start puts the index up front so the file plays while streaming.
-      return new Mp4OutputFormat({ fastStart: 'in-memory' })
+      return new Mp4OutputFormat({ fastStart })
     case 'mov':
-      return new MovOutputFormat({ fastStart: 'in-memory' })
+      return new MovOutputFormat({ fastStart })
     case 'mkv':
       return new MkvOutputFormat()
     case 'webm':
@@ -51,15 +58,32 @@ export type OutputHandle = {
   videoSource: VideoSampleSource
   audioSource: AudioSampleSource | null
   start: () => Promise<void>
-  finalize: () => Promise<ArrayBuffer>
+  finalize: () => Promise<ExportResult>
+  // Stop the output and drop what it wrote.
   cancel: () => Promise<void>
+}
+
+export type OutputOptions = {
+  exportTarget: ExportTarget
+  // Packet upper bounds for a reserved MP4/MOV index; null when they cannot
+  // be bounded safely, which puts the index at the end of a streamed file.
+  packetCounts: PacketCounts | null
 }
 
 // Build a mediabunny Output for the target container with one video source and,
 // when the plan has audio, one audio source. mediabunny encodes the samples fed
 // to these sources and muxes them into the container.
-export function createOutput(plan: OutputParams, container: MbContainer): OutputHandle {
-  const output = new Output({ format: outputFormatFor(container), target: new BufferTarget() })
+export function createOutput(
+  plan: OutputParams,
+  container: MbContainer,
+  { exportTarget, packetCounts }: OutputOptions
+): OutputHandle {
+  const fastStart = chooseFastStart(exportTarget.streaming, packetCounts)
+  const output = new Output({
+    format: outputFormatFor(container, fastStart),
+    target: exportTarget.target,
+  })
+  const reserve = fastStart === 'reserve' && packetCounts !== null
 
   const videoSource = new VideoSampleSource({
     codec: plan.videoCodec,
@@ -77,12 +101,18 @@ export function createOutput(plan: OutputParams, container: MbContainer): Output
       config.framerate ??= plan.nominalFrameRate
     },
   })
-  output.addVideoTrack(videoSource)
+  output.addVideoTrack(
+    videoSource,
+    reserve ? { maximumPacketCount: packetBudget(packetCounts.video) } : {}
+  )
 
   let audioSource: AudioSampleSource | null = null
   if (plan.hasAudioOutput) {
     audioSource = new AudioSampleSource({ codec: plan.audioCodec, bitrate: plan.audioBitrate })
-    output.addAudioTrack(audioSource)
+    output.addAudioTrack(
+      audioSource,
+      reserve ? { maximumPacketCount: packetBudget(packetCounts.audio) } : {}
+    )
   }
 
   return {
@@ -91,12 +121,14 @@ export function createOutput(plan: OutputParams, container: MbContainer): Output
     start: () => output.start(),
     finalize: async () => {
       await output.finalize()
-      const buffer = (output.target as BufferTarget).buffer
-      if (!buffer) throw new Error('mediabunny output produced no buffer')
-      return buffer
+      return exportTarget.finish()
     },
     cancel: async () => {
-      if (output.state === 'started' || output.state === 'pending') await output.cancel()
+      try {
+        if (output.state === 'started' || output.state === 'pending') await output.cancel()
+      } finally {
+        await exportTarget.discard()
+      }
     },
   }
 }

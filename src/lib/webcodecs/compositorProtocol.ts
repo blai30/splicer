@@ -42,6 +42,8 @@ export type CompositorJob = {
   audioCodec: MbAudioCodec
 }
 
-export type CompositorWorkerRequest = { type: 'export'; job: CompositorJob } | { type: 'cancel' }
+export type CompositorWorkerRequest =
+  | { type: 'export'; job: CompositorJob; storageDir?: string }
+  | { type: 'cancel' }
 
 export type { WorkerResponse }

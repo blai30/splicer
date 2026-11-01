@@ -49,6 +49,9 @@ export type ExportRecord = {
   format: ExportFormat
   // The pre-export size estimate, kept to compare against the real size.
   estimatedBytes?: number
+  // Set when the file lives in the origin private file system rather than in
+  // memory; deleted along with the record.
+  storageName?: string
 }
 
 export type Segment = {

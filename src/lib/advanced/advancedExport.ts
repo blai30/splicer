@@ -1,7 +1,7 @@
 import { projectDuration } from '@/lib/advanced/advancedTimelineDomain'
 import { computeExportBounds } from '@/lib/advanced/exportLayout'
 import { selectCodecs } from '@/lib/exportCodecs'
-import { runExportWorker } from '@/lib/exportRunner'
+import { runExportWorker, type ExportOutput } from '@/lib/exportRunner'
 import {
   advancedOutputLock,
   advancedSegments,
@@ -116,7 +116,7 @@ export async function runAdvancedExport(
   format: ExportFormat,
   quality: Quality,
   fps: Framerate
-): Promise<{ url: string; size: number; width: number; height: number; duration: number }> {
+): Promise<ExportOutput & { width: number; height: number; duration: number }> {
   const segments = advancedSegments.value
   if (segments.length === 0) throw new Error('Nothing to export: add a clip first')
   const duration = projectDuration(segments)

@@ -290,6 +290,7 @@ export function ExportPanel() {
         height: output.height,
         format,
         estimatedBytes: Math.round(summary.estimate.expected),
+        storageName: output.storageName,
       }
       addExportRecord(record)
       lastExport.value = filename

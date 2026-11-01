@@ -1,17 +1,27 @@
 import clsx from 'clsx/lite'
-import { Trash2, X } from 'lucide-preact'
+import { Info, Trash2, X } from 'lucide-preact'
+import { useEffect } from 'preact/hooks'
 
+import { sweepOrphanExports } from '@/lib/exportStorage'
 import { formatFps, formatSize, formatTime } from '@/lib/format'
-import { exportHistory } from '@/lib/store'
-import type { ExportRecord } from '@/lib/types'
-
-function removeRecord(record: ExportRecord) {
-  URL.revokeObjectURL(record.url)
-  exportHistory.value = exportHistory.value.filter((entry) => entry.id !== record.id)
-}
+import { info } from '@/lib/logger'
+import {
+  clearExportHistory,
+  exportHistory,
+  exportLibraryNotice,
+  removeExportRecord,
+} from '@/lib/store'
 import { MIME_TYPES } from '@/lib/types'
 
 export function ExportHistory() {
+  // Exports streamed to disk by tabs that have since closed have no record
+  // anywhere; reclaim their space once per page load.
+  useEffect(() => {
+    void sweepOrphanExports().then((removed) => {
+      if (removed > 0) info('Removed exports left by closed tabs', { folders: removed })
+    })
+  }, [])
+
   const isEmpty = exportHistory.value.length === 0
 
   if (isEmpty) return null
@@ -25,18 +35,30 @@ export function ExportHistory() {
         <button
           type="button"
           title="Remove all exports from this session"
-          onClick={() => {
-            for (const record of exportHistory.value) {
-              URL.revokeObjectURL(record.url)
-            }
-            exportHistory.value = []
-          }}
+          onClick={clearExportHistory}
           class="ml-auto flex items-center gap-1 text-sm text-slate-400 transition-colors hover:text-slate-600 hover:duration-0 dark:text-slate-500 dark:hover:text-slate-300"
         >
           <Trash2 class="h-3 w-3" />
           Clear
         </button>
       </div>
+      {exportLibraryNotice.value && (
+        <div
+          role="status"
+          class="mx-4 mb-2 flex items-start gap-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+        >
+          <Info class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <p class="flex-1">{exportLibraryNotice.value}</p>
+          <button
+            type="button"
+            onClick={() => (exportLibraryNotice.value = null)}
+            class="inline-flex size-6 shrink-0 items-center justify-center rounded transition-colors hover:bg-amber-100 hover:duration-0 dark:hover:bg-amber-900/60"
+            aria-label="Dismiss notice"
+          >
+            <X class="size-4" />
+          </button>
+        </div>
+      )}
       <div class="overflow-x-auto">
         <table class="w-full border-collapse">
           <thead>
@@ -99,7 +121,7 @@ export function ExportHistory() {
                 <td class="px-4 py-3 text-right">
                   <button
                     type="button"
-                    onClick={() => removeRecord(record)}
+                    onClick={() => removeExportRecord(record)}
                     class="inline-flex size-7 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 hover:duration-0 dark:hover:bg-slate-700 dark:hover:text-slate-200"
                     aria-label={`Remove ${record.filename}`}
                     title="Remove from library"

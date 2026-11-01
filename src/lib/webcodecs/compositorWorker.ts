@@ -1,32 +1,48 @@
 import { ensureAacEncoder } from './aacFallback'
 import { encodeMix, WindowedMixer } from './compositorAudioMix'
-import { buildCompositorPlan } from './compositorPlan'
+import { buildCompositorPlan, type CompositorPlan } from './compositorPlan'
 import type { CompositorJob, CompositorWorkerRequest } from './compositorProtocol'
 import { encodeCompositedVideo, type LayerDecoder } from './compositorVideoEncode'
+import {
+  audioPacketBound,
+  createExportTarget,
+  doneMessage,
+  withReserveFallback,
+  type ExportResult,
+  type PacketCounts,
+} from './exportTarget'
 import { openSource, type SourceReader } from './mediabunnyInput'
 import { createOutput, OUTPUT_SAMPLE_RATE } from './mediabunnyOutput'
 import { UnsupportedSourceError, type WorkerResponse } from './protocol'
+import { createTrackPacer } from './trackPacer'
 
 let canceled = false
 
-// Audio is mixed in windows this long, kept this far ahead of the video.
+// Audio is mixed in windows this long, kept about this far ahead of the video.
 const MIX_WINDOW_FRAMES = OUTPUT_SAMPLE_RATE
-const AUDIO_LEAD_SEC = 0.5
+const AUDIO_PACE = { leadSec: 0.5, maxLagSec: 2 }
 
 function post(message: WorkerResponse, transfer?: Transferable[]): void {
   ;(self as unknown as Worker).postMessage(message, transfer ?? [])
 }
 
-async function runExport(job: CompositorJob): Promise<void> {
-  const plan = buildCompositorPlan(job)
-  await ensureAacEncoder(job.audioCodec)
-
-  const out = createOutput(plan, job.container)
-  await out.start()
-
+async function encodeOnce(
+  job: CompositorJob,
+  plan: CompositorPlan,
+  storageDir: string | undefined,
+  counts: PacketCounts | null
+): Promise<ExportResult> {
   const canvas = new OffscreenCanvas(plan.outputWidth, plan.outputHeight)
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('No 2D canvas context available for compositing')
+  const exportTarget = await createExportTarget({
+    storageDir,
+    container: job.container,
+    estimatedBytes: ((plan.videoBitrate + plan.audioBitrate) * job.durationSec) / 8,
+    packetCounts: counts,
+    onStorageFile: (storageName) => post({ type: 'storage', storageName }),
+  })
+  const out = createOutput(plan, job.container, { exportTarget, packetCounts: counts })
 
   const durationSec = job.durationSec
   const totalFrames = Math.max(1, Math.ceil(durationSec * plan.fpsGrid))
@@ -71,10 +87,13 @@ async function runExport(job: CompositorJob): Promise<void> {
     }
   }
 
+  const audioPacer = createTrackPacer(mixAudioUntil, AUDIO_PACE)
+
   // Each layer needs its own decoder (two layers may show the same source at
   // different times), so readers are opened per layer and all disposed at the end.
   const readers: SourceReader[] = []
   try {
+    await out.start()
     const decoders: LayerDecoder[] = []
     for (const layer of plan.layers) {
       const reader = await openSource(job.sources[layer.sourceIndex].file)
@@ -92,24 +111,47 @@ async function runExport(job: CompositorJob): Promise<void> {
       async (outTimeSec) => {
         framesEncoded++
         reportProgress()
-        await mixAudioUntil(outTimeSec + AUDIO_LEAD_SEC)
+        await audioPacer.videoReached(outTimeSec)
       },
       shouldCancel
     )
 
     if (canceled) throw new Error('canceled')
+    await audioPacer.drain()
     await mixAudioUntil(durationSec)
+    return await out.finalize()
   } catch (err) {
+    // Let in-flight audio stop before its readers are disposed.
+    await audioPacer.drain().catch(() => {})
     await out.cancel().catch(() => {})
     throw err
   } finally {
     await mixer?.dispose().catch(() => {})
     for (const reader of readers) reader.dispose()
   }
+}
 
-  const buffer = await out.finalize()
+async function runExport(job: CompositorJob, storageDir: string | undefined): Promise<void> {
+  const plan = buildCompositorPlan(job)
+  await ensureAacEncoder(job.audioCodec)
+  // Frames land exactly on the fps grid, so the video count is known.
+  const indexed = job.container === 'mp4' || job.container === 'mov'
+  const counts: PacketCounts | null = indexed
+    ? {
+        video: Math.max(1, Math.ceil(job.durationSec * plan.fpsGrid)),
+        audio: plan.hasMixedAudio
+          ? audioPacketBound(job.durationSec, OUTPUT_SAMPLE_RATE, plan.audioCodec, 0)
+          : 0,
+      }
+    : null
+  const result = await withReserveFallback(
+    counts,
+    (attemptCounts) => encodeOnce(job, plan, storageDir, attemptCounts),
+    () => canceled
+  )
   post({ type: 'progress', progress: 1 })
-  post({ type: 'done', buffer }, [buffer])
+  const { message, transfer } = doneMessage(result)
+  post(message, transfer)
 }
 
 self.onmessage = (event: MessageEvent<CompositorWorkerRequest>) => {
@@ -120,7 +162,7 @@ self.onmessage = (event: MessageEvent<CompositorWorkerRequest>) => {
   }
   if (message.type === 'export') {
     canceled = false
-    runExport(message.job).catch((err: unknown) => {
+    runExport(message.job, message.storageDir).catch((err: unknown) => {
       const unsupported = err instanceof UnsupportedSourceError
       if (canceled || (err instanceof Error && err.message === 'canceled'))
         post({ type: 'canceled' })

@@ -6,6 +6,8 @@ import {
   STAGE_MAX_HEIGHT,
   STAGE_MIN_HEIGHT,
 } from '@/lib/advanced/stageHeight'
+import { deleteStoredExport } from '@/lib/exportStorage'
+import { formatSize } from '@/lib/format'
 import type {
   AdvancedSegment,
   CanvasSize,
@@ -97,17 +99,59 @@ export function clearLogs() {
 export const logPanelVisible = signal<boolean>(loadFromStorage('logPanelVisible', false, isBoolean))
 
 export const EXPORT_HISTORY_LIMIT = 50
+// Exports are kept in memory or on disk for the session; past this total the
+// oldest are dropped so the library cannot fill the disk or the tab's memory.
+export const EXPORT_LIBRARY_BYTE_LIMIT = 4_000_000_000
+
+// Why older exports left the library, shown until dismissed.
+export const exportLibraryNotice = signal<string | null>(null)
+
+// Release what a record holds: its object URL and, for a streamed export, the
+// file on disk.
+export function releaseExportRecord(record: ExportRecord) {
+  URL.revokeObjectURL(record.url)
+  if (record.storageName) void deleteStoredExport(record.storageName)
+}
+
+// The newest records that fit the count and byte limits; the newest is always
+// kept, however large.
+export function recordsWithinLimits(
+  records: ExportRecord[],
+  countLimit = EXPORT_HISTORY_LIMIT,
+  byteLimit = EXPORT_LIBRARY_BYTE_LIMIT
+): { kept: ExportRecord[]; evicted: ExportRecord[] } {
+  const kept: ExportRecord[] = []
+  let bytes = 0
+  for (const [index, record] of records.entries()) {
+    bytes += record.size
+    if (index > 0 && (index >= countLimit || bytes > byteLimit)) {
+      return { kept, evicted: records.slice(index) }
+    }
+    kept.push(record)
+  }
+  return { kept, evicted: [] }
+}
 
 export function addExportRecord(record: ExportRecord) {
-  const next = [record, ...exportHistory.value]
-  if (next.length > EXPORT_HISTORY_LIMIT) {
-    // Release blob memory held by evicted records.
-    for (const evicted of next.slice(EXPORT_HISTORY_LIMIT)) {
-      URL.revokeObjectURL(evicted.url)
-    }
-    next.length = EXPORT_HISTORY_LIMIT
+  const { kept, evicted } = recordsWithinLimits([record, ...exportHistory.value])
+  for (const old of evicted) releaseExportRecord(old)
+  if (evicted.length > 0) {
+    const count =
+      evicted.length === 1 ? 'the oldest export' : `the ${evicted.length} oldest exports`
+    exportLibraryNotice.value = `Removed ${count} to keep the library under ${EXPORT_HISTORY_LIMIT} files and ${formatSize(EXPORT_LIBRARY_BYTE_LIMIT)}. Download any export you want to keep.`
   }
-  exportHistory.value = next
+  exportHistory.value = kept
+}
+
+export function removeExportRecord(record: ExportRecord) {
+  releaseExportRecord(record)
+  exportHistory.value = exportHistory.value.filter((entry) => entry.id !== record.id)
+}
+
+export function clearExportHistory() {
+  for (const record of exportHistory.value) releaseExportRecord(record)
+  exportHistory.value = []
+  exportLibraryNotice.value = null
 }
 
 // Internal map for O(1) clip lookups. Rebuilt whenever `clips` changes.
