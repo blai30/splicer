@@ -18,7 +18,7 @@ const clip: Clip = {
   width: 640,
   height: 360,
   objectUrl: 'blob:c',
-  waveformPeaks: [],
+  waveformPeaks: new Float32Array(0),
 }
 
 describe('drag gestures', () => {

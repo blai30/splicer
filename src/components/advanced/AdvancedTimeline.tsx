@@ -365,6 +365,7 @@ export function AdvancedTimeline() {
                           laneHeight={LANE_HEIGHT}
                           width={span?.width ?? 0}
                           raised={span?.raised ?? false}
+                          scrollWindow={scrollWindow}
                         />
                       )
                     })}

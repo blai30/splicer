@@ -54,7 +54,7 @@ function clip(id: string): Clip {
     width: 640,
     height: 360,
     objectUrl: `blob:${id}`,
-    waveformPeaks: [],
+    waveformPeaks: new Float32Array(0),
   }
 }
 

@@ -1,7 +1,9 @@
+import type { ReadonlySignal } from '@preact/signals'
 import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { useEffect, useRef } from 'preact/hooks'
 
+import type { ScrollWindow } from '@/components/useTimelineNavigation'
 import { WaveformView } from '@/components/WaveformView'
 import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import {
@@ -99,6 +101,7 @@ export function AdvancedSegmentBlock({
   laneHeight,
   width,
   raised,
+  scrollWindow,
 }: {
   segment: AdvancedSegment
   laneHeight: number
@@ -106,6 +109,8 @@ export function AdvancedSegmentBlock({
   width: number
   // A short clip widened past its duration, drawn over its neighbours.
   raised: boolean
+  // The scroller's visible window, so the waveform draws only what is in view.
+  scrollWindow?: ReadonlySignal<ScrollWindow>
 }) {
   // Live drop preview while the body is dragged, so the block follows the
   // pointer before the move commits on release.
@@ -378,11 +383,14 @@ export function AdvancedSegmentBlock({
       >
         {clip && (
           <WaveformView
-            peaks={clip.waveformPeaks ?? []}
+            peaks={clip.waveformPeaks}
             clipDuration={clip.duration}
             segmentStart={segment.sourceStart}
             segmentEnd={segment.sourceEnd}
-            class="absolute inset-0 h-full w-full opacity-80"
+            width={width}
+            contentX={left + offsetX}
+            scrollWindow={scrollWindow}
+            class="opacity-80"
           />
         )}
         {/* Labels would only be clipped noise on a block this narrow. */}

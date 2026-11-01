@@ -387,6 +387,7 @@ export function Timeline() {
                     isDragging={dragStateValue?.segmentId === segments[i].id}
                     startX={item.startX}
                     width={item.endX - item.startX}
+                    scrollWindow={scrollWindow}
                   />
                 )
               }

@@ -38,7 +38,7 @@ function makeClip(id: string, duration = 10): Clip {
     width: 640,
     height: 360,
     objectUrl: `blob:${id}`,
-    waveformPeaks: [],
+    waveformPeaks: new Float32Array(0),
   }
 }
 

@@ -13,7 +13,7 @@ function makeClip(id: string): Clip {
     width: 1920,
     height: 1080,
     objectUrl: `blob:${id}`,
-    waveformPeaks: [],
+    waveformPeaks: new Float32Array(0),
     hasAudio: true,
   }
 }

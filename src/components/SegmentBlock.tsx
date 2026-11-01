@@ -1,6 +1,8 @@
+import type { ReadonlySignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { useEffect, useRef } from 'preact/hooks'
 
+import type { ScrollWindow } from '@/components/useTimelineNavigation'
 import { WaveformView } from '@/components/WaveformView'
 import { formatTime } from '@/lib/format'
 import { seek } from '@/lib/playback'
@@ -28,11 +30,14 @@ export function SegmentBlock({
   isDragging,
   startX,
   width,
+  scrollWindow,
 }: {
   segment: Segment
   isDragging?: boolean
   startX: number
   width: number
+  // The track's visible window, so the waveform draws only what is in view.
+  scrollWindow?: ReadonlySignal<ScrollWindow>
 }) {
   const clip = clips.value.find((clip) => clip.id === segment.clipId) ?? getClipById(segment.clipId)
   const segmentDuration = segment.endTime - segment.startTime
@@ -162,11 +167,14 @@ export function SegmentBlock({
     >
       {clip && (
         <WaveformView
-          peaks={clip.waveformPeaks ?? []}
+          peaks={clip.waveformPeaks}
           clipDuration={clip.duration}
           segmentStart={segment.startTime}
           segmentEnd={segment.endTime}
-          class="absolute inset-0 h-full w-full opacity-80"
+          width={width}
+          contentX={startX}
+          scrollWindow={scrollWindow}
+          class="opacity-80"
         />
       )}
       {/* Labels would only be clipped noise on a block this narrow. */}

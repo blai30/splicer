@@ -1,6 +1,5 @@
 import {
   ALL_FORMATS,
-  AudioSampleSink,
   BlobSource,
   Input,
   IsobmffInputFormat,
@@ -13,6 +12,13 @@ import { info, warn, error as logError } from '@/lib/logger'
 import { clips, getClipById, importErrors, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
 import type { Clip } from '@/lib/types'
+import {
+  createSerialQueue,
+  waveformPeakCount,
+  type WaveformRequest,
+  type WaveformResponse,
+} from '@/lib/waveform'
+import { extractWaveformPeaks } from '@/lib/waveformExtract'
 
 export const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm']
 const ACCEPTED_EXTENSIONS = /\.(mp4|m4v|mkv|mov|webm)$/i
@@ -179,67 +185,53 @@ export function checkPlayable(url: string, timeoutMs = METADATA_TIMEOUT_MS): Pro
   })
 }
 
-// Max-abs peaks of `samples` in `peakCount` equal buckets (at least 64).
-export function getPeaksFromSamples(samples: Float32Array, peakCount: number): number[] {
-  if (samples.length === 0) return []
-  const target = Math.max(64, Math.floor(peakCount))
-  const samplesPerPeak = Math.max(1, Math.floor(samples.length / target))
-  const peaks: number[] = []
+// Waveform extraction runs in one long-lived worker, one clip at a time, so a
+// batch import never decodes several audio tracks at once.
+const enqueueWaveform = createSerialQueue()
+let waveformWorker: Worker | null = null
+let nextWaveformRequestId = 1
+const waveformReplies = new Map<
+  number,
+  { request: WaveformRequest; resolve: (peaks: Float32Array) => void }
+>()
 
-  for (let i = 0; i < samples.length; i += samplesPerPeak) {
-    const end = Math.min(samples.length, i + samplesPerPeak)
-    let peak = 0
-    for (let sampleIndex = i; sampleIndex < end; sampleIndex++) {
-      const amp = Math.abs(samples[sampleIndex])
-      if (amp > peak) peak = amp
-    }
-    peaks.push(peak)
+function getWaveformWorker(): Worker | null {
+  if (waveformWorker) return waveformWorker
+  if (typeof Worker === 'undefined') return null
+  try {
+    waveformWorker = new Worker(new URL('./webcodecs/waveformWorker.ts', import.meta.url), {
+      type: 'module',
+    })
+  } catch {
+    return null
   }
-
-  return peaks
+  waveformWorker.onmessage = (event: MessageEvent<WaveformResponse>) => {
+    const reply = waveformReplies.get(event.data.id)
+    waveformReplies.delete(event.data.id)
+    reply?.resolve(event.data.peaks)
+  }
+  // A worker that fails to load or crashes: finish what was asked on the main
+  // thread and stop using it.
+  waveformWorker.onerror = () => {
+    waveformWorker?.terminate()
+    waveformWorker = null
+    for (const { request, resolve } of waveformReplies.values()) {
+      void extractWaveformPeaks(request.file, request.duration, request.peakCount).then(resolve)
+    }
+    waveformReplies.clear()
+  }
+  return waveformWorker
 }
 
-// Stream-decode the audio track and fold it into `peakCount` max-abs buckets
-// spread over `duration`. Memory stays bounded by one decoded sample at a time,
-// so arbitrarily long files are fine. Returns [] when there is no audio.
-export async function extractWaveformPeaks(
-  file: File,
-  duration: number,
-  peakCount = 2000
-): Promise<number[]> {
-  if (!(duration > 0)) return []
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) })
-  try {
-    const track = await input.getPrimaryAudioTrack()
-    if (!track || !(await track.canDecode())) return []
-    const peaks = new Float32Array(peakCount)
-    const sink = new AudioSampleSink(track)
-    let scratch = new Float32Array(0)
-    for await (const sample of sink.samples()) {
-      try {
-        const frames = sample.numberOfFrames
-        if (scratch.length < frames) scratch = new Float32Array(frames)
-        const secondsPerFrame = 1 / sample.sampleRate
-        for (let channel = 0; channel < sample.numberOfChannels; channel++) {
-          sample.copyTo(scratch, { planeIndex: channel, format: 'f32-planar' })
-          for (let frame = 0; frame < frames; frame++) {
-            const time = sample.timestamp + frame * secondsPerFrame
-            const bucket = Math.floor((time / duration) * peakCount)
-            if (bucket < 0 || bucket >= peakCount) continue
-            const amp = Math.abs(scratch[frame])
-            if (amp > peaks[bucket]) peaks[bucket] = amp
-          }
-        }
-      } finally {
-        sample.close()
-      }
-    }
-    return Array.from(peaks)
-  } catch {
-    return []
-  } finally {
-    input.dispose()
-  }
+function requestPeaks(file: File, duration: number, peakCount: number): Promise<Float32Array> {
+  const worker = getWaveformWorker()
+  if (!worker) return extractWaveformPeaks(file, duration, peakCount)
+  const id = nextWaveformRequestId++
+  const request: WaveformRequest = { id, file, duration, peakCount }
+  return new Promise((resolve) => {
+    waveformReplies.set(id, { request, resolve })
+    worker.postMessage(request)
+  })
 }
 
 const waveformPending = new Set<string>()
@@ -253,7 +245,13 @@ export async function ensureClipWaveform(clipId: string): Promise<void> {
 
   waveformPending.add(clipId)
   try {
-    const peaks = await extractWaveformPeaks(clip.file, clip.duration)
+    const peaks = await enqueueWaveform(() =>
+      // A clip removed while queued is not decoded.
+      getClipById(clipId)
+        ? requestPeaks(clip.file, clip.duration, waveformPeakCount(clip.duration))
+        : Promise.resolve(new Float32Array(0))
+    )
+    if (!getClipById(clipId)) return
     clips.value = clips.value.map((entry) =>
       entry.id === clipId
         ? { ...entry, waveformPeaks: peaks, hasAudio: entry.hasAudio ?? peaks.length > 0 }
@@ -299,7 +297,7 @@ export async function createClip(file: File): Promise<Clip | null> {
       height: probe.height,
       frameRate: probe.frameRate,
       objectUrl,
-      waveformPeaks: [],
+      waveformPeaks: new Float32Array(0),
       hasAudio: probe.hasAudio,
       videoBitrate: probe.videoBitrate,
       videoCodec: probe.videoCodec,

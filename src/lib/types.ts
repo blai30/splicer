@@ -9,7 +9,9 @@ export type Clip = {
   // created before probing recorded it.
   frameRate?: number
   objectUrl: string
-  waveformPeaks: number[]
+  // Max-abs audio peaks over the whole clip (see lib/waveform.ts); empty
+  // until extracted or when the clip has no audio.
+  waveformPeaks: Float32Array
   // Set after waveform extraction; undefined means not yet probed.
   hasAudio?: boolean
   // Average bitrates (bits/sec) and codecs from the import probe. Absent when

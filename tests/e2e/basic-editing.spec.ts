@@ -70,3 +70,42 @@ test('presses in the gap and padding seek to the nearest segment edge', async ({
   await expect(segments(page).first()).toHaveClass(/ring-violet-400/)
   await expect(timecode(page, '0:00.0 / 0:04.0')).toBeVisible()
 })
+
+test('the waveform is extracted off the main thread and drawn', async ({ page }) => {
+  await page.goto('/splicer/')
+  const stereo = fileURLToPath(new URL('../fixtures/wide-stereo48k.mp4', import.meta.url))
+  await page.locator('input[type="file"]').setInputFiles(stereo)
+  await expect(segments(page)).toHaveCount(1)
+  const canvas = segments(page).first().locator('canvas')
+  // Fills the block's height, not the 150 px canvas default.
+  const blockHeight = (await segments(page).first().boundingBox())!.height
+  await expect
+    .poll(async () => (await canvas.boundingBox())?.height)
+    .toBeCloseTo(blockHeight - 2, 0)
+  // Once peaks arrive, bars reach past the 1 px minimum around the centre line.
+  await expect
+    .poll(
+      () =>
+        canvas.evaluate((element: HTMLCanvasElement) => {
+          const context = element.getContext('2d')
+          if (!context || element.width === 0) return 0
+          const { data } = context.getImageData(0, 0, element.width, element.height)
+          const clearAbove = Math.floor(element.height / 2) - 2 * devicePixelRatio
+          let tallColumns = 0
+          for (let x = 0; x < element.width; x++) {
+            for (let y = 0; y < clearAbove; y++) {
+              if (data[(y * element.width + x) * 4 + 3] > 0) {
+                tallColumns += 1
+                break
+              }
+            }
+          }
+          return tallColumns
+        }),
+      { timeout: 10_000 }
+    )
+    .toBeGreaterThan(0)
+  // A dedicated worker did the decoding.
+  const workers = page.workers().map((worker) => worker.url())
+  expect(workers.some((url) => url.includes('waveformWorker'))).toBe(true)
+})
