@@ -126,9 +126,9 @@ export async function probeMedia(file: File): Promise<MediaProbe> {
     return {
       ...stats,
       duration,
-      width: videoTrack.displayWidth,
-      height: videoTrack.displayHeight,
-      rotation: videoTrack.rotation,
+      width: await videoTrack.getDisplayWidth(),
+      height: await videoTrack.getDisplayHeight(),
+      rotation: await videoTrack.getRotation(),
       // Frame stepping needs some rate; the default stands in when unmeasured.
       frameRate: stats.frameRate ?? DEFAULT_FRAME_RATE,
       hasAudio,

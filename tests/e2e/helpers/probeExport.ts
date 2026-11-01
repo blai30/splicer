@@ -28,8 +28,8 @@ export async function probeExport(page: Page, href: string): Promise<ExportProbe
       videoPackets: stats.packetCount,
       videoDurationSec: await video.computeDuration(),
       audioDurationSec: audio ? await audio.computeDuration() : null,
-      width: video.displayWidth,
-      height: video.displayHeight,
+      width: await video.getDisplayWidth(),
+      height: await video.getDisplayHeight(),
     }
   } finally {
     input.dispose()
