@@ -3,10 +3,12 @@ import clsx from 'clsx/lite'
 import { Keyboard } from 'lucide-preact'
 
 import { Modal } from '@/components/Modal'
-import { SHORTCUTS } from '@/lib/shortcuts'
+import { shortcutsForMode } from '@/lib/shortcuts'
+import { appMode } from '@/lib/store'
 
 export function KeyboardLegend({ class: className }: { class?: string }) {
   const isOpen = useSignal(false)
+  const modeLabel = appMode.value === 'advanced' ? 'Advanced' : 'Basic'
 
   return (
     <>
@@ -21,8 +23,11 @@ export function KeyboardLegend({ class: className }: { class?: string }) {
         <Keyboard class="size-4" />
       </button>
       <Modal open={isOpen.value} title="Keyboard shortcuts" onClose={() => (isOpen.value = false)}>
+        <p class="px-7 pt-4 text-sm text-slate-500 dark:text-slate-400">
+          Shortcuts available in {modeLabel} mode.
+        </p>
         <dl class="space-y-1 p-4">
-          {SHORTCUTS.map((shortcut) => (
+          {shortcutsForMode(appMode.value).map((shortcut) => (
             <div
               key={shortcut.display + shortcut.description}
               class="flex items-center justify-between gap-4 rounded-md px-3 py-2 transition-colors hover:bg-slate-100 hover:duration-0 dark:hover:bg-slate-800"

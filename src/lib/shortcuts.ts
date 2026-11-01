@@ -16,7 +16,7 @@ import {
   stepFrame as basicStepFrame,
   togglePlay as basicTogglePlay,
 } from '@/lib/playback'
-import { appMode, ZOOM_MAX, ZOOM_MIN, pxPerSec } from '@/lib/store'
+import { advancedSnapEnabled, appMode, ZOOM_MAX, ZOOM_MIN, pxPerSec } from '@/lib/store'
 import {
   cutAtPlayhead,
   deleteSegment,
@@ -80,12 +80,20 @@ function redoEdit() {
   else redo()
 }
 
+export type ShortcutMode = 'basic' | 'advanced'
+
 export type Shortcut = {
   // Matched against KeyboardEvent.key; single letters are matched lowercase.
   keys: string[]
   ctrl?: boolean
-  // Only checked for ctrl shortcuts; plain keys already encode shift ('=' vs '+').
+  // Omitted means "not held", except for symbol keys ('+', '_'), where Shift is
+  // part of producing the character and is ignored unless set explicitly.
   shift?: boolean
+  alt?: boolean
+  // Restricts the shortcut to one editor; omitted means both.
+  mode?: ShortcutMode
+  // Extra context check (e.g. what has focus), evaluated after the key matches.
+  when?: () => boolean
   // Display label and description rendered by the keyboard legend.
   display: string
   description: string
@@ -111,6 +119,13 @@ export const SHORTCUTS: Shortcut[] = [
   { keys: ['c'], display: 'C', description: 'Cut at Playhead', run: cut },
   { keys: ['m'], display: 'M', description: 'Mute Segment', run: muteSegment },
   { keys: ['Home'], display: 'Home', description: 'Go to Start', run: goToStart },
+  {
+    keys: ['s'],
+    mode: 'advanced',
+    display: 'S',
+    description: 'Toggle Timeline Snapping',
+    run: () => (advancedSnapEnabled.value = !advancedSnapEnabled.value),
+  },
   {
     keys: ['Delete', 'Backspace'],
     display: 'Delete',
@@ -166,8 +181,32 @@ function normalizeKey(key: string): string {
   return key.length === 1 ? key.toLowerCase() : key
 }
 
+// A printable non-letter ('+', '?', '_') already reflects Shift in its value.
+function isSymbolKey(key: string): boolean {
+  return key.length === 1 && key.toLowerCase() === key.toUpperCase()
+}
+
+export function shortcutsForMode(mode: ShortcutMode): Shortcut[] {
+  return SHORTCUTS.filter((shortcut) => !shortcut.mode || shortcut.mode === mode)
+}
+
+export function matchesShortcut(
+  shortcut: Shortcut,
+  event: KeyboardEvent,
+  mode: ShortcutMode
+): boolean {
+  if (shortcut.mode && shortcut.mode !== mode) return false
+  const key = normalizeKey(event.key)
+  if (!shortcut.keys.includes(key)) return false
+  if ((shortcut.ctrl ?? false) !== (event.ctrlKey || event.metaKey)) return false
+  if ((shortcut.alt ?? false) !== event.altKey) return false
+  const shiftIgnored = shortcut.shift === undefined && isSymbolKey(key)
+  if (!shiftIgnored && (shortcut.shift ?? false) !== event.shiftKey) return false
+  return shortcut.when?.() ?? true
+}
+
 export function handleShortcut(event: KeyboardEvent): boolean {
-  if (event.defaultPrevented || event.altKey || event.isComposing) return false
+  if (event.defaultPrevented || event.isComposing) return false
   if (isTextEntry(event.target)) return false
   // A modal dialog owns the keyboard while open.
   if (document.querySelector('dialog[open]')) return false
@@ -176,17 +215,13 @@ export function handleShortcut(event: KeyboardEvent): boolean {
   // Arrow keys inside a radio group or tab list move between its options.
   if (event.key.startsWith('Arrow') && isInsideComposite(event.target)) return false
 
-  const hasCtrl = event.ctrlKey || event.metaKey
-  const key = normalizeKey(event.key)
-  for (const shortcut of SHORTCUTS) {
-    if ((shortcut.ctrl ?? false) !== hasCtrl) continue
-    if (shortcut.ctrl && (shortcut.shift ?? false) !== event.shiftKey) continue
-    if (!shortcut.keys.includes(key)) continue
-    event.preventDefault()
-    shortcut.run()
-    return true
-  }
-  return false
+  // Unmatched combinations (e.g. Alt+Arrow history navigation) stay with the
+  // browser because nothing is prevented unless a shortcut matches.
+  const shortcut = SHORTCUTS.find((entry) => matchesShortcut(entry, event, appMode.value))
+  if (!shortcut) return false
+  event.preventDefault()
+  shortcut.run()
+  return true
 }
 
 function handler(event: KeyboardEvent) {

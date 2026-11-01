@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { setOutputLock } from '@/lib/advanced/advancedEditing'
 import {
   recordAdvancedHistory,
+  recordAdvancedHistoryCoalesced,
   redoAdvanced,
   resetAdvancedHistory,
   undoAdvanced,
@@ -42,6 +43,30 @@ describe('advancedHistory', () => {
     advancedPlayhead.value = 0
     advancedOutputLock.value = null
     resetAdvancedHistory()
+  })
+
+  it('folds a burst of coalesced edits into one entry, but not across other edits', () => {
+    addClipToTrack(makeClip('a'), 'track-1', 0)
+    const id = advancedSegments.value[0].id
+    const shift = (delta: number) => {
+      recordAdvancedHistoryCoalesced(`nudge:${id}`)
+      advancedSegments.value = advancedSegments.value.map((segment) => ({
+        ...segment,
+        timelineStart: segment.timelineStart + delta,
+      }))
+    }
+    shift(1)
+    shift(1)
+    toggleSegmentMute(id)
+    shift(1)
+    expect(advancedSegments.value[0].timelineStart).toBe(3)
+    undoAdvanced()
+    expect(advancedSegments.value[0].timelineStart).toBe(2)
+    undoAdvanced()
+    expect(advancedSegments.value[0].muted).toBeFalsy()
+    expect(advancedSegments.value[0].timelineStart).toBe(2)
+    undoAdvanced()
+    expect(advancedSegments.value[0].timelineStart).toBe(0)
   })
 
   it('undoes and redoes a mute toggle', () => {

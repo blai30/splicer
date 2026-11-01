@@ -176,6 +176,10 @@ export const advancedStageHeight = signal<number>(
     isNumberIn(STAGE_MIN_HEIGHT, STAGE_MAX_HEIGHT)
   )
 )
+// Magnetic snapping of timeline moves and trims. A workspace preference.
+export const advancedSnapEnabled = signal<boolean>(
+  loadFromStorage('advancedSnapEnabled', true, isBoolean)
+)
 export const advancedTracks = signal<Track[]>([{ id: 'track-1', name: 'Track 1' }])
 export const advancedSegments = signal<AdvancedSegment[]>([])
 export const advancedSelectedId = signal<string | null>(null)
@@ -198,6 +202,7 @@ persistSignal('logPanelVisible', logPanelVisible)
 persistSignal('appMode', appMode)
 persistSignal('advancedOutputLock', advancedOutputLock)
 persistSignal('advancedStageHeight', advancedStageHeight)
+persistSignal('advancedSnapEnabled', advancedSnapEnabled)
 
 export const ZOOM_MIN = 5
 export const ZOOM_MAX = 200

@@ -1,6 +1,7 @@
 import { batch, signal } from '@preact/signals'
 
 import { collectUnusedClips, registerClipReferences } from '@/lib/clipPool'
+import { createCoalescingHistory } from '@/lib/coalescingHistory'
 import {
   advancedOutputLock,
   advancedSegments,
@@ -29,7 +30,12 @@ const redoHistory: AdvancedHistoryEntry[] = []
 export const canUndoAdvanced = signal(false)
 export const canRedoAdvanced = signal(false)
 
+// Bumped whenever either stack changes, so coalesced edits can tell whether
+// anything else was recorded since their last entry.
+let historyGeneration = 0
+
 function syncHistoryFlags() {
+  historyGeneration += 1
   canUndoAdvanced.value = history.length > 0
   canRedoAdvanced.value = redoHistory.length > 0
 }
@@ -60,6 +66,12 @@ export function recordAdvancedHistory() {
   syncHistoryFlags()
   queueCollect()
 }
+
+// One undo entry per burst of repeated small edits sharing `key` (nudges).
+export const recordAdvancedHistoryCoalesced = createCoalescingHistory({
+  record: recordAdvancedHistory,
+  generation: () => historyGeneration,
+})
 
 // Collect after the caller's mutation lands (it runs synchronously right after
 // recordAdvancedHistory), so clips the new state references are kept.
