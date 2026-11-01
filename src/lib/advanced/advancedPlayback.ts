@@ -175,6 +175,15 @@ function trackMuted(trackId: string): boolean {
   return advancedTracks.value.find((track) => track.id === trackId)?.muted === true
 }
 
+// The time to show for a playhead. At (or past) the very end no segment is
+// active (ranges are end-exclusive), which would blank the preview; show the
+// final frame instead.
+export function displayTime(playhead: number): number {
+  const duration = projectDuration(advancedSegments.value)
+  if (duration > 0 && playhead >= duration) return Math.max(0, duration - 1e-3)
+  return playhead
+}
+
 function expectedSourceTime(segment: AdvancedSegment, playhead: number): number {
   return segment.sourceStart + (playhead - segment.timelineStart)
 }
@@ -182,8 +191,9 @@ function expectedSourceTime(segment: AdvancedSegment, playhead: number): number 
 // Draw all active, non-hidden layers onto the canvas, ordered bottom lane first.
 // The canvas backing store matches the displayed stage (CSS px x devicePixelRatio)
 // and clips are drawn in world coordinates under the pan/zoom viewport transform.
-function drawComposite(playhead: number) {
+function drawComposite(requested: number) {
   if (!ctx || !canvasEl) return
+  const playhead = displayTime(requested)
   const viewport = advancedViewport.value
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
   const backingWidth = Math.max(1, Math.round(canvasEl.clientWidth * dpr))
@@ -224,13 +234,17 @@ function drawComposite(playhead: number) {
 
 // Keep each active source's video element synced to the playhead; play/pause and
 // mute follow the global clock and track/clip mute. Idle clips are paused.
-function syncVideos(playhead: number, playing: boolean) {
+function syncVideos(requested: number, playing: boolean) {
   pruneVideos()
+  const playhead = displayTime(requested)
   const active = segmentsActiveAt(advancedSegments.value, playhead)
   const activeIds = new Set(active.map((segment) => segment.id))
 
   for (const [segmentId, video] of videoPool) {
-    if (!activeIds.has(segmentId) && !video.paused) video.pause()
+    if (activeIds.has(segmentId)) continue
+    if (!video.paused) video.pause()
+    // Its position no longer matches any requested target.
+    lastSeekTarget.delete(segmentId)
   }
 
   for (const segment of active) {
@@ -278,6 +292,10 @@ function startPlayback() {
   // Pressing play at the end restarts from the beginning.
   const duration = projectDuration(advancedSegments.value)
   if (advancedPlayhead.value >= duration - 1e-3) advancedPlayhead.value = 0
+  // Playing moves every video away from its last paused target, so the next
+  // paused seek must not be skipped as "already there".
+  lastSeekTarget.clear()
+  pendingSeek.clear()
   advancedPlaying.value = true
   lastTickMs = null
   syncVideos(advancedPlayhead.value, true)
@@ -293,6 +311,8 @@ function stopPlayback() {
 
 export function attachAdvancedPreview(canvas: HTMLCanvasElement): () => void {
   canvasEl = canvas
+  // The speed selector starts at 1x on every mount; match it.
+  playbackRate = 1
   ctx = canvas.getContext('2d')
   videoHost = document.createElement('div')
   videoHost.style.display = 'none'

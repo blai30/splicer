@@ -58,17 +58,28 @@ function tickPlayhead() {
   // Check the segment boundary every frame: timeupdate alone fires only a few
   // times per second, letting playback overshoot the out-point audibly.
   advanceAtSegmentEnd()
+  if (rafId) rafId = requestAnimationFrame(tickPlayhead)
+}
+
+// Exactly one playhead loop runs at a time; 0 means none.
+function startTicking() {
+  stopTicking()
   rafId = requestAnimationFrame(tickPlayhead)
+}
+
+function stopTicking() {
+  if (rafId) cancelAnimationFrame(rafId)
+  rafId = 0
 }
 
 function onPlay() {
   playing.value = true
-  rafId = requestAnimationFrame(tickPlayhead)
+  startTicking()
 }
 
 function onPause() {
   playing.value = false
-  cancelAnimationFrame(rafId)
+  stopTicking()
 }
 
 // Auto-advance: when playback reaches the segment end, move to the next
@@ -116,6 +127,7 @@ function syncSource() {
 
   const info = getActiveSegmentInfo()
   if (!info) {
+    stopTicking()
     videoElement.removeAttribute('src')
     videoElement.load()
     currentSegmentDuration.value = 0
@@ -127,12 +139,17 @@ function syncSource() {
   const segmentMuted = info.segment.muted ?? false
   videoElement.muted = previewMuted.value || segmentMuted
 
-  const resume = resumeAfterSwitch
+  const autoAdvance = resumeAfterSwitch
   resumeAfterSwitch = false
 
   if (videoElement.src !== info.url) {
+    // Switching clips mid-playback (auto-advance or the user picking another
+    // segment) keeps playing; load() itself stops the element.
+    const resume = autoAdvance || !videoElement.paused
+    stopTicking()
     videoElement.src = info.url
     videoElement.load()
+    if (!resume) playing.value = false
     videoElement.onloadedmetadata = () => {
       // A seek issued while the new source was loading wins over the default
       // segment start (e.g. clicking into a segment from a different clip).
@@ -149,12 +166,17 @@ function syncSource() {
     }
   } else {
     currentSegmentDuration.value = info.end - info.start
-    if (videoElement.currentTime < info.start || videoElement.currentTime >= info.end) {
+    // Rewind only when the position is outside the segment. A paused playhead
+    // resting exactly on the out-point stays put (mute toggles and unrelated
+    // edits re-run this effect); auto-advance landing on it restarts.
+    const time = videoElement.currentTime
+    const pastEnd = autoAdvance ? time >= info.end : time > info.end + 1e-3
+    if (time < info.start - 1e-3 || pastEnd) {
       videoElement.currentTime = info.start
       playheadTime.value = info.start
       currentPlaybackTime.value = 0
     }
-    if (resume && videoElement.paused) playSafely(videoElement)
+    if (autoAdvance && videoElement.paused) playSafely(videoElement)
   }
 }
 
@@ -178,7 +200,7 @@ export function detachVideo() {
     video.removeEventListener('timeupdate', advanceAtSegmentEnd)
     video.onloadedmetadata = null
   }
-  cancelAnimationFrame(rafId)
+  stopTicking()
   pendingSeekTime = null
   resumeAfterSwitch = false
   playing.value = false
