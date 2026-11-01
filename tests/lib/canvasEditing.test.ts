@@ -57,6 +57,16 @@ describe('snapResize', () => {
     expect(result.guideX).toBeNull()
   })
 
+  it('resizes a locked corner dragged straight down and snaps it to a line', () => {
+    const free = snapResize(BOX, 'se', 0, 45, true, NO_LINES, 4).transform
+    expect(free).toEqual({ x: 0, y: 0, width: 240, height: 135 })
+    // A vertical line near the derived right edge wins over the raw dy.
+    const snapped = snapResize(BOX, 'se', 0, 45, true, { vertical: [238], horizontal: [] }, 4)
+    expect(snapped.transform.width).toBeCloseTo(238)
+    expect(snapped.transform.height).toBeCloseTo(238 * (9 / 16))
+    expect(snapped.guideX).toBe(238)
+  })
+
   it('anchors the opposite corner when the north-west corner snaps', () => {
     const result = snapResize(BOX, 'nw', -78, 0, true, { vertical: [-80], horizontal: [] }, 4)
     expect(result.transform.x).toBeCloseTo(-80)

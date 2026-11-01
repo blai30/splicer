@@ -77,17 +77,27 @@ export function snapResize(
 
   let transform: Transform
   if (lockAspect && corner) {
+    // Resize to a uniform scale: moving both edges consistently means the
+    // locked resize follows that scale whichever axis it would otherwise pick.
+    const scaled = (scale: number) => {
+      const widthDelta = start.width * (scale - 1)
+      const heightDelta = start.height * (scale - 1)
+      return resizeTransform(
+        start,
+        handle,
+        movesRight ? widthDelta : -widthDelta,
+        movesBottom ? heightDelta : -heightDelta,
+        true
+      )
+    }
     const useX =
       xSnap !== null && (ySnap === null || Math.abs(xSnap.delta) <= Math.abs(ySnap.delta))
     if (useX) {
-      transform = resizeTransform(start, handle, dx + xSnap.delta, dy, true)
+      const width = movesRight ? xSnap.line - raw.x : raw.x + raw.width - xSnap.line
+      transform = scaled(width / start.width)
     } else if (ySnap) {
-      // The locked resize follows the width; pick the width whose height
-      // lands the moving edge on the line.
       const height = movesBottom ? ySnap.line - raw.y : raw.y + raw.height - ySnap.line
-      const width = height * (start.width / start.height)
-      const widthDelta = width - start.width
-      transform = resizeTransform(start, handle, movesRight ? widthDelta : -widthDelta, dy, true)
+      transform = scaled(height / start.height)
     } else {
       transform = raw
     }

@@ -48,11 +48,18 @@ export function resizeTransform(
   let height = bottom - top
 
   if (lockAspect && isCorner(handle)) {
-    const aspect = transform.width / transform.height
-    // Drive height from width along the original aspect; keep the anchor corner
+    // Follow whichever axis moved further relative to the box, so a mostly
+    // vertical drag resizes as well as a horizontal one. Keep the anchor corner
     // (the one opposite the dragged handle) fixed.
-    height = Math.max(MIN_TRANSFORM_SIZE, width / aspect)
-    width = height * aspect
+    const widthScale = width / transform.width
+    const heightScale = height / transform.height
+    const minScale = MIN_TRANSFORM_SIZE / Math.min(transform.width, transform.height)
+    const scale = Math.max(
+      minScale,
+      Math.abs(heightScale - 1) > Math.abs(widthScale - 1) ? heightScale : widthScale
+    )
+    width = transform.width * scale
+    height = transform.height * scale
     if (movesLeft(handle)) left = right - width
     else right = left + width
     if (movesTop(handle)) top = bottom - height
