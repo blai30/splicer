@@ -1,6 +1,6 @@
 import { batch, useComputed, useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
-import { useRef } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 
 import { beginAdvancedGesture, endAdvancedGesture } from '@/lib/advanced/advancedHistory'
 import { displayTime } from '@/lib/advanced/advancedPlayback'
@@ -69,6 +69,14 @@ function gestureCandidates(anchorId: string, movingIds: ReadonlySet<string>) {
 }
 
 export function AdvancedTransformOverlay({ cropMode }: { cropMode: boolean }) {
+  // Some browsers do not fire blur when a focused element is removed, so clear
+  // the flag on unmount or arrow keys would keep nudging clips.
+  useEffect(
+    () => () => {
+      advancedCanvasFocused.value = false
+    },
+    []
+  )
   const guideX = useSignal<number | null>(null)
   const guideY = useSignal<number | null>(null)
   // Shown under the selection box while it is resized.
