@@ -261,3 +261,78 @@ test('arrow keys nudge the clip while the canvas has focus', async ({ page }) =>
   await page.keyboard.press('Shift+ArrowRight')
   await expect(x).toHaveValue(String(start + 11))
 })
+
+test('a corner dragged straight down still resizes along the clip shape', async ({ page }) => {
+  await openAdvanced(page)
+  await importClip(page, 1)
+  const selection = page.locator('[data-canvas-selection]')
+  await selection.scrollIntoViewIfNeeded()
+  const before = (await selection.boundingBox())!
+  const corner = (await page.locator('[data-resize-handle="se"]').boundingBox())!
+  const cornerX = corner.x + corner.width / 2
+  const cornerY = corner.y + corner.height / 2
+  await page.mouse.move(cornerX, cornerY)
+  await page.mouse.down()
+  await page.mouse.move(cornerX, cornerY - 30, { steps: 6 })
+  await page.mouse.up()
+  const after = (await selection.boundingBox())!
+  expect(after.height).toBeLessThan(before.height - 20)
+  expect(after.width).toBeLessThan(before.width - 20)
+  expect(after.width / after.height).toBeCloseTo(before.width / before.height, 1)
+})
+
+test('arrow keys step frames again after the focused canvas unmounts', async ({ page }) => {
+  await openAdvanced(page)
+  await importClip(page, 1)
+  const x = page.getByRole('region', { name: 'Clip inspector' }).getByLabel('X position')
+  const start = await x.inputValue()
+  await page.locator('[data-canvas-selection]').click()
+  await expect(page.locator('[data-advanced-canvas]')).toBeFocused()
+  await page.getByRole('tab', { name: 'Basic' }).click()
+  await page.getByRole('tab', { name: 'Advanced' }).click()
+  await showTimeline(page)
+  await blocks(page).first().click()
+  await page.keyboard.press('ArrowRight')
+  await expect(x).toHaveValue(start)
+})
+
+test('the active track header shows its whole default name', async ({ page }) => {
+  await openAdvanced(page)
+  await page.getByRole('button', { name: 'Add track' }).click()
+  for (const name of [/^Track 2, active track/, /^Track 1, make active track/]) {
+    const nameButton = page.getByRole('button', { name })
+    await expect(nameButton).toBeVisible()
+    const clipped = await nameButton.evaluate(
+      (element) => element.scrollWidth > element.clientWidth
+    )
+    expect(clipped).toBe(false)
+  }
+})
+
+test('a typed inspector value commits to its clip when another clip is clicked', async ({
+  page,
+}) => {
+  const { top, bottom } = await twoClipsOnTwoTracks(page)
+  const width = page.getByRole('region', { name: 'Clip inspector' }).getByLabel('Width')
+  await top.click()
+  const otherWidth = await width.inputValue()
+  await width.fill('100')
+  await bottom.click()
+  await expect(width).toHaveValue(otherWidth)
+  await top.click()
+  await expect(width).toHaveValue('100')
+})
+
+test('pasting a two-track copy onto the bottom track keeps the clips stacked', async ({ page }) => {
+  await twoClipsOnTwoTracks(page)
+  const lanes = page.locator('[data-advanced-lanes] > div')
+  await blocks(page).first().click()
+  await page.keyboard.press('Control+a')
+  await page.keyboard.press('Control+c')
+  await page.getByRole('button', { name: /^Track 1, make active track/ }).click()
+  await page.keyboard.press('End')
+  await page.keyboard.press('Control+v')
+  await expect(blocks(page)).toHaveCount(4)
+  await expect(lanes.nth(0).locator('[data-advanced-segment]')).toHaveCount(2)
+  await expect(lanes.nth(1).locator('[data-advanced-segment]')).toHaveCount(2)
+})
