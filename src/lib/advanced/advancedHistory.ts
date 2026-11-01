@@ -171,6 +171,20 @@ export function redoAdvanced() {
   collectUnusedClips()
 }
 
+// Rewrite the segments of every snapshot on both stacks, given each
+// snapshot's tracks. A relink uses it: the relinked segments belonged to the
+// project all along, so no undo or redo step may drop them again.
+export function rebaseAdvancedHistory(
+  transform: (segments: AdvancedSegment[], tracks: Track[]) => AdvancedSegment[]
+) {
+  const rebase = (entry: AdvancedHistoryEntry): AdvancedHistoryEntry => ({
+    ...entry,
+    segments: transform(entry.segments, entry.tracks),
+  })
+  history.splice(0, history.length, ...history.map(rebase))
+  redoHistory.splice(0, redoHistory.length, ...redoHistory.map(rebase))
+}
+
 // Clears both stacks and any armed gesture. Used by tests for isolation.
 export function resetAdvancedHistory() {
   history.length = 0

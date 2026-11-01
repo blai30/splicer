@@ -7,6 +7,7 @@ import {
   mediaNotKept,
   mediaNotKeptMessage,
   persistenceError,
+  persistenceStatus,
   relinkClip,
   removeUnlinkedClip,
   restoreOffer,
@@ -163,7 +164,11 @@ function RelinkList() {
 function StorageNotice() {
   const dismissedKey = useSignal<string | null>(null)
   const notKept = mediaNotKept.value
-  const failure = persistenceError.value
+  const failure =
+    persistenceError.value ??
+    (persistenceStatus.value === 'elsewhere'
+      ? 'Splicer is open in another tab, which keeps the saved project. Changes here are not saved; close the other tab and reload this one to save here.'
+      : null)
   const key = failure ?? notKept.map((entry) => entry.name).join('\n')
   if ((!failure && notKept.length === 0) || dismissedKey.value === key) return null
   return (

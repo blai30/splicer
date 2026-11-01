@@ -8,7 +8,8 @@ import {
   planMediaStorage,
   planRestore,
   PROJECT_SCHEMA_VERSION,
-  reinsertUnlinked,
+  reinsertUnlinkedAdvanced,
+  reinsertUnlinkedBasic,
   relinkMismatch,
   toStoredClip,
   type ProjectRecord,
@@ -213,23 +214,31 @@ describe('planRestore', () => {
 })
 
 describe('reinsertUnlinked', () => {
+  const unlinked = {
+    clip: toStoredClip(makeClip('lost')),
+    basic: [
+      { index: 9, segment: segment('end', 'lost') },
+      { index: 1, segment: segment('middle', 'lost') },
+    ],
+    advanced: [advancedSegment('x', 'lost', 'removed-track')],
+  }
+
   it('puts Basic segments back at their saved positions, clamped to the timeline', () => {
-    const unlinked = {
-      clip: toStoredClip(makeClip('lost')),
-      basic: [
-        { index: 9, segment: segment('end', 'lost') },
-        { index: 1, segment: segment('middle', 'lost') },
-      ],
-      advanced: [advancedSegment('x', 'lost', 'removed-track')],
-    }
-    const placed = reinsertUnlinked(
-      unlinked,
-      [segment('s1', 'a'), segment('s3', 'a')],
-      [],
-      [{ id: 'top', name: 'Top' }]
-    )
-    expect(placed.timeline.map((entry) => entry.id)).toEqual(['s1', 'middle', 's3', 'end'])
-    expect(placed.advancedSegments[0].trackId).toBe('top')
+    const placed = reinsertUnlinkedBasic(unlinked, [segment('s1', 'a'), segment('s3', 'a')])
+    expect(placed.map((entry) => entry.id)).toEqual(['s1', 'middle', 's3', 'end'])
+  })
+
+  it('moves Advanced segments off a removed track onto the top one', () => {
+    const placed = reinsertUnlinkedAdvanced(unlinked, [], [{ id: 'top', name: 'Top' }])
+    expect(placed[0].trackId).toBe('top')
+  })
+
+  it('leaves a timeline that already holds the segments unchanged', () => {
+    const once = reinsertUnlinkedBasic(unlinked, [segment('s1', 'a')])
+    expect(reinsertUnlinkedBasic(unlinked, once)).toEqual(once)
+    const tracks = [{ id: 'top', name: 'Top' }]
+    const placed = reinsertUnlinkedAdvanced(unlinked, [], tracks)
+    expect(reinsertUnlinkedAdvanced(unlinked, placed, tracks)).toEqual(placed)
   })
 })
 

@@ -310,6 +310,19 @@ export function redo() {
   collectUnusedClips()
 }
 
+// Rewrite the timeline of every snapshot on both stacks, an armed gesture's
+// included. A relink uses it: the relinked segments belonged to the project
+// all along, so no undo or redo step may drop them again.
+export function rebaseHistory(transform: (timeline: Segment[]) => Segment[]) {
+  const rebase = (entry: HistoryEntry): HistoryEntry => ({
+    ...entry,
+    timeline: transform(entry.timeline),
+  })
+  history.splice(0, history.length, ...history.map(rebase))
+  redoHistory.splice(0, redoHistory.length, ...redoHistory.map(rebase))
+  if (gestureEntry) gestureEntry = rebase(gestureEntry)
+}
+
 // Clears both stacks and any armed gesture. Used by tests for isolation.
 export function resetHistory() {
   history.length = 0

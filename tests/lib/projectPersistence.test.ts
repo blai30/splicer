@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { recordAdvancedHistory, redoAdvanced, undoAdvanced } from '@/lib/advanced/advancedHistory'
+import { collectUnusedClips } from '@/lib/clipPool'
 import type { MediaWrite, ProjectStorage } from '@/lib/project/projectDatabase'
 import {
   discardSavedProject,
@@ -11,14 +13,17 @@ import {
   PROJECT_MEDIA_BYTE_LIMIT,
   projectSaved,
   relinkClip,
+  type ProjectLock,
   removeUnlinkedClip,
   resetProjectPersistence,
   restoreOffer,
   restoreSavedProject,
   unlinkedClips,
+  webProjectLock,
 } from '@/lib/project/projectPersistence'
 import { buildProjectRecord, DEFAULT_TRACKS } from '@/lib/project/projectSnapshot'
 import { advancedSegments, advancedTracks, clips, selectedSegmentId, timeline } from '@/lib/store'
+import { redo, toggleMute, undo } from '@/lib/timelineEditing'
 import type { AdvancedSegment, Clip } from '@/lib/types'
 import { hasUnsavedWork } from '@/lib/unloadGuard'
 
@@ -172,6 +177,71 @@ describe('autosave', () => {
     expect(mediaNotKept.value.map((entry) => entry.name)).toEqual(['a'])
   })
 
+  it('does not retry a file refused for lack of space on later saves', async () => {
+    const { storage, media, saves } = memoryStorage()
+    const attempts: string[][] = []
+    const save = storage.saveProject
+    storage.saveProject = async (record, writes, deleted) => {
+      attempts.push(writes.map((write) => write.id))
+      if (writes.some((write) => write.id === 'big')) {
+        throw new DOMException('full', 'QuotaExceededError')
+      }
+      await save(record, writes, deleted)
+    }
+    await initProjectPersistence(storage)
+    clips.value = [makeClip('a'), makeClip('big', 64)]
+    timeline.value = [
+      { id: 's1', clipId: 'a', startTime: 0, endTime: 5 },
+      { id: 's2', clipId: 'big', startTime: 0, endTime: 5 },
+    ]
+    await settle()
+    expect(attempts).toEqual([['a', 'big'], []])
+    expect(mediaNotKept.value.map((entry) => entry.name)).toEqual(['a', 'big'])
+
+    timeline.value = [...timeline.value, { id: 's3', clipId: 'a', startTime: 1, endTime: 2 }]
+    await settle()
+    // One write, without the refused file, and it succeeds.
+    expect(attempts.slice(2)).toEqual([['a']])
+    expect([...media.keys()]).toEqual(['a'])
+    expect(mediaNotKept.value.map((entry) => entry.name)).toEqual(['big'])
+    expect(saves).toHaveLength(2)
+  })
+
+  it('tries a refused file again once stored files are deleted', async () => {
+    const { storage } = memoryStorage()
+    const attempts: string[][] = []
+    const save = storage.saveProject
+    let full = true
+    storage.saveProject = async (record, writes, deleted) => {
+      attempts.push(writes.map((write) => write.id))
+      if (full && writes.some((write) => write.id === 'big')) {
+        throw new DOMException('full', 'QuotaExceededError')
+      }
+      await save(record, writes, deleted)
+    }
+    await initProjectPersistence(storage)
+    clips.value = [makeClip('a'), makeClip('big', 64)]
+    timeline.value = [{ id: 's1', clipId: 'a', startTime: 0, endTime: 5 }]
+    await settle()
+    timeline.value = [
+      { id: 's1', clipId: 'a', startTime: 0, endTime: 5 },
+      { id: 's2', clipId: 'big', startTime: 0, endTime: 5 },
+    ]
+    await settle()
+    expect(attempts).toEqual([['a'], ['big'], []])
+
+    full = false
+    clips.value = [clips.value[1]]
+    timeline.value = [{ id: 's2', clipId: 'big', startTime: 0, endTime: 5 }]
+    await settle()
+    // Deleting "a" frees space, so the save after it offers "big" again.
+    expect(attempts.slice(3)).toEqual([[]])
+    timeline.value = [{ id: 's2', clipId: 'big', startTime: 1, endTime: 5 }]
+    await settle()
+    expect(attempts.slice(4)).toEqual([['big']])
+    expect(mediaNotKept.value).toEqual([])
+  })
+
   it('reports a failed save without throwing', async () => {
     const { storage } = memoryStorage()
     await initProjectPersistence(storage)
@@ -188,6 +258,54 @@ describe('autosave', () => {
     expect(persistenceStatus.value).toBe('unavailable')
     timeline.value = [{ id: 's1', clipId: 'a', startTime: 0, endTime: 5 }]
     expect(hasUnsavedWork()).toBe(true)
+  })
+
+  it('leaves the stored project alone while another tab owns it', async () => {
+    const { storage, saves } = memoryStorage()
+    const loadProject = vi.spyOn(storage, 'loadProject')
+    const heldElsewhere: ProjectLock = async () => ({ owned: false, release: () => {} })
+    await initProjectPersistence(storage, heldElsewhere)
+    expect(persistenceStatus.value).toBe('elsewhere')
+    expect(loadProject).not.toHaveBeenCalled()
+
+    clips.value = [makeClip('a')]
+    timeline.value = [{ id: 's1', clipId: 'a', startTime: 0, endTime: 5 }]
+    await settle()
+    expect(saves).toHaveLength(0)
+    expect(hasUnsavedWork()).toBe(true)
+  })
+
+  it('releases the tab lock on reset', async () => {
+    const { storage } = memoryStorage()
+    const release = vi.fn()
+    await initProjectPersistence(storage, async () => ({ owned: true, release }))
+    expect(persistenceStatus.value).toBe('active')
+    resetProjectPersistence()
+    expect(release).toHaveBeenCalledOnce()
+  })
+
+  it('holds a Web Lock only when it is free', async () => {
+    type Callback = (lock: object | null) => unknown
+    let free = true
+    const request = vi.fn((_name: string, _options: object, callback: Callback) => {
+      const result = callback(free ? {} : null)
+      return Promise.resolve(result)
+    })
+    vi.stubGlobal('navigator', { locks: { request } })
+    try {
+      const first = await webProjectLock()
+      expect(first.owned).toBe(true)
+      expect(request).toHaveBeenCalledWith(
+        'splicer-project',
+        { ifAvailable: true },
+        expect.any(Function)
+      )
+      free = false
+      expect((await webProjectLock()).owned).toBe(false)
+      first.release()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('treats storage that fails to open as unavailable', async () => {
@@ -271,6 +389,39 @@ describe('restore', () => {
     const relinked = clips.value.find((clip) => clip.id === 'lost')
     expect(relinked?.file).toBe(picked)
     expect(relinked?.name).toBe('lost')
+  })
+
+  it('keeps relinked segments through undo, redo, and the next edit', async () => {
+    const { record, kept } = savedProject()
+    const { storage } = memoryStorage({ project: record, media: new Map([['kept', kept.file]]) })
+    await initProjectPersistence(storage)
+    await restoreSavedProject()
+    // An edit in each editor before the relink, so undo has older snapshots.
+    toggleMute('s1')
+    recordAdvancedHistory()
+    advancedTracks.value = [...DEFAULT_TRACKS, { id: 'track-2', name: 'Track 2' }]
+
+    const probe = async (file: File): Promise<Clip> => ({ ...makeClip('probed'), file })
+    expect(await relinkClip('lost', new File([], 'lost.mp4'), probe)).toBeNull()
+
+    undo()
+    undoAdvanced()
+    expect(timeline.value.map((segment) => segment.id)).toEqual(['s1', 's2'])
+    expect(timeline.value[0].muted).toBeFalsy()
+    expect(advancedSegments.value.map((segment) => segment.id)).toEqual(['x'])
+    expect(advancedTracks.value).toEqual(DEFAULT_TRACKS)
+    redo()
+    redoAdvanced()
+    expect(timeline.value.map((segment) => segment.id)).toEqual(['s1', 's2'])
+    expect(timeline.value[0].muted).toBe(true)
+    expect(advancedSegments.value.map((segment) => segment.id)).toEqual(['x'])
+
+    undo()
+    // A new edit drops the redo branch; the relinked clip is still reachable.
+    toggleMute('s2')
+    collectUnusedClips()
+    expect(timeline.value.map((segment) => segment.id)).toEqual(['s1', 's2'])
+    expect(clips.value.map((clip) => clip.id)).toContain('lost')
   })
 
   it('refuses a file that does not match and keeps the clip listed', async () => {

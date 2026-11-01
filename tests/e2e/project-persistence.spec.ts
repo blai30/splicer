@@ -130,6 +130,10 @@ test('keeps the project when a stored file is missing and relinks it', async ({ 
   await expect(page.locator('[data-segment]')).toHaveCount(1)
   const relink = page.getByRole('region', { name: 'Clips to relink' })
   await expect(relink).toContainText('tall-silent.mp4')
+  // An edit before the relink, so undo has a snapshot from before it.
+  await page.locator('[data-segment]').first().click()
+  await page.keyboard.press('m')
+  await expect(page.locator('[data-segment]').first()).toHaveAccessibleName(/muted/i)
 
   // The wrong file is refused and the clip stays listed.
   await relink.getByLabel('Relink tall-silent.mp4').setInputFiles(tiny)
@@ -140,4 +144,28 @@ test('keeps the project when a stored file is missing and relinks it', async ({ 
   await expect(page.locator('[data-segment]')).toHaveCount(2)
   await expect(page.locator('[data-segment]').nth(1)).toContainText('tall-silent')
   await expect.poll(async () => (await storedProject(page))?.media.length).toBe(2)
+
+  // Undo steps back over the mute only; the relinked segment stays.
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(page.locator('[data-segment]').first()).not.toHaveAccessibleName(/muted/i)
+  await expect(page.locator('[data-segment]')).toHaveCount(2)
+  await expect(page.locator('[data-segment]').nth(1)).toContainText('tall-silent')
+})
+
+test('a second tab does not save over the first', async ({ page, context }) => {
+  await page.goto('/splicer/')
+  await page.locator('input[type="file"]').setInputFiles([tiny, tall])
+  await expect.poll(async () => (await storedProject(page))?.media.length).toBe(2)
+
+  const second = await context.newPage()
+  await second.goto('/splicer/')
+  await expect(second.getByText(/open in another tab/)).toBeVisible()
+  // No offer to restore or discard what the first tab owns.
+  await expect(second.getByRole('region', { name: 'Saved project' })).toHaveCount(0)
+  await second.locator('input[type="file"]').setInputFiles(tiny)
+  await expect(second.locator('[data-segment]')).toHaveCount(1)
+  await second.waitForTimeout(1500)
+  expect(await storedProject(page)).toEqual({ basic: 2, advanced: 0, media: expect.any(Array) })
+  expect((await storedProject(page))?.media).toHaveLength(2)
+  await second.close()
 })

@@ -268,26 +268,38 @@ export function planRestore(record: ProjectRecord, files: ReadonlyMap<string, Fi
   }
 }
 
-// Put a relinked clip's segments back: Basic ones at their saved positions
-// (clamped to the timeline as it is now), Advanced ones on their track, or the
-// top track when theirs was removed meanwhile.
-export function reinsertUnlinked(
+// Put a relinked clip's Basic segments back at their saved positions, clamped
+// to the timeline as it is. A timeline that already holds them is returned
+// unchanged, so applying this to every undo snapshot is safe.
+export function reinsertUnlinkedBasic(
   unlinked: UnlinkedClip,
-  timeline: readonly Segment[],
-  advancedSegments: readonly AdvancedSegment[],
-  tracks: readonly Track[]
-): { timeline: Segment[]; advancedSegments: AdvancedSegment[] } {
+  timeline: readonly Segment[]
+): Segment[] {
+  const ids = new Set(unlinked.basic.map(({ segment }) => segment.id))
+  if (timeline.some((segment) => ids.has(segment.id))) return [...timeline]
   const nextTimeline = [...timeline]
   const ordered = [...unlinked.basic].sort((first, second) => first.index - second.index)
   for (const { index, segment } of ordered) {
     nextTimeline.splice(Math.min(Math.max(0, index), nextTimeline.length), 0, segment)
   }
+  return nextTimeline
+}
+
+// Put a relinked clip's Advanced segments back on their track, or the top
+// track when theirs was removed meanwhile. Idempotent like the Basic one.
+export function reinsertUnlinkedAdvanced(
+  unlinked: UnlinkedClip,
+  advancedSegments: readonly AdvancedSegment[],
+  tracks: readonly Track[]
+): AdvancedSegment[] {
+  const ids = new Set(unlinked.advanced.map((segment) => segment.id))
+  if (advancedSegments.some((segment) => ids.has(segment.id))) return [...advancedSegments]
   const trackIds = new Set(tracks.map((track) => track.id))
   const fallbackTrack = tracks[0]?.id ?? DEFAULT_TRACKS[0].id
   const placed = unlinked.advanced.map((segment) =>
     trackIds.has(segment.trackId) ? segment : { ...segment, trackId: fallbackTrack }
   )
-  return { timeline: nextTimeline, advancedSegments: [...advancedSegments, ...placed] }
+  return [...advancedSegments, ...placed]
 }
 
 // Whether a file picked to relink is plausibly the original: the trims are in

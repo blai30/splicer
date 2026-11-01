@@ -1,6 +1,6 @@
 import { batch, computed, effect, signal } from '@preact/signals'
 
-import { resetAdvancedHistory } from '@/lib/advanced/advancedHistory'
+import { rebaseAdvancedHistory, resetAdvancedHistory } from '@/lib/advanced/advancedHistory'
 import { collectUnusedClips } from '@/lib/clipPool'
 import { formatSize } from '@/lib/format'
 import { info, warn } from '@/lib/logger'
@@ -16,7 +16,8 @@ import {
   planMediaStorage,
   planRestore,
   projectClips,
-  reinsertUnlinked,
+  reinsertUnlinkedAdvanced,
+  reinsertUnlinkedBasic,
   relinkMismatch,
   type ProjectRecord,
   type UnlinkedClip,
@@ -31,7 +32,7 @@ import {
   selectedSegmentId,
   timeline,
 } from '@/lib/store'
-import { resetHistory } from '@/lib/timelineEditing'
+import { rebaseHistory, resetHistory } from '@/lib/timelineEditing'
 import type { Clip } from '@/lib/types'
 
 // Autosave of both editors into IndexedDB, and the restore offered on the next
@@ -49,7 +50,12 @@ export type RestoreOffer = {
   segmentCount: number
 }
 
-export type PersistenceStatus = 'starting' | 'unavailable' | 'offering' | 'active'
+// 'elsewhere': another tab holds the project, so this one does not touch it.
+export type PersistenceStatus = 'starting' | 'unavailable' | 'elsewhere' | 'offering' | 'active'
+
+// Whether this tab owns the stored project (another tab may hold it), and how
+// to hand it back on a reset.
+export type ProjectLock = () => Promise<{ owned: boolean; release: () => void }>
 
 export const persistenceStatus = signal<PersistenceStatus>('starting')
 export const restoreOffer = signal<RestoreOffer | null>(null)
@@ -75,6 +81,11 @@ export const projectSaved = computed(
 let storage: ProjectStorage | null = null
 let pendingRecord: ProjectRecord | null = null
 let storedMediaIds = new Set<string>()
+// Clips whose files were refused for lack of space. Later saves leave them out
+// instead of retrying a large write that aborts every time, until stored files
+// are deleted and space may have come back.
+let quotaRefusedIds = new Set<string>()
+let releaseLock: (() => void) | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let saveRunning: Promise<void> | null = null
 let saveQueued = false
@@ -117,19 +128,32 @@ async function writeProject(media: Clip[], allowNewMedia: boolean): Promise<Clip
   if (!hasProjectContent(state)) {
     await active.clear()
     storedMediaIds = new Set()
+    quotaRefusedIds = new Set()
     return []
   }
-  const { kept, skipped } = planMediaStorage(media, await mediaBudget())
+  const storable = media.filter((clip) => !quotaRefusedIds.has(clip.id))
+  const { kept } = planMediaStorage(storable, await mediaBudget())
   const keptNow = allowNewMedia ? kept : kept.filter((clip) => storedMediaIds.has(clip.id))
-  const notKept = allowNewMedia ? skipped : media.filter((clip) => !keptNow.includes(clip))
   const keptIds = new Set(keptNow.map((clip) => clip.id))
   const writes: MediaWrite[] = keptNow
     .filter((clip) => !storedMediaIds.has(clip.id))
     .map((clip) => ({ id: clip.id, file: clip.file }))
   const deletes = [...storedMediaIds].filter((id) => !keptIds.has(id))
-  await active.saveProject(buildProjectRecord(state, Date.now()), writes, deletes)
+  try {
+    await active.saveProject(buildProjectRecord(state, Date.now()), writes, deletes)
+  } catch (err) {
+    // The largest new file is the likeliest not to fit; the others are tried
+    // again on the next save, so each refusal costs one failed write at most.
+    const largest = writes.reduce<MediaWrite | null>(
+      (biggest, write) => (!biggest || write.file.size > biggest.file.size ? write : biggest),
+      null
+    )
+    if (isQuotaError(err) && largest) quotaRefusedIds.add(largest.id)
+    throw err
+  }
   storedMediaIds = keptIds
-  return notKept
+  if (deletes.length > 0) quotaRefusedIds = new Set()
+  return media.filter((clip) => !keptIds.has(clip.id))
 }
 
 async function saveNow(): Promise<void> {
@@ -225,14 +249,23 @@ function startAutosave() {
 // Open storage and offer the saved project, if there is one. Autosave waits
 // for the user's choice, so the stored project is never overwritten unseen.
 export async function initProjectPersistence(
-  provided: ProjectStorage | null = indexedDbProjectStorage()
+  provided: ProjectStorage | null = indexedDbProjectStorage(),
+  lock: ProjectLock = webProjectLock
 ): Promise<void> {
   if (persistenceStatus.peek() !== 'starting') return
-  storage = provided
-  if (!storage) {
+  if (!provided) {
     persistenceStatus.value = 'unavailable'
     return
   }
+  // Two tabs saving one project would delete each other's files and overwrite
+  // each other's record, so only the first tab opened saves.
+  const { owned, release } = await lock()
+  if (!owned) {
+    persistenceStatus.value = 'elsewhere'
+    return
+  }
+  releaseLock = release
+  storage = provided
   try {
     const [raw, mediaIds] = await Promise.all([storage.loadProject(), storage.loadMediaIds()])
     storedMediaIds = new Set(mediaIds)
@@ -256,10 +289,33 @@ export async function initProjectPersistence(
   } catch (err) {
     warn('Project storage is unavailable', { message: describeError(err) })
     storage = null
+    releaseLock?.()
+    releaseLock = null
     persistenceStatus.value = 'unavailable'
     return
   }
   startAutosave()
+}
+
+// Hold a Web Lock for the page's lifetime. Without the Web Locks API there is
+// no way to coordinate, so the tab saves as before.
+export const webProjectLock: ProjectLock = async () => {
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
+  if (!locks) return { owned: true, release: () => {} }
+  return new Promise((resolve) => {
+    locks
+      .request('splicer-project', { ifAvailable: true }, (held) => {
+        if (!held) {
+          resolve({ owned: false, release: () => {} })
+          return
+        }
+        return new Promise<void>((release) => resolve({ owned: true, release }))
+      })
+      .catch((err: unknown) => {
+        warn('Could not coordinate project saving across tabs', { message: describeError(err) })
+        resolve({ owned: true, release: () => {} })
+      })
+  })
 }
 
 // Replace the current project with the saved one. Clips whose files did not
@@ -322,6 +378,7 @@ export async function discardSavedProject(): Promise<void> {
   try {
     await storage?.clear()
     storedMediaIds = new Set()
+    quotaRefusedIds = new Set()
   } catch (err) {
     warn('Could not clear the saved project', { message: describeError(err) })
   }
@@ -360,17 +417,20 @@ export async function relinkClip(
     name: stored.name,
     waveformPeaks: stored.waveformPeaks.length > 0 ? stored.waveformPeaks : probed.waveformPeaks,
   }
-  const placed = reinsertUnlinked(
-    entry,
-    timeline.peek(),
-    advancedSegments.peek(),
-    advancedTracks.peek()
-  )
+  // The segments go into every undo and redo snapshot too: they were only
+  // hidden, so stepping back past the relink must not drop them for good.
+  rebaseHistory((snapshot) => reinsertUnlinkedBasic(entry, snapshot))
+  rebaseAdvancedHistory((snapshot, tracks) => reinsertUnlinkedAdvanced(entry, snapshot, tracks))
+  const placedTimeline = reinsertUnlinkedBasic(entry, timeline.peek())
   batch(() => {
     clips.value = [...clips.value, clip]
-    timeline.value = placed.timeline
-    if (!selectedSegmentId.peek()) selectedSegmentId.value = placed.timeline[0]?.id ?? null
-    advancedSegments.value = placed.advancedSegments
+    timeline.value = placedTimeline
+    if (!selectedSegmentId.peek()) selectedSegmentId.value = placedTimeline[0]?.id ?? null
+    advancedSegments.value = reinsertUnlinkedAdvanced(
+      entry,
+      advancedSegments.peek(),
+      advancedTracks.peek()
+    )
     unlinkedClips.value = unlinkedClips.value.filter((candidate) => candidate !== entry)
   })
   return null
@@ -399,6 +459,9 @@ export function resetProjectPersistence(): void {
   storage = null
   pendingRecord = null
   storedMediaIds = new Set()
+  quotaRefusedIds = new Set()
+  releaseLock?.()
+  releaseLock = null
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', onPageHidden)
   }
