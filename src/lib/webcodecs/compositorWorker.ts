@@ -1,13 +1,17 @@
 import { ensureAacEncoder } from './aacFallback'
-import { createMixBuffer, encodeMix, mixLayer } from './compositorAudioMix'
+import { encodeMix, WindowedMixer } from './compositorAudioMix'
 import { buildCompositorPlan } from './compositorPlan'
 import type { CompositorJob, CompositorWorkerRequest } from './compositorProtocol'
 import { encodeCompositedVideo, type LayerDecoder } from './compositorVideoEncode'
 import { openSource, type SourceReader } from './mediabunnyInput'
-import { createOutput, type OutputHandle } from './mediabunnyOutput'
+import { createOutput, OUTPUT_SAMPLE_RATE } from './mediabunnyOutput'
 import { UnsupportedSourceError, type WorkerResponse } from './protocol'
 
 let canceled = false
+
+// Audio is mixed in windows this long, kept this far ahead of the video.
+const MIX_WINDOW_FRAMES = OUTPUT_SAMPLE_RATE
+const AUDIO_LEAD_SEC = 0.5
 
 function post(message: WorkerResponse, transfer?: Transferable[]): void {
   ;(self as unknown as Worker).postMessage(message, transfer ?? [])
@@ -26,17 +30,46 @@ async function runExport(job: CompositorJob): Promise<void> {
 
   const durationSec = job.durationSec
   const totalFrames = Math.max(1, Math.ceil(durationSec * plan.fpsGrid))
+  const totalAudioFrames = Math.max(0, Math.round(durationSec * OUTPUT_SAMPLE_RATE))
   let framesEncoded = 0
+  let audioMixedUntil = 0
+  const shouldCancel = () => canceled
+
+  // Audio is mixed and encoded one window at a time just ahead of the video,
+  // so the muxer can write both tracks as it goes.
+  const mixer = plan.hasMixedAudio
+    ? new WindowedMixer(
+        job.audioLayers
+          .filter((layer) => job.sources[layer.sourceIndex]?.hasAudio)
+          .map((layer) => {
+            const file = job.sources[layer.sourceIndex].file
+            return { layer, fileName: file.name, open: () => openSource(file) }
+          }),
+        shouldCancel
+      )
+    : null
   let lastReported = 0
-  const onFrameEncoded = () => {
-    framesEncoded++
-    const progress = Math.min(0.98, framesEncoded / totalFrames)
+  // Video is most of the work; audio is mixed alongside it, so both count.
+  const reportProgress = () => {
+    const videoShare = framesEncoded / totalFrames
+    const audioShare = mixer && totalAudioFrames > 0 ? audioMixedUntil / totalAudioFrames : 1
+    const progress = Math.min(0.98, videoShare * 0.9 + audioShare * 0.08)
     if (progress - lastReported >= 0.01) {
       lastReported = progress
       post({ type: 'progress', progress })
     }
   }
-  const shouldCancel = () => canceled
+  async function mixAudioUntil(outTimeSec: number) {
+    if (!mixer) return
+    const target = Math.min(totalAudioFrames, Math.round(outTimeSec * OUTPUT_SAMPLE_RATE))
+    while (audioMixedUntil < target) {
+      const windowEnd = Math.min(totalAudioFrames, audioMixedUntil + MIX_WINDOW_FRAMES)
+      const mix = await mixer.mixWindow(audioMixedUntil, windowEnd)
+      await encodeMix(mix, out, shouldCancel, audioMixedUntil)
+      audioMixedUntil = windowEnd
+      reportProgress()
+    }
+  }
 
   // Each layer needs its own decoder (two layers may show the same source at
   // different times), so readers are opened per layer and all disposed at the end.
@@ -56,27 +89,21 @@ async function runExport(job: CompositorJob): Promise<void> {
       ctx,
       out,
       durationSec,
-      onFrameEncoded,
+      async (outTimeSec) => {
+        framesEncoded++
+        reportProgress()
+        await mixAudioUntil(outTimeSec + AUDIO_LEAD_SEC)
+      },
       shouldCancel
     )
 
     if (canceled) throw new Error('canceled')
-    if (plan.hasMixedAudio) {
-      post({ type: 'progress', progress: 0.98 })
-      const mix = createMixBuffer(durationSec)
-      for (const layer of job.audioLayers) {
-        const source = job.sources[layer.sourceIndex]
-        if (!source?.hasAudio) continue
-        const reader = await openSource(source.file)
-        readers.push(reader)
-        await mixLayer(mix, layer, reader, source.file.name, shouldCancel)
-      }
-      await encodeMix(mix, out, shouldCancel)
-    }
+    await mixAudioUntil(durationSec)
   } catch (err) {
     await out.cancel().catch(() => {})
     throw err
   } finally {
+    await mixer?.dispose().catch(() => {})
     for (const reader of readers) reader.dispose()
   }
 

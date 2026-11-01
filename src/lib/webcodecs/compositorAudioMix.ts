@@ -1,6 +1,6 @@
 import { AudioSample } from 'mediabunny'
 
-import { audioFrameRange } from './audioEncode'
+import { audioFrameRange, readPlanes } from './audioEncode'
 import { StereoResampler, toStereo } from './audioNormalize'
 import type { CompositorAudioLayer } from './compositorProtocol'
 import type { SourceReader } from './mediabunnyInput'
@@ -36,20 +36,22 @@ export function addToMix(
   }
 }
 
-// Decode only the layer's trimmed source range and add it into the mix at its
-// timeline position. Throws when the source has audio the browser cannot
-// decode, rather than silently exporting without it.
-export async function mixLayer(
-  mix: MixBuffer,
+// A run of resampled planar stereo for the mix: the first `count` frames of
+// `data` (each plane `stride` frames long), placed at output frame `at`.
+export type MixPiece = { at: number; data: Float32Array; stride: number; count: number }
+
+// Decode only the layer's trimmed source range and yield it in timeline order
+// as pieces placed at its timeline position. Throws when the source has audio
+// the browser cannot decode, rather than silently exporting without it.
+export async function* layerAudioPieces(
   layer: CompositorAudioLayer,
   reader: SourceReader,
   fileName: string,
   shouldCancel: () => boolean
-): Promise<void> {
+): AsyncGenerator<MixPiece> {
   if (!reader.audioSink) {
     throw new UnsupportedSourceError(`The audio in "${fileName}" cannot be decoded in this browser`)
   }
-  const gain = layer.volume
   let resampler: StereoResampler | null = null
   let resamplerRate = 0
   let sourceCursor = layer.sourceStart
@@ -59,6 +61,7 @@ export async function mixLayer(
   )
 
   for await (const sample of reader.audioSink.samples(layer.sourceStart, layer.sourceEnd)) {
+    let piece: MixPiece | null = null
     try {
       if (shouldCancel()) throw new Error('canceled')
       const overlap = sample.timestamp < sourceCursor - CONTINUITY_TOLERANCE_SEC
@@ -83,35 +86,147 @@ export async function mixLayer(
         resamplerRate = sample.sampleRate
       }
       const frameCount = range.endFrame - range.startFrame
-      const channels: Float32Array[] = []
-      for (let channel = 0; channel < Math.min(2, sample.numberOfChannels); channel++) {
-        const plane = new Float32Array(frameCount)
-        sample.copyTo(plane, {
-          planeIndex: channel,
-          format: 'f32-planar',
-          frameOffset: range.startFrame,
-          frameCount,
-        })
-        channels.push(plane)
-      }
-      const [left, right] = toStereo(channels)
+      const [left, right] = toStereo(readPlanes(sample, range.startFrame, frameCount))
       const resampled = resampler.process(left, right)
       const frames = Math.min(resampled.frames, Math.max(0, layerEndFrame - writeFrame))
-      addToMix(mix, resampled.data, resampled.frames, frames, writeFrame, gain)
+      piece = { at: writeFrame, data: resampled.data, stride: resampled.frames, count: frames }
       writeFrame += frames
       sourceCursor = pieceStart + frameCount / sample.sampleRate
     } finally {
       sample.close()
     }
+    yield piece
   }
 }
 
-// Encode the finished mix, clamped to [-1, 1] so overlapping loud layers clip
-// cleanly instead of wrapping in the encoder.
+// Mix one layer into a whole-project buffer in one pass.
+export async function mixLayer(
+  mix: MixBuffer,
+  layer: CompositorAudioLayer,
+  reader: SourceReader,
+  fileName: string,
+  shouldCancel: () => boolean
+): Promise<void> {
+  for await (const piece of layerAudioPieces(layer, reader, fileName, shouldCancel)) {
+    addToMix(mix, piece.data, piece.stride, piece.count, piece.at, layer.volume)
+  }
+}
+
+export type MixInput = {
+  layer: CompositorAudioLayer
+  fileName: string
+  // Opens a fresh reader for this layer; the mixer disposes it.
+  open: () => Promise<SourceReader>
+}
+
+type LayerMixState = {
+  input: MixInput
+  startFrame: number
+  endFrame: number
+  reader: SourceReader | null
+  pieces: AsyncGenerator<MixPiece> | null
+  // Decoded pieces that reach into a later window.
+  pending: MixPiece[]
+  finished: boolean
+}
+
+// Mixes the project's audio one window at a time instead of into one
+// full-length buffer (384 KB per second of output). Each layer keeps its own
+// decoder and resampler state across windows, opened when the first window
+// reaches the layer and released when it ends, so the output equals a
+// one-shot mix while memory stays at about one window.
+export class WindowedMixer {
+  private readonly layers: LayerMixState[]
+
+  constructor(
+    inputs: MixInput[],
+    private readonly shouldCancel: () => boolean
+  ) {
+    this.layers = inputs.map((input) => ({
+      input,
+      startFrame: Math.round(input.layer.timelineStart * OUTPUT_SAMPLE_RATE),
+      endFrame: Math.round(
+        (input.layer.timelineStart + input.layer.sourceEnd - input.layer.sourceStart) *
+          OUTPUT_SAMPLE_RATE
+      ),
+      reader: null,
+      pieces: null,
+      pending: [],
+      finished: false,
+    }))
+  }
+
+  // The mix of output frames [startFrame, endFrame). Windows must be asked
+  // for in order without gaps; a decoded run that starts before the current
+  // window (which only rounding at a source gap can produce) loses that part.
+  async mixWindow(startFrame: number, endFrame: number): Promise<MixBuffer> {
+    const mix: MixBuffer = {
+      left: new Float32Array(Math.max(0, endFrame - startFrame)),
+      right: new Float32Array(Math.max(0, endFrame - startFrame)),
+    }
+    for (const state of this.layers) {
+      if (state.finished || state.startFrame >= endFrame) continue
+      if (!state.pieces) {
+        state.reader = await state.input.open()
+        state.pieces = layerAudioPieces(
+          state.input.layer,
+          state.reader,
+          state.input.fileName,
+          this.shouldCancel
+        )
+      }
+      let decodedUntil = state.pending.at(-1)
+      let exhausted = false
+      while (!decodedUntil || decodedUntil.at + decodedUntil.count < endFrame) {
+        const next = await state.pieces.next()
+        if (next.done) {
+          exhausted = true
+          break
+        }
+        state.pending.push(next.value)
+        decodedUntil = next.value
+      }
+      for (const piece of state.pending) {
+        addToMix(
+          mix,
+          piece.data,
+          piece.stride,
+          piece.count,
+          piece.at - startFrame,
+          state.input.layer.volume
+        )
+      }
+      state.pending = state.pending.filter((piece) => piece.at + piece.count > endFrame)
+      if (exhausted || state.endFrame <= endFrame) await this.release(state)
+    }
+    return mix
+  }
+
+  private async release(state: LayerMixState): Promise<void> {
+    if (state.finished) return
+    state.finished = true
+    state.pending = []
+    const pieces = state.pieces
+    const reader = state.reader
+    state.pieces = null
+    state.reader = null
+    await pieces?.return(undefined)
+    reader?.dispose()
+  }
+
+  async dispose(): Promise<void> {
+    for (const state of this.layers) await this.release(state)
+  }
+}
+
+// Encode a finished mix whose first frame is output frame `startFrame`,
+// clamped to [-1, 1] so overlapping loud layers clip cleanly instead of
+// wrapping in the encoder.
 export async function encodeMix(
   mix: MixBuffer,
   out: OutputHandle,
-  shouldCancel: () => boolean
+  shouldCancel: () => boolean,
+  startFrame = 0
 ): Promise<void> {
   if (!out.audioSource) return
   const total = mix.left.length
@@ -127,7 +242,7 @@ export async function encodeMix(
       format: 'f32-planar',
       sampleRate: OUTPUT_SAMPLE_RATE,
       numberOfChannels: OUTPUT_CHANNELS,
-      timestamp: start / OUTPUT_SAMPLE_RATE,
+      timestamp: (startFrame + start) / OUTPUT_SAMPLE_RATE,
       data: planar,
     })
     try {

@@ -11,7 +11,8 @@ export type VideoEncodeOptions = {
   plan: EditPlan
   out: OutputHandle
   // Called with the output time (seconds) reached after each encoded frame.
-  onFrameEncoded: (outTimeSec: number) => void
+  // Awaited, so it can write other tracks up to that time before the next.
+  onFrameEncoded: (outTimeSec: number) => void | Promise<void>
   shouldCancel: () => boolean
   // The slice passed canPassThrough: frames that also pass the per-frame
   // check skip the canvas.
@@ -85,7 +86,7 @@ export async function encodeVideoSlice(options: VideoEncodeOptions): Promise<voi
     try {
       if (sample.duration > 0) {
         await out.videoSource.add(sample)
-        onFrameEncoded(nextStart)
+        await onFrameEncoded(nextStart)
       }
     } finally {
       sample.close()

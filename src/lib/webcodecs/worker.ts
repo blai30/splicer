@@ -1,9 +1,9 @@
 import { ensureAacEncoder } from './aacFallback'
-import { encodeAudioSlice } from './audioEncode'
+import { AudioSliceWriter } from './audioEncode'
 import { buildEditPlan } from './editPlan'
 import { canPassThrough } from './framePassthrough'
 import { SourceCache } from './mediabunnyInput'
-import { createOutput, type OutputHandle } from './mediabunnyOutput'
+import { createOutput, OUTPUT_SAMPLE_RATE, type OutputHandle } from './mediabunnyOutput'
 import {
   UnsupportedSourceError,
   type ExportJob,
@@ -13,6 +13,13 @@ import {
 import { encodeVideoSlice } from './videoEncode'
 
 let canceled = false
+
+// How far audio is written ahead of the video it accompanies.
+const AUDIO_LEAD_SEC = 0.5
+
+function audioFrameAt(outTimeSec: number): number {
+  return Math.round(outTimeSec * OUTPUT_SAMPLE_RATE)
+}
 
 function post(message: WorkerResponse, transfer?: Transferable[]): void {
   ;(self as unknown as Worker).postMessage(message, transfer ?? [])
@@ -39,7 +46,7 @@ async function runExport(job: ExportJob): Promise<void> {
       job.slices.reduce((sum, slice) => sum + (slice.sourceEnd - slice.sourceStart), 0)
     )
     let lastReported = 0
-    const onFrameEncoded = (outTimeSec: number) => {
+    const reportVideoTime = (outTimeSec: number) => {
       // Video carries ~95% of the work; finalize takes the rest.
       const progress = Math.min(0.95, (outTimeSec / totalSec) * 0.95)
       if (progress - lastReported >= 0.005) {
@@ -56,23 +63,29 @@ async function runExport(job: ExportJob): Promise<void> {
     for (const slice of plan.slices) {
       if (canceled) throw new CanceledError()
       const reader = await sources.get(slice.sourceIndex)
-      await encodeVideoSlice({
-        reader,
-        slice,
-        plan,
-        out,
-        onFrameEncoded,
-        shouldCancel,
-        passThrough: canPassThrough(slice, job.sources[slice.sourceIndex], plan),
-      })
-      if (plan.hasAudioOutput) {
-        audioFrame = await encodeAudioSlice({
+      const audio = plan.hasAudioOutput
+        ? new AudioSliceWriter({ reader, slice, out, startFrame: audioFrame, shouldCancel })
+        : null
+      try {
+        await encodeVideoSlice({
           reader,
           slice,
+          plan,
           out,
-          startFrame: audioFrame,
+          onFrameEncoded: async (outTimeSec) => {
+            reportVideoTime(outTimeSec)
+            // Keep audio just ahead of the video so the muxer can write both
+            // as it goes instead of buffering the slice's video.
+            if (audio && audio.frame < audioFrameAt(outTimeSec)) {
+              await audio.advanceTo(audioFrameAt(outTimeSec + AUDIO_LEAD_SEC))
+            }
+          },
           shouldCancel,
+          passThrough: canPassThrough(slice, job.sources[slice.sourceIndex], plan),
         })
+        if (audio) audioFrame = await audio.finish()
+      } finally {
+        await audio?.dispose()
       }
     }
 

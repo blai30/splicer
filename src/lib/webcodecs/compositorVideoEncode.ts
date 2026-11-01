@@ -30,7 +30,8 @@ export async function encodeCompositedVideo(
   ctx: OffscreenCanvasRenderingContext2D,
   out: OutputHandle,
   durationSec: number,
-  onFrameEncoded: () => void,
+  // Awaited with the output time reached, so other tracks can keep pace.
+  onFrameEncoded: (outTimeSec: number) => void | Promise<void>,
   shouldCancel: () => boolean
 ): Promise<void> {
   const laneRank = new Map<string, number>()
@@ -110,7 +111,7 @@ export async function encodeCompositedVideo(
       })
       await out.videoSource.add(outSample)
       outSample.close()
-      onFrameEncoded()
+      await onFrameEncoded(tSec + frameDurationSec)
     }
   } finally {
     for (const cursor of cursors) {
