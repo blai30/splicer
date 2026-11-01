@@ -1,15 +1,7 @@
 import { effect } from '@preact/signals'
-import {
-  ALL_FORMATS,
-  BlobSource,
-  Input,
-  IsobmffInputFormat,
-  type InputAudioTrack,
-  type InputVideoTrack,
-} from 'mediabunny'
 
 import { appendClipToTrack } from '@/lib/advanced/advancedSegmentEditing'
-import { decoderConfigKey } from '@/lib/fastCopy'
+import { ImportError } from '@/lib/importError'
 import { info, warn, error as logError } from '@/lib/logger'
 import { clips, exporting, getClipById, importErrors, importing } from '@/lib/store'
 import { appendClipToTimeline } from '@/lib/timelineEditing'
@@ -22,132 +14,35 @@ import {
   type WaveformResponse,
   type WaveformWorkerMessage,
 } from '@/lib/waveform'
-import { extractWaveformPeaks } from '@/lib/waveformExtract'
 
 export const ACCEPTED = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm']
 const ACCEPTED_EXTENSIONS = /\.(mp4|m4v|mkv|mov|webm)$/i
 export const FILE_INPUT_ACCEPT = 'video/*,.mp4,.m4v,.mkv,.mov,.webm'
 
 const METADATA_TIMEOUT_MS = 15_000
-const DEFAULT_FRAME_RATE = 30
-// Packets sampled when the container has no up-front index (MKV/WebM). Enough
-// to get past a high-bitrate opening GOP without scanning a long file.
-const SAMPLED_PACKET_COUNT = 600
 
-class ImportError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'ImportError'
-  }
+// mediabunny is about half of the editor's JavaScript, and nothing needs it
+// before the first import. Loading it on demand keeps it out of first paint;
+// prefetchMediaProbe warms it while the page is idle or a file is dragged in.
+let mediaProbeModule: Promise<typeof import('@/lib/mediaProbe')> | null = null
+
+export function loadMediaProbe(): Promise<typeof import('@/lib/mediaProbe')> {
+  mediaProbeModule ??= import('@/lib/mediaProbe').catch((err: unknown) => {
+    // A failed chunk load (offline, a new deploy) may succeed on a later try.
+    mediaProbeModule = null
+    throw err
+  })
+  return mediaProbeModule
+}
+
+export function prefetchMediaProbe(): void {
+  void loadMediaProbe().catch(() => {
+    // Only a warm-up: the import that needs it reports a failure.
+  })
 }
 
 export function isVideoFile(file: File): boolean {
   return ACCEPTED.includes(file.type) || ACCEPTED_EXTENSIONS.test(file.name)
-}
-
-export type StreamStats = {
-  frameRate?: number
-  videoBitrate?: number
-  videoCodec?: string
-  audioBitrate?: number
-  audioCodec?: string
-}
-
-export type MediaProbe = StreamStats & {
-  duration: number
-  width: number
-  height: number
-  frameRate: number
-  rotation: number
-  hasAudio: boolean
-  decoderConfigKey?: string
-  squarePixels: boolean
-}
-
-function positive(value: number): number | undefined {
-  return Number.isFinite(value) && value > 0 ? value : undefined
-}
-
-// MP4/MOV keep a full sample table in metadata, so stats over every packet are
-// cheap and immune to an unrepresentative opening. Other containers would have
-// to scan the whole file, so they are sampled.
-export async function hasPacketIndex(input: Input): Promise<boolean> {
-  return (await input.getFormat()) instanceof IsobmffInputFormat
-}
-
-// Frame rate, bitrates, and codecs from packet metadata (no decoding). Each
-// value is left out when it cannot be measured.
-export async function measureStreamStats(
-  videoTrack: InputVideoTrack,
-  audioTrack: InputAudioTrack | null,
-  fullIndex: boolean
-): Promise<StreamStats> {
-  const packetCount = fullIndex ? undefined : SAMPLED_PACKET_COUNT
-  const stats: StreamStats = {}
-  try {
-    const video = await videoTrack.computePacketStats(packetCount)
-    stats.frameRate = positive(video.averagePacketRate)
-    stats.videoBitrate = positive(video.averageBitrate)
-    stats.videoCodec = (await videoTrack.getCodec()) ?? undefined
-  } catch {
-    // Stats only tune the export; a source without them still imports.
-  }
-  if (audioTrack) {
-    try {
-      const audio = await audioTrack.computePacketStats(packetCount)
-      stats.audioBitrate = positive(audio.averageBitrate)
-      stats.audioCodec = (await audioTrack.getCodec()) ?? undefined
-    } catch {
-      // As above.
-    }
-  }
-  return stats
-}
-
-// Read the container with mediabunny (the same demuxer/decoders the exporter
-// uses), so anything that imports is also exportable. Width/height are display
-// dimensions: pixel aspect ratio and rotation metadata are already applied.
-export async function probeMedia(file: File): Promise<MediaProbe> {
-  const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) })
-  try {
-    const videoTrack = await input.getPrimaryVideoTrack()
-    if (!videoTrack) throw new ImportError(`"${file.name}" has no video track.`)
-    if (!(await videoTrack.canDecode())) {
-      throw new ImportError(
-        `"${file.name}" uses a video codec (${videoTrack.codec ?? 'unknown'}) this browser cannot decode.`
-      )
-    }
-    const audioTrack = await input.getPrimaryAudioTrack()
-    const hasAudio = audioTrack ? await audioTrack.canDecode() : false
-    const tracks = audioTrack && hasAudio ? [videoTrack, audioTrack] : [videoTrack]
-    const duration = await input.computeDuration(tracks)
-    const stats = await measureStreamStats(
-      videoTrack,
-      audioTrack && hasAudio ? audioTrack : null,
-      await hasPacketIndex(input)
-    )
-    const decoderConfig = await videoTrack.getDecoderConfig().catch(() => null)
-    const pixelAspect = await videoTrack.getPixelAspectRatio()
-    return {
-      ...stats,
-      decoderConfigKey: decoderConfig ? decoderConfigKey(decoderConfig) : undefined,
-      squarePixels: pixelAspect.num === pixelAspect.den,
-      duration,
-      width: await videoTrack.getDisplayWidth(),
-      height: await videoTrack.getDisplayHeight(),
-      rotation: await videoTrack.getRotation(),
-      // Frame stepping needs some rate; the default stands in when unmeasured.
-      frameRate: stats.frameRate ?? DEFAULT_FRAME_RATE,
-      hasAudio,
-    }
-  } catch (err) {
-    if (err instanceof ImportError) throw err
-    throw new ImportError(
-      `Could not read "${file.name}". The file may be damaged or in an unsupported format.`
-    )
-  } finally {
-    input.dispose()
-  }
 }
 
 // Confirm the browser's own <video> element can play the file: the preview
@@ -230,21 +125,28 @@ function getWaveformWorker(): Worker | null {
     waveformWorker?.terminate()
     waveformWorker = null
     for (const { request, resolve } of waveformReplies.values()) {
-      void extractWaveformPeaks(
-        request.file,
-        request.duration,
-        request.peakCount,
-        waveformGate.wait
-      ).then(resolve)
+      void extractPeaksHere(request.file, request.duration, request.peakCount).then(resolve, () =>
+        resolve(new Float32Array(0))
+      )
     }
     waveformReplies.clear()
   }
   return waveformWorker
 }
 
+// The main-thread fallback, loaded only when the worker is unavailable.
+async function extractPeaksHere(
+  file: File,
+  duration: number,
+  peakCount: number
+): Promise<Float32Array> {
+  const { extractWaveformPeaks } = await import('@/lib/waveformExtract')
+  return extractWaveformPeaks(file, duration, peakCount, waveformGate.wait)
+}
+
 function requestPeaks(file: File, duration: number, peakCount: number): Promise<Float32Array> {
   const worker = getWaveformWorker()
-  if (!worker) return extractWaveformPeaks(file, duration, peakCount, waveformGate.wait)
+  if (!worker) return extractPeaksHere(file, duration, peakCount)
   const id = nextWaveformRequestId++
   const request: WaveformRequest = { id, file, duration, peakCount }
   return new Promise((resolve) => {
@@ -306,7 +208,14 @@ export async function createClip(file: File): Promise<Clip | null> {
   try {
     info('Importing file', { name: file.name, size: file.size })
     const [probe, playableDuration] = await Promise.all([
-      probeMedia(file),
+      loadMediaProbe().then(
+        ({ probeMedia }) => probeMedia(file),
+        () => {
+          throw new ImportError(
+            `Could not import "${file.name}": the video reader failed to load. Check the connection and try again.`
+          )
+        }
+      ),
       checkPlayable(objectUrl),
     ])
     const duration =

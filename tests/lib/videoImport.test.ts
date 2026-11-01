@@ -3,13 +3,15 @@ import { readFileSync } from 'node:fs'
 import { ALL_FORMATS, BlobSource, Input } from 'mediabunny'
 import { describe, expect, it } from 'vitest'
 
+import { ImportError } from '@/lib/importError'
+import { hasPacketIndex, measureStreamStats } from '@/lib/mediaProbe'
 import { advancedSegments } from '@/lib/store'
 import {
   createClip,
-  hasPacketIndex,
   importIntoAdvanced,
   isVideoFile,
-  measureStreamStats,
+  loadMediaProbe,
+  prefetchMediaProbe,
 } from '@/lib/videoImport'
 
 function openFixture(name: string): Input {
@@ -40,6 +42,25 @@ describe('importIntoAdvanced', () => {
 
   it('exposes createClip', () => {
     expect(typeof createClip).toBe('function')
+  })
+})
+
+describe('loadMediaProbe', () => {
+  it('loads the probing module once and shares it', async () => {
+    prefetchMediaProbe()
+    const first = loadMediaProbe()
+    expect(loadMediaProbe()).toBe(first)
+    const probing = await first
+    expect(typeof probing.probeMedia).toBe('function')
+  })
+
+  it('reports probe failures as the shared user-facing ImportError', async () => {
+    const { probeMedia } = await loadMediaProbe()
+    // Node has no WebCodecs decoder, so a real file stops at the codec check.
+    const bytes = readFileSync(new URL('../fixtures/tiny.mp4', import.meta.url))
+    const probing = probeMedia(new File([bytes], 'tiny.mp4', { type: 'video/mp4' }))
+    await expect(probing).rejects.toBeInstanceOf(ImportError)
+    await expect(probing).rejects.toThrow(/tiny\.mp4/)
   })
 })
 

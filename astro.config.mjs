@@ -22,5 +22,17 @@ export default defineConfig({
     // via dynamic import only when the browser lacks native AAC; ES output is
     // required (the default 'iife' cannot code-split).
     worker: { format: 'es' },
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            // Keep the bundler's shared helpers in their own tiny chunk. Left to
+            // itself, rolldown parks them in the mediabunny chunk, and every
+            // island would then load mediabunny statically just to reach them.
+            groups: [{ name: 'runtime', test: /rolldown[:/]runtime/ }],
+          },
+        },
+      },
+    },
   },
 })

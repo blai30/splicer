@@ -3,7 +3,6 @@ import { computed, effect, signal } from '@preact/signals'
 import { timelineCopyBlockers } from '@/lib/exportEngine'
 import { planSliceCopyFromIndex, type PacketIndex } from '@/lib/fastCopy'
 import { warn } from '@/lib/logger'
-import { readPacketIndex } from '@/lib/packetIndex'
 import {
   appMode,
   clips,
@@ -39,16 +38,19 @@ export function ensurePacketIndex(clip: Clip): void {
   const state = packetIndexes.peek().get(clip.id)
   if (state && state.status !== 'failed') return
   setIndexState(clip.id, { status: 'loading' })
-  readPacketIndex(clip.file).then(
-    (index) => setIndexState(clip.id, { status: 'ready', index }),
-    (err: unknown) => {
-      warn('Could not read key frames', {
-        name: clip.name,
-        message: err instanceof Error ? err.message : String(err),
-      })
-      setIndexState(clip.id, { status: 'failed' })
-    }
-  )
+  // Loaded on demand: the packet reader pulls in mediabunny.
+  import('@/lib/packetIndex')
+    .then(({ readPacketIndex }) => readPacketIndex(clip.file))
+    .then(
+      (index) => setIndexState(clip.id, { status: 'ready', index }),
+      (err: unknown) => {
+        warn('Could not read key frames', {
+          name: clip.name,
+          message: err instanceof Error ? err.message : String(err),
+        })
+        setIndexState(clip.id, { status: 'failed' })
+      }
+    )
 }
 
 // Why the Basic timeline cannot be copied with the current settings. Reading
