@@ -68,6 +68,9 @@ export function ContextMenu({
       if (!menuRef.current?.contains(event.target as Node)) close()
     }
     window.addEventListener('pointerdown', onPointerDown, true)
+    // On the window, not the menu: keys pressed before focus has moved into
+    // the menu (it is focused once placed) must still reach it.
+    window.addEventListener('keydown', onKeyDown, true)
     // Scroll events are delivered at the next frame, so one from a scroll that
     // ended just before opening would otherwise close the menu at once.
     const scrollListenFrame = requestAnimationFrame(() =>
@@ -78,6 +81,7 @@ export function ContextMenu({
     return () => {
       cancelAnimationFrame(scrollListenFrame)
       window.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('scroll', close, true)
       window.removeEventListener('resize', close)
       window.removeEventListener('blur', close)
@@ -97,6 +101,7 @@ export function ContextMenu({
   }
 
   function onKeyDown(event: KeyboardEvent) {
+    if (event.isComposing) return
     const buttons = enabledItems()
     const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
     let next: number | null = null
@@ -106,7 +111,7 @@ export function ContextMenu({
     else if (event.key === 'End') next = buttons.length - 1
     else if (event.key === 'Escape' || event.key === 'Tab') {
       event.preventDefault()
-      onClose()
+      onCloseRef.current()
       return
     }
     if (next === null) return
@@ -120,7 +125,6 @@ export function ContextMenu({
       role="menu"
       aria-label={label}
       aria-orientation="vertical"
-      onKeyDown={onKeyDown}
       onContextMenu={(event) => event.preventDefault()}
       class={clsx(
         'fixed z-50 min-w-48 rounded-lg border border-slate-200/80 bg-white/95 p-1 text-slate-900 shadow-lg backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95 dark:text-slate-50',
