@@ -207,6 +207,15 @@ export const webmCodec = signal<WebmCodec>(loadFromStorage('webmCodec', 'vp9', o
 // encoder path). H.264 is the default.
 export const mkvCodec = signal<MkvCodec>(loadFromStorage('mkvCodec', 'h264', oneOf('h264', 'vp9')))
 
+// Drop the audio track from the export entirely, for a silent clip.
+export const removeAudio = signal<boolean>(loadFromStorage('removeAudio', false, isBoolean))
+// Basic export output: the whole timeline as one file, or each segment as its
+// own file.
+export type ExportSplit = 'single' | 'segments'
+export const exportSplit = signal<ExportSplit>(
+  loadFromStorage('exportSplit', 'single', oneOf('single', 'segments'))
+)
+
 export const previewVolume = signal(loadFromStorage('previewVolume', 0.5, isNumberIn(0, 1)))
 export const previewMuted = signal(loadFromStorage('previewMuted', false, isBoolean))
 
@@ -309,6 +318,8 @@ persistSignal('resolution', resolution)
 persistSignal('targetSizeMB', targetSizeMB)
 persistSignal('webmCodec', webmCodec)
 persistSignal('mkvCodec', mkvCodec)
+persistSignal('removeAudio', removeAudio)
+persistSignal('exportSplit', exportSplit)
 persistSignal('previewVolume', previewVolume)
 persistSignal('previewMuted', previewMuted)
 persistSignal('playbackRate', playbackRate)

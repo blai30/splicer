@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { buildCompositorJob } from '@/lib/advanced/advancedExport'
 import { advancedOutputLock, advancedTracks, clips } from '@/lib/store'
 import type { AdvancedSegment, Clip } from '@/lib/types'
+import { buildCompositorPlan } from '@/lib/webcodecs/compositorPlan'
 
 function makeClip(id: string): Clip {
   return {
@@ -35,6 +36,15 @@ describe('buildCompositorJob', () => {
     clips.value = [makeClip('a')]
     advancedTracks.value = [{ id: 'track-1', name: 'Track 1' }]
     advancedOutputLock.value = null
+  })
+
+  it('drops every audio layer when audio is removed', () => {
+    const job = buildCompositorJob([makeSegment('a')], 'mp4', 'high', 'original', {
+      removeAudio: true,
+    })
+    expect(job?.layers).toHaveLength(1)
+    expect(job?.audioLayers).toHaveLength(0)
+    expect(buildCompositorPlan(job!).hasAudioOutput).toBe(false)
   })
 
   it('builds a job with canvas dims, one source, and one layer', () => {

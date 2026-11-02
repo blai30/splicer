@@ -87,6 +87,7 @@ export function buildCompositorJob(
 
   const audioLayers: CompositorJob['audioLayers'] = []
   for (const segment of segments) {
+    if (options.removeAudio) break
     if (segment.muted || mutedTrackIds.has(segment.trackId)) continue
     const volume = segment.volume ?? 1
     if (volume <= 0) continue

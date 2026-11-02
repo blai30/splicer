@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { buildJob } from '@/lib/exportEngine'
 import { clips } from '@/lib/store'
 import type { Clip, Segment } from '@/lib/types'
+import { buildEditPlan } from '@/lib/webcodecs/editPlan'
 
 function makeClip(id: string, overrides: Partial<Clip> = {}): Clip {
   return {
@@ -41,6 +42,17 @@ describe('buildJob', () => {
     expect(job?.sources).toHaveLength(1)
     expect(job?.slices).toHaveLength(1)
     expect(job?.slices[0]).toMatchObject({ sourceIndex: 0, sourceStart: 0, sourceEnd: 5 })
+  })
+
+  it('marks every source silent when audio is removed', () => {
+    const job = buildJob([makeSegment('a')], 'mp4', 'high', 'original', { removeAudio: true })
+    expect(job?.sources[0].hasAudio).toBe(false)
+    expect(buildEditPlan(job!).hasAudioOutput).toBe(false)
+  })
+
+  it('keeps audio by default', () => {
+    const job = buildJob([makeSegment('a')], 'mp4', 'high', 'original')
+    expect(buildEditPlan(job!).hasAudioOutput).toBe(true)
   })
 
   it('selects opus/webm for webm output', () => {
