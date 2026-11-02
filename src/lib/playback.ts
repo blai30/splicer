@@ -1,5 +1,7 @@
 import { batch, effect } from '@preact/signals'
 
+import { showEditNotice } from '@/lib/editNotice'
+import { snapshotFilename, snapshotSourceRect } from '@/lib/frameSnapshot'
 import {
   currentPlaybackTime,
   currentSegmentDuration,
@@ -565,4 +567,42 @@ export function endEdgePreview(finalTime: number) {
   edgePreviewSeeks.cancel()
   edgePreviewActive = false
   seek(finalTime)
+}
+
+const SNAPSHOT_URL_LIFETIME_MS = 30_000
+
+// Save the frame on screen as a PNG at the source's decoded size, cropped like
+// its segment. The video keeps playing; the frame is the one shown when this
+// runs.
+export async function saveCurrentFrame(): Promise<void> {
+  const info = getActiveSegmentInfo()
+  if (!video || !info) return
+  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) {
+    showEditNotice('The frame is still loading. Try again in a moment.')
+    return
+  }
+  const rect = snapshotSourceRect(
+    { width: video.videoWidth, height: video.videoHeight },
+    info.clip,
+    info.segment.crop
+  )
+  const canvas = document.createElement('canvas')
+  canvas.width = rect.width
+  canvas.height = rect.height
+  const context = canvas.getContext('2d')
+  if (!context) return
+  context.drawImage(video, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height)
+  const filename = snapshotFilename(info.clip.name, video.currentTime)
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+  if (!blob) {
+    showEditNotice('The frame could not be saved.')
+    return
+  }
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  // Revoking right away can cancel a download that has not read the blob yet.
+  setTimeout(() => URL.revokeObjectURL(url), SNAPSHOT_URL_LIFETIME_MS)
 }
