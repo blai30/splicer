@@ -24,6 +24,7 @@ import {
   goToAdjacentCut,
   goToEnd as basicGoToEnd,
   goToStart as basicGoToStart,
+  saveCurrentFrame,
   shuttle,
   stepFrame as basicStepFrame,
   stepSeconds,
@@ -294,6 +295,14 @@ export const SHORTCUTS: Shortcut[] = [
   { keys: ['m'], display: 'M', description: 'Mute Segment', run: muteSegment },
   { keys: ['Home'], display: 'Home', description: 'Go to Start', run: goToStart },
   { keys: ['End'], display: 'End', description: 'Go to End', run: goToEnd },
+  {
+    keys: ['s'],
+    shift: true,
+    mode: 'basic',
+    display: 'Shift S',
+    description: 'Save Frame as PNG',
+    run: () => void saveCurrentFrame(),
+  },
   {
     keys: ['s'],
     mode: 'advanced',

@@ -1,12 +1,19 @@
 import { useSignalEffect } from '@preact/signals'
 import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
-import { FastForward, Pause, Play, Rewind, StepBack, StepForward } from 'lucide-preact'
+import { Camera, FastForward, Pause, Play, Rewind, StepBack, StepForward } from 'lucide-preact'
 import { useEffect, useRef } from 'preact/hooks'
 
 import { VolumeControl } from '@/components/VolumeControl'
 import { formatTimecode } from '@/lib/format'
-import { attachVideo, detachVideo, setPlaybackSpeed, stepFrame, togglePlay } from '@/lib/playback'
+import {
+  attachVideo,
+  detachVideo,
+  saveCurrentFrame,
+  setPlaybackSpeed,
+  stepFrame,
+  togglePlay,
+} from '@/lib/playback'
 import {
   PLAYBACK_SPEED_OPTIONS,
   currentPlaybackTime,
@@ -174,6 +181,16 @@ export function VideoPreview() {
           </div>
           <div class="flex items-center justify-end gap-2 sm:gap-4">
             <ShuttleIndicator />
+            <button
+              type="button"
+              onClick={() => void saveCurrentFrame()}
+              disabled={!hasContent}
+              aria-label="Save frame as PNG"
+              class="flex h-9 w-9 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 hover:duration-0 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700/50 dark:hover:text-slate-100"
+              title="Save frame as PNG (Shift S)"
+            >
+              <Camera class="h-5 w-5" />
+            </button>
             <select
               id="playback-speed"
               value={playbackRate.value}

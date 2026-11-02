@@ -2,6 +2,7 @@ import { useSignal } from '@preact/signals'
 import clsx from 'clsx/lite'
 import { AlertTriangle, CircleCheck, CirclePlay, Info, X } from 'lucide-preact'
 import { Fragment } from 'preact'
+import { useRef } from 'preact/hooks'
 
 import { ExportFaq } from '@/components/ExportFaq'
 import { setOutputLock } from '@/lib/advanced/advancedEditing'
@@ -15,6 +16,7 @@ import { findOversizedAutoCanvas, type OversizedCanvas } from '@/lib/advanced/ex
 import { copyBlockerReasons, copyPreview, type CopyPreview } from '@/lib/copyExport'
 import { buildJob, runExportEngine, type SizingOptions } from '@/lib/exportEngine'
 import { assessFeasibility } from '@/lib/exportFeasibility'
+import { makeExportFilename } from '@/lib/exportFilename'
 import { cancelExport, ExportCanceledError } from '@/lib/exportRunner'
 import { LARGE_SNAP_SHIFT_SEC } from '@/lib/fastCopy'
 import { formatPreciseTime, formatSize, formatSizeRange, formatTimecode } from '@/lib/format'
@@ -29,9 +31,12 @@ import {
   exportFormat,
   exporting,
   exportProgress,
+  exportSplit,
+  type ExportSplit,
   framerate,
   mkvCodec,
   quality,
+  removeAudio,
   resolution,
   parseTargetSizeMB,
   TARGET_SIZE_MAX_MB,
@@ -61,14 +66,6 @@ import {
 import { buildCompositorPlan } from '@/lib/webcodecs/compositorPlan'
 import { buildEditPlan } from '@/lib/webcodecs/editPlan'
 import { RESOLUTION_SHORT_SIDE } from '@/lib/webcodecs/outputSize'
-
-function makeFilename(format: ExportFormat): string {
-  const timestamp = new Date()
-    .toISOString()
-    .replace(/:/g, '-')
-    .replace(/\.\d{3}Z$/, '')
-  return `splicer-${timestamp}.${format}`
-}
 
 const FORMATS: { value: ExportFormat; label: string }[] = [
   { value: 'mp4', label: 'MP4' },
@@ -116,6 +113,17 @@ const QUALITY_HINTS: Record<QualityChoice, { relative: string; fixed: string }> 
 // a more efficient codec keeps more of the source's bitrate.
 const CONVERSION_HINT =
   ' The source uses a more efficient codec, so the same quality takes more bits here and the file shrinks less.'
+
+const AUDIO_OPTIONS: { value: 'keep' | 'remove'; label: string }[] = [
+  { value: 'keep', label: 'Keep' },
+  { value: 'remove', label: 'Remove' },
+]
+const SPLIT_OPTIONS: { value: ExportSplit; label: string }[] = [
+  { value: 'single', label: 'One file' },
+  { value: 'segments', label: 'File per segment' },
+]
+const SPLIT_TARGET_REASON =
+  'Target size aims one file at a size. Pick a quality preset to export each segment as its own file.'
 
 const FRAMERATES: { value: Framerate; label: string }[] = [
   { value: 'original', label: 'Original' },
@@ -307,7 +315,11 @@ function copyEstimate(copy: CopyPreview, audioBitrate: number): SizeEstimate | n
 }
 
 function sizingOptions(): SizingOptions {
-  return { resolution: resolution.value, targetSizeMB: targetSizeMB.value }
+  return {
+    resolution: resolution.value,
+    targetSizeMB: targetSizeMB.value,
+    removeAudio: removeAudio.value,
+  }
 }
 
 // Output size, duration, and a size estimate from the same plan the export
@@ -412,9 +424,13 @@ export function ExportPanel() {
   const error = useSignal<string | null>(null)
   const lastExport = useSignal<string | null>(null)
   const overshoot = useSignal<{ actualBytes: number; targetBytes: number } | null>(null)
+  // The file a per-segment export is on, for the progress label.
+  const part = useSignal<{ index: number; count: number } | null>(null)
+  // Set by Cancel, so a per-segment export stops between files too.
+  const canceled = useRef(false)
 
   const isAdvanced = appMode.value === 'advanced'
-  const busy = exporting.value
+  const busy = exporting.value || part.value !== null
   const hasContent = isAdvanced ? advancedSegments.value.length > 0 : timeline.value.length > 0
   // Export runs entirely through WebCodecs, so a VideoEncoder is required.
   const webcodecsAvailable = typeof VideoEncoder !== 'undefined'
@@ -430,6 +446,14 @@ export function ExportPanel() {
       ? { ...option, unavailable: true, reason: blockers.join(' ') }
       : option
   )
+  // Target size aims one file at a size, so it always exports one.
+  const splitOptions = SPLIT_OPTIONS.map((option) =>
+    option.value === 'segments' && quality.value === 'target'
+      ? { ...option, unavailable: true, reason: SPLIT_TARGET_REASON }
+      : option
+  )
+  const splitting = !isAdvanced && exportSplit.value === 'segments' && quality.value !== 'target'
+  const fileCount = splitting ? timeline.value.length : 1
   const copy = summary?.copy ?? null
   const targetInfeasible = summary?.targetFit?.feasible === false
   // A copy whose key frames could not be read here has no estimate, but the
@@ -442,65 +466,95 @@ export function ExportPanel() {
 
   async function handleExport() {
     // Read the live flag: a fast double-click lands before the re-render.
-    if (exporting.value || !summary || !canExport) return
+    if (exporting.value || part.value || !summary || !canExport) return
     const estimate = summary.estimate
     // Capture settings now: the user may change them while the export runs.
     const format = exportFormat.value
     const chosenQuality = quality.value
     const fps = framerate.value
     const options = sizingOptions()
-    const filename = makeFilename(format)
+    const startedAt = new Date()
+    // Each entry is one output file: the whole timeline, or one segment.
+    const batches = splitting ? timeline.value.map((segment) => [segment]) : [timeline.value]
     error.value = null
     lastExport.value = null
     overshoot.value = null
+    canceled.current = false
     info('Export started', {
       mode: appMode.value,
       format,
       quality: chosenQuality,
       fps,
+      files: batches.length,
       ...options,
     })
+    const finished: string[] = []
     try {
-      const output = isAdvanced
-        ? await runAdvancedExport(format, chosenQuality, fps, options)
-        : await runExportEngine(timeline.value, format, chosenQuality, fps, options)
-      const record: ExportRecord = {
-        id: crypto.randomUUID(),
-        filename,
-        url: output.url,
-        size: output.size,
-        duration: summary.duration,
-        fps,
-        width: output.width,
-        height: output.height,
-        format,
-        ...(estimate ? { estimatedBytes: Math.round(estimate.expected) } : {}),
-        storageName: output.storageName,
+      for (const [index, segments] of batches.entries()) {
+        if (canceled.current) throw new ExportCanceledError()
+        const multiple = batches.length > 1
+        part.value = multiple ? { index, count: batches.length } : null
+        const filename = makeExportFilename(
+          format,
+          startedAt,
+          multiple ? { index, count: batches.length } : undefined
+        )
+        const output = isAdvanced
+          ? await runAdvancedExport(format, chosenQuality, fps, options)
+          : await runExportEngine(segments, format, chosenQuality, fps, options)
+        const record: ExportRecord = {
+          id: crypto.randomUUID(),
+          filename,
+          url: output.url,
+          size: output.size,
+          duration: multiple
+            ? segments.reduce((total, segment) => total + segment.endTime - segment.startTime, 0)
+            : summary.duration,
+          fps,
+          width: output.width,
+          height: output.height,
+          format,
+          ...(estimate && !multiple ? { estimatedBytes: Math.round(estimate.expected) } : {}),
+          storageName: output.storageName,
+        }
+        addExportRecord(record)
+        finished.push(filename)
+        const targetBytes = (options.targetSizeMB ?? 0) * 1_000_000
+        if (chosenQuality === 'target' && overshootsTarget(output.size, targetBytes)) {
+          overshoot.value = { actualBytes: output.size, targetBytes }
+        }
+        // Actual against estimate, to recalibrate the model on real encoders.
+        info('Export finished', {
+          filename,
+          size: record.size,
+          estimatedBytes: record.estimatedBytes,
+          ...(estimate && !multiple
+            ? { actualOverEstimate: Number((record.size / estimate.expected).toFixed(2)) }
+            : {}),
+        })
       }
-      addExportRecord(record)
-      lastExport.value = filename
-      const targetBytes = (options.targetSizeMB ?? 0) * 1_000_000
-      if (chosenQuality === 'target' && overshootsTarget(output.size, targetBytes)) {
-        overshoot.value = { actualBytes: output.size, targetBytes }
-      }
-      // Actual against estimate, to recalibrate the model on real encoders.
-      info('Export finished', {
-        filename,
-        size: record.size,
-        estimatedBytes: record.estimatedBytes,
-        ...(estimate
-          ? { actualOverEstimate: Number((record.size / estimate.expected).toFixed(2)) }
-          : {}),
-      })
     } catch (err) {
       if (err instanceof ExportCanceledError) {
-        info('Export canceled')
+        info('Export canceled', { filesFinished: finished.length })
         return
       }
       const message = err instanceof Error ? err.message : String(err)
       logError('Export failed', { message })
-      error.value = message
+      error.value =
+        batches.length > 1
+          ? `file ${finished.length + 1} of ${batches.length}: ${message}`
+          : message
+    } finally {
+      part.value = null
+      if (finished.length > 0) {
+        lastExport.value = finished.length === 1 ? finished[0] : `${finished.length} files`
+      }
     }
+  }
+
+  function handleCancel() {
+    canceled.current = true
+    cancelExport()
   }
 
   const progressPct = Math.max(0, Math.min(100, Math.round(exportProgress.value * 100)))
@@ -590,13 +644,29 @@ export function ExportPanel() {
             onSelect={(value) => (mkvCodec.value = value)}
           />
         )}
+        <OptionButtonGroup
+          label="Audio"
+          options={AUDIO_OPTIONS}
+          selected={removeAudio.value ? 'remove' : 'keep'}
+          disabled={busy}
+          onSelect={(value) => (removeAudio.value = value === 'remove')}
+        />
+        {!isAdvanced && (
+          <OptionButtonGroup
+            label="Output"
+            options={splitOptions}
+            selected={exportSplit.value}
+            disabled={busy}
+            onSelect={(value) => (exportSplit.value = value)}
+          />
+        )}
       </div>
 
       <div class="flex flex-col gap-4 border-t border-slate-200/60 pt-4 sm:flex-row sm:items-start dark:border-slate-700/60">
         {busy ? (
           <button
             type="button"
-            onClick={cancelExport}
+            onClick={handleCancel}
             class="inline-flex h-10 w-full shrink-0 items-center justify-center gap-1.5 rounded bg-slate-100 px-4 text-base font-semibold text-slate-600 transition-colors hover:bg-red-100 hover:text-red-600 hover:duration-0 sm:w-44 dark:bg-slate-800/50 dark:text-slate-300 dark:hover:bg-red-900/30 dark:hover:text-red-400"
           >
             <X class="size-4" />
@@ -610,7 +680,7 @@ export function ExportPanel() {
             class="inline-flex h-10 w-full shrink-0 items-center justify-center gap-2 rounded bg-violet-500 px-4 text-base font-semibold text-white transition-colors hover:bg-violet-600 hover:duration-0 focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40 sm:w-44"
           >
             <CirclePlay class="size-4" />
-            Export video
+            {fileCount > 1 ? `Export ${fileCount} files` : 'Export video'}
           </button>
         )}
         <div class="flex min-w-0 flex-1 flex-col gap-2">
@@ -618,6 +688,7 @@ export function ExportPanel() {
             {summary ? (
               <>
                 {summary.width}×{summary.height} · {formatTimecode(summary.duration)} ·{' '}
+                {fileCount > 1 && <>{fileCount} files · </>}
                 {summary.estimate === null ? (
                   copy?.status === 'loading' ? (
                     'Reading key frames…'
@@ -722,6 +793,11 @@ export function ExportPanel() {
           )}
           {busy && (
             <div class="flex items-center gap-2" role="status" aria-live="polite">
+              {part.value && (
+                <span class="shrink-0 text-sm text-slate-500 tabular-nums dark:text-slate-400">
+                  File {part.value.index + 1} of {part.value.count}
+                </span>
+              )}
               <div
                 class="h-1.5 flex-1 overflow-hidden rounded bg-slate-200 dark:bg-slate-700"
                 role="progressbar"

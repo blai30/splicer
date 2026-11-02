@@ -25,6 +25,8 @@ export type SizingOptions = {
   resolution?: Resolution
   // Used when quality is 'target'.
   targetSizeMB?: number
+  // Leave the audio track out of the file.
+  removeAudio?: boolean
 }
 
 // The preset a choice encodes with. Original and Target size still encode
@@ -99,7 +101,8 @@ export function buildJob(
     if (sourceIndex === undefined) {
       sourceIndex = sources.length
       indexByClip.set(segment.clipId, sourceIndex)
-      sources.push(jobSourceFromClip(clip))
+      const source = jobSourceFromClip(clip)
+      sources.push(options.removeAudio ? { ...source, hasAudio: false } : source)
     }
     return {
       sourceIndex,

@@ -47,6 +47,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 - J/K/L shuttle in Basic: reverse and forward play that speeds up with each press (up to `8x`).
 - Frame stepping controls, one-second steps, and jumps between cuts.
 - Automatic segment advance during playback.
+- Save the frame on screen as a PNG at the source resolution (camera button or `Shift` + `S` in Basic).
 
 ### Export
 
@@ -55,6 +56,8 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 - Resolution cap: `original`, `1080p`, `720p`, `480p`, `360p`
 - Framerate options: `original`, `60`, `30`, `24`
 - WebM codec choice: `VP9` (recommended, smaller files) or `VP8` (faster to encode).
+- Audio: `Keep` or `Remove` (drops the audio track for a silent file).
+- Output (Basic): `One file` or `File per segment`. Per-segment files are numbered (`-part-1`, `-part-2`) and share one timestamp. Not available with `Target size`.
 - A single WebCodecs export engine (runs in a Web Worker) handles every format and resolution, including HD sources, with bounded memory regardless of clip length.
 - Export progress + cancel support.
 - Export history table with one-click download and drag-to-desktop support.
@@ -87,6 +90,7 @@ No upload pipeline is used. Processing happens entirely client-side via WebCodec
 - `M`: Toggle mute on selected segment
 - `Delete` / `Backspace`: Delete selected segment
 - `Ctrl` + `D`: Duplicate selected segment (Basic)
+- `Shift` + `S`: Save the current frame as a PNG (Basic)
 - `Shift` + `F10` or the `Menu` key: Open the selected segment's menu (Basic)
 - `Ctrl` + `Z`: Undo
 - `Ctrl` + `Shift` + `Z` or `Ctrl` + `Y`: Redo
